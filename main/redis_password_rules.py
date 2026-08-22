@@ -1,0 +1,55 @@
+"""
+เงื่อนไขรหัสผ่าน Redis — **ที่เดียวของทั้งระบบ** ใช้ร่วมกันทั้งรหัสของ central (user admin)
+และรหัสของ Client Server (agent_node/default) เพราะทั้งคู่ไปจบที่ไฟล์แบบเดียวกัน
+
+แยกออกมาจาก redis_admin_password.py ตอนเพิ่มการตรวจให้ช่องของ agent ด้วย — ถ้าปล่อยให้
+ต่างคนต่างตรวจ เงื่อนไขสองฝั่งจะหลุดกันเมื่อไหร่ก็ได้ แล้วจะได้รหัสที่ผ่านหน้าเว็บแต่ทำให้
+ไฟล์ users.acl / site.conf / .env เพี้ยน ซึ่งเป็นอาการที่ debug ยากมาก
+
+ฝั่งหน้าเว็บมีตัวตรวจแบบเดียวกันเขียนไว้ใน settings.html เพื่อบอกผู้ใช้ตั้งแต่ตอนพิมพ์
+(ข้อความเดียวกันเป๊ะ) — แต่ **ข้อสรุปอยู่ที่ไฟล์นี้เสมอ** ฝั่งเว็บเป็นแค่ความสะดวก
+"""
+
+import re
+import secrets
+
+
+PASSWORD_MIN_LEN = 12
+PASSWORD_MAX_LEN = 128
+
+# อักขระที่ยอมให้ใช้ — ตัดตัวที่ทำให้ไฟล์สองฝั่งเพี้ยนออกทั้งหมด:
+#   - เว้นวรรค/tab : ไฟล์ ACL แยก token ด้วยช่องว่าง รหัสมีช่องว่างจะกลายเป็นคนละ token
+#   - # ' " $ ` \ !: .env ถูก parse (และบางสคริปต์ source) รหัสมีตัวพวกนี้จะโดนตีความผิด
+# ที่เหลือเป็นชุดเดียวกับ secrets.token_urlsafe บวกสัญลักษณ์ที่ปลอดภัยกับทั้งสองไฟล์
+PASSWORD_ALLOWED_RE = re.compile(r"^[A-Za-z0-9_\-.~@%+=:,/]+$")
+
+# รหัสที่เจอบ่อยจริงในไฟล์ตัวอย่าง/เอกสาร — เดาง่ายจนไม่ต่างจากไม่ตั้ง
+WEAK_PASSWORDS = frozenset({"123", "password", "redis", "admin", "changeme"})
+
+MIN_DISTINCT_CHARS = 6
+
+
+def generate_password(nbytes: int = 24) -> str:
+    """สุ่มรหัสให้แอดมิน — token_urlsafe ได้ [A-Za-z0-9_-] ยาว ~32 ตัว ผ่านเงื่อนไขข้างล่างเสมอ"""
+    return secrets.token_urlsafe(nbytes)
+
+
+def validate_password(new_password: str) -> None:
+    """ตรวจก่อนแตะไฟล์ใด ๆ — ผิดตรงไหนโยน ValueError พร้อมเหตุผลที่เอาไปโชว์ได้เลย"""
+    if not new_password:
+        raise ValueError("ยังไม่ได้กรอกรหัสใหม่")
+
+    if len(new_password) < PASSWORD_MIN_LEN:
+        raise ValueError(f"รหัสสั้นเกินไป ต้องยาวอย่างน้อย {PASSWORD_MIN_LEN} ตัวอักษร")
+
+    if len(new_password) > PASSWORD_MAX_LEN:
+        raise ValueError(f"รหัสยาวเกิน {PASSWORD_MAX_LEN} ตัวอักษร")
+
+    if not PASSWORD_ALLOWED_RE.match(new_password):
+        raise ValueError("รหัสมีอักขระที่ใช้ไม่ได้ — ห้ามเว้นวรรคและ # ' \" $ ` \\ !")
+
+    if new_password.lower() in WEAK_PASSWORDS:
+        raise ValueError("รหัสนี้เดาง่ายเกินไป")
+
+    if len(set(new_password)) < MIN_DISTINCT_CHARS:
+        raise ValueError("รหัสซ้ำตัวอักษรเดิมมากเกินไป")

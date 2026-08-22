@@ -1,0 +1,3 @@
+user admin on >123 +@all ~* &*
+user agent_node on >123 -@all +ping +lpush +publish +subscribe ~raw_logs_queue resetchannels &global_commands &agent_commands:* &agent_status &agent_metrics
+user default on >123 -@all +ping +info +select +rpush +lpush ~raw_logs_queue resetchannels

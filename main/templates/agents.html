@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+
+{% block title %}Client Server - SecureLog{% endblock %}
+
+{% block topbar_title %}Client Server{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ static_url('css/agents.css') }}">
+{% endblock %}
+
+{% block content %}
+
+<!-- ไม่ใส่ x-init="init()" เพราะ Alpine เรียก init() ของ x-data ให้เองอยู่แล้ว
+     (ใส่ด้วยจะรันสองรอบ = setInterval โหลด /api/agents ซ้อนกันสองตัว และตัวแรกเคลียร์ไม่ได้) -->
+<div x-data="agentsApp()">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">Client Server Management</div>
+      <div class="page-subtitle">จัดการเครื่อง Client Server</div>
+    </div>
+
+    <div class="page-actions">
+      <button class="btn-secondary" @click="showGuideModal = true">คู่มือการติดตั้ง</button>
+      <button class="btn-secondary" @click="loadAgents()">Refresh</button>
+      {% if user.role == 'admin' %}
+      <button class="btn-primary" @click="openCreateModal()">+ เพิ่ม Client Server</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-label">Client Server ทั้งหมด</div>
+      <div class="summary-value" x-text="agents.length"></div>
+    </div>
+
+    <div class="summary-card">
+      <div class="summary-label">Online</div>
+      <div class="summary-value" x-text="countByStatus('online')"></div>
+    </div>
+
+    <div class="summary-card">
+      <div class="summary-label">Offline</div>
+      <div class="summary-value" x-text="countByStatus('offline')"></div>
+    </div>
+
+    <div class="summary-card">
+      <div class="summary-label">Pending Setup</div>
+      <div class="summary-value" x-text="countByStatus('pending')"></div>
+    </div>
+  </div>
+
+  <div class="monitor-header">
+    <div class="section-title">Client Server List</div>
+
+    <div class="filter-group">
+      <button class="filter-pill" :class="{active: filter === 'all'}" @click="filter = 'all'">ทั้งหมด</button>
+      <button class="filter-pill" :class="{active: filter === 'online'}" @click="filter = 'online'">Online</button>
+      <button class="filter-pill" :class="{active: filter === 'offline'}" @click="filter = 'offline'">Offline</button>
+      <button class="filter-pill" :class="{active: filter === 'pending'}" @click="filter = 'pending'">Pending</button>
+    </div>
+  </div>
+
+  <!-- 3 สถานะแยกกัน: กำลังโหลดครั้งแรก / โหลดไม่สำเร็จตั้งแต่ครั้งแรก / โหลดได้แต่ไม่มีข้อมูล -->
+  <div class="state-box" x-show="loading">
+    <div class="state-spinner" aria-hidden="true"></div>
+    <div class="state-title">กำลังโหลดรายการ Client Server...</div>
+  </div>
+
+  <div class="state-box is-error" x-show="!loading && loadError && agents.length === 0" x-cloak>
+    <div class="state-title">โหลดรายการ Client Server ไม่สำเร็จ</div>
+    <div class="state-detail" x-text="loadError"></div>
+    <button class="btn-retry" type="button" @click="loading = true; loadAgents()">ลองใหม่อีกครั้ง</button>
+  </div>
+
+  <div class="state-box" x-show="!loading && !loadError && filteredAgents().length === 0" x-cloak>
+    <div class="state-title" x-text="agents.length === 0 ? 'ยังไม่มี Client Server ในระบบ' : 'ไม่พบ Client Server ในเงื่อนไขที่เลือก'"></div>
+    <div class="state-detail"
+         x-text="agents.length === 0 ? 'กด “เพิ่ม Client Server” เพื่อลงทะเบียนเครื่องแรกเข้าระบบ' : 'ลองเปลี่ยนตัวกรองด้านบน'"></div>
+  </div>
+
+  <!-- เคยโหลดได้แล้วแต่รอบล่าสุดพลาด: ยังโชว์ข้อมูลเดิมไว้ แค่บอกว่าอาจไม่สดแล้ว -->
+  <div class="stale-banner" x-show="loadError && agents.length > 0" x-cloak>
+    ข้อมูลอาจไม่เป็นปัจจุบัน — อัปเดตสถานะล่าสุดไม่สำเร็จ (<span x-text="loadError"></span>)
+  </div>
+
+  <div class="agent-monitor-grid" x-show="!loading && filteredAgents().length > 0" x-cloak>
+    <template x-for="agent in filteredAgents()" :key="agent.id">
+      <div class="agent-card" :class="agent.status">
+        <div class="agent-card-head">
+          <div class="agent-main">
+            <div class="agent-icon">
+              <svg aria-hidden="true"><use href="#ico-agents"/></svg>
+            </div>
+            <div>
+              <div class="agent-title" x-text="agent.hostname || agent.agent_id"></div>
+              <div class="agent-host" x-text="agent.agent_id"></div>
+            </div>
+          </div>
+
+          <span class="status-badge" :class="agent.status">
+            <span class="status-dot"></span>
+            <span x-text="statusText(agent.status)"></span>
+          </span>
+        </div>
+
+        <div class="agent-card-body">
+          <div class="monitor-panel">
+            <div class="panel-title">Resource Monitor</div>
+
+            <div class="metric-list">
+              <div class="metric-row">
+                <div class="metric-label">CPU</div>
+                <div class="bar">
+                  <div
+                    class="bar-fill"
+                    :class="metricClass(agent.cpu)"
+                    :style="`width: ${safePercent(agent.cpu)}%`">
+                  </div>
+                </div>
+                <div class="metric-value" x-text="formatPercent(agent.cpu)"></div>
+              </div>
+
+              <div class="metric-row">
+                <div class="metric-label">RAM</div>
+                <div class="bar">
+                  <div
+                    class="bar-fill"
+                    :class="metricClass(agent.ram)"
+                    :style="`width: ${safePercent(agent.ram)}%`">
+                  </div>
+                </div>
+                <div class="metric-value" x-text="formatPercent(agent.ram)"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="info-label">Host IP ที่ผูกไว้</div>
+              <div class="info-value mono"
+                   x-text="agent.host_ip || 'รอการ setup'"
+                   :class="{ 'is-unbound': !agent.host_ip }"></div>
+            </div>
+
+            <div class="info-item">
+              <div class="info-label">Last Seen</div>
+              <div class="info-value mono" x-text="formatTime(agent.last_seen)"></div>
+            </div>
+          </div>
+
+          <!-- มีคนส่งข้อมูลในนาม agent นี้จาก IP อื่นและถูกปฏิเสธไปแล้ว
+               ไม่มีปุ่ม "ยอมรับ IP นี้" โดยตั้งใจ — IP ผูกครั้งเดียวเปลี่ยนไม่ได้
+               ทางออกทางเดียวคือออก package ใหม่แล้วติดตั้งใหม่ที่เครื่องปลายทาง -->
+          <div class="ip-mismatch" x-show="agent.pending_ip" x-cloak>
+            <div class="ip-mismatch-head">IP ไม่ตรงกับที่ผูกไว้ — ข้อมูลถูกปฏิเสธ</div>
+            <div class="ip-mismatch-body">
+              มีการส่งข้อมูลในนาม <span class="mono" x-text="agent.agent_id"></span> จาก
+              <span class="mono strong" x-text="agent.pending_ip"></span>
+              (ผูกไว้กับ <span class="mono strong" x-text="agent.host_ip || '-'"></span>)
+              ล่าสุดเมื่อ <span x-text="formatTime(agent.pending_ip_at)"></span>
+            </div>
+            <div class="ip-mismatch-body">
+              <strong>ถ้าเครื่องนี้ย้าย network หรือ DHCP เปลี่ยน IP</strong> —
+              กด "สร้าง Download Link ใหม่" ในหน้ารายละเอียด แล้วติดตั้งใหม่ที่เครื่องปลายทาง
+              (IP จะถูกผูกใหม่ตอนนั้น)
+            </div>
+            <div class="ip-mismatch-body">
+              <strong>ถ้าไม่ได้ย้ายอะไรเลย</strong> — แปลว่ามีเครื่องอื่นถือ token ของ Client Server นี้อยู่
+              ควรกดสร้าง Download Link ใหม่เพื่อยกเลิก token ชุดเดิมทันที
+            </div>
+          </div>
+
+          <div class="agent-actions">
+            <button class="btn-detail" @click="openDetail(agent)">รายละเอียด</button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Create Agent Modal -->
+  <div class="modal-backdrop" x-show="showCreateModal" style="display: none;" @click.self="closeCreateModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">เพิ่ม Client Server ใหม่</div>
+        <button class="btn-close" @click="closeCreateModal()" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label class="form-label">Hostname <span class="required-mark">*</span></label>
+          <input class="form-input" x-model="form.hostname" placeholder="เช่น ubuntu-client-01" :disabled="creating" required>
+        </div>
+
+        <!-- ไม่มีช่องกรอก: ตอนสร้าง package ยังไม่รู้ว่าจะไปติดตั้งที่เครื่อง IP อะไร
+             IP ถูกผูกตอน agent ติดต่อเข้ามาครั้งแรก จาก interface ที่เลือกตอนรัน setup.sh -->
+        <div class="form-group">
+          <label class="form-label">Host IP</label>
+          <div class="form-static is-pending">รอการ setup</div>
+          <div class="form-hint">ผูกอัตโนมัติจาก interface ที่เลือกตอนติดตั้ง</div>
+        </div>
+
+        <div class="form-group full">
+          <label class="form-label">Description</label>
+          <input class="form-input" x-model="form.description" placeholder="เช่น Web Server ฝ่ายบัญชี" :disabled="creating">
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-secondary" @click="closeCreateModal()" :disabled="creating">ยกเลิก</button>
+        <button class="btn-primary" @click="createAgent()" :disabled="creating">
+          <span x-show="!creating">สร้าง Client Server Package</span>
+          <span x-show="creating">กำลังสร้าง...</span>
+        </button>
+      </div>
+
+      <div class="error-box" x-show="error" x-text="error"></div>
+    </div>
+  </div>
+
+  <!-- Create Agent Success Modal -->
+  <div class="modal-backdrop" x-show="showCreateSuccessModal" style="display: none;" @click.self="closeCreateSuccessModal()">
+    <div class="modal download-modal">
+      <div class="modal-header">
+        <div class="modal-title">Client Server Package สร้างสำเร็จ</div>
+        <button class="btn-close" @click="closeCreateSuccessModal()" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="success-result-box" x-show="downloadUrl">
+        <div class="button-row">
+          <button class="btn-copy-link" @click="copyDownloadCommand(downloadUrl)">
+            <span x-show="!copiedDownloadCommand">Copy Linux Command</span>
+            <span x-show="copiedDownloadCommand">Copied!</span>
+          </button>
+
+          <a class="btn-primary" :class="{'link-disabled': linkExpired()}" :href="downloadUrl" @click="linkExpired() && $event.preventDefault()">
+            ดาวน์โหลด Client Server Package (.zip)
+          </a>
+        </div>
+
+
+        <div class="copy-hint" x-show="copiedDownloadCommand">
+          คัดลอกคำสั่ง Linux แล้ว
+        </div>
+
+        <div class="link-countdown" :class="{'warn': !linkExpired() && linkRemaining <= 30, 'expired': linkExpired()}">
+          <span x-show="!linkExpired()">ลิงก์หมดอายุใน <span x-text="linkCountdownText()"></span> นาที</span>
+          <span x-show="linkExpired()">ลิงก์หมดอายุแล้ว — กด Regenerate Token ที่หน้า Client Server เพื่อสร้างลิงก์ใหม่</span>
+        </div>
+
+        <div class="important-read-box">
+          สำคัญ: ลิงก์ดาวน์โหลดมีอายุ 2 นาที และดาวน์โหลดได้ครั้งเดียวเท่านั้น
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Agent Modal -->
+  <div class="modal-backdrop" x-show="showEditModal" style="display: none;" @click.self="closeEditModal()">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">แก้ไขข้อมูล Client Server</div>
+        <button class="btn-close" @click="closeEditModal()" aria-label="ปิด">×</button>
+      </div>
+
+      <template x-if="editAgentId">
+        <div>
+      
+          <div class="form-grid form-grid-spaced">
+            <div class="form-group">
+              <label class="form-label">Hostname <span class="required-mark">*</span></label>
+              <input class="form-input" x-model="editForm.hostname" placeholder="เช่น ubuntu-client-01" :disabled="savingEdit" required>
+            </div>
+
+            <!-- แสดงอย่างเดียว แก้ไม่ได้: ถ้าแก้ตรงนี้ได้ ใครที่เข้าถึงหน้า Agents ได้ก็ย้าย
+                 binding ไปหา IP ไหนก็ได้ = กลไกทั้งหมดไร้ความหมาย -->
+            <!-- แสดงอย่างเดียว แก้ไม่ได้: ถ้าแก้ตรงนี้ได้ ใครที่เข้าถึงหน้า Agents ได้ก็ย้าย
+                 binding ไปหา IP ไหนก็ได้ = กลไกทั้งหมดไร้ความหมาย -->
+            <div class="form-group">
+              <label class="form-label">Host IP ที่ผูกไว้</label>
+              <div class="form-static" :class="editForm.host_ip ? 'mono' : 'is-pending'"
+                   x-text="editForm.host_ip || 'รอการ setup'"></div>
+              <div class="form-hint">หากต้องการแก้ไขต้อง Regenerate Token ใหม่</div>
+            </div>
+
+            <div class="form-group full">
+              <label class="form-label">Description</label>
+              <input class="form-input" x-model="editForm.description" placeholder="เช่น Web Server ฝ่ายบัญชี" :disabled="savingEdit">
+            </div>
+
+            <div class="form-group full">
+              <label class="form-label">Active</label>
+              <select class="form-input" x-model="editForm.is_active" :disabled="savingEdit">
+                <option value="true">ใช้งาน</option>
+                <option value="false">ปิดใช้งาน</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button class="btn-secondary" @click="closeEditModal()" :disabled="savingEdit">ยกเลิก</button>
+            <button class="btn-primary" @click="saveEditAgent()" :disabled="savingEdit">
+              <span x-show="!savingEdit">บันทึก</span>
+              <span x-show="savingEdit">กำลังบันทึก...</span>
+            </button>
+          </div>
+
+          <div class="error-box" x-show="editError" x-text="editError"></div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Regen Download Result Modal -->
+  <div class="modal-backdrop" x-show="showRegenModal" style="display: none;" @click.self="closeRegenModal()">
+    <div class="modal download-modal">
+      <div class="modal-header">
+        <div class="modal-title">Download Link ใหม่</div>
+        <button class="btn-close" @click="closeRegenModal()" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="success-result-box" x-show="regenDownloadUrl">
+        <div class="button-row">
+          <button class="btn-copy-link" @click="copyRegenDownloadCommand(regenDownloadUrl)">
+            <span x-show="!copiedRegenDownloadCommand">Copy Linux Command</span>
+            <span x-show="copiedRegenDownloadCommand">Copied!</span>
+          </button>
+
+          <a class="btn-primary" :class="{'link-disabled': linkExpired()}" :href="regenDownloadUrl" @click="linkExpired() && $event.preventDefault()">
+            ดาวน์โหลด Client Server Package ใหม่ (.zip)
+          </a>
+        </div>
+
+        <div class="copy-hint" x-show="copiedRegenDownloadCommand">
+          คัดลอกคำสั่ง Linux ใหม่แล้ว
+        </div>
+
+        <div class="link-countdown" :class="{'warn': !linkExpired() && linkRemaining <= 30, 'expired': linkExpired()}">
+          <span x-show="!linkExpired()">ลิงก์หมดอายุใน <span x-text="linkCountdownText()"></span> นาที</span>
+          <span x-show="linkExpired()">ลิงก์หมดอายุแล้ว — กด Regenerate Token อีกครั้งเพื่อสร้างลิงก์ใหม่</span>
+        </div>
+
+        <div class="important-read-box">
+          สำคัญ: ลิงก์ใหม่นี้มีอายุ 2 นาที และดาวน์โหลดได้ครั้งเดียวเท่านั้น
+        </div>
+      </div>
+
+      <div class="error-box" x-show="regenError" x-text="regenError"></div>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div class="modal-backdrop" x-show="showDetailModal" style="display: none;" @click.self="showDetailModal = false">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">รายละเอียด Client Server</div>
+        <button class="btn-close" @click="showDetailModal = false" aria-label="ปิด">×</button>
+      </div>
+
+      <template x-if="selectedAgent">
+        <div>
+          <div class="detail-grid">
+            <div class="detail-item">
+              <label>Hostname</label>
+              <span x-text="selectedAgent.hostname || '-'"></span>
+            </div>
+
+            <div class="detail-item">
+              <label>Status</label>
+              <span x-text="statusText(selectedAgent.status)"></span>
+            </div>
+
+
+            <div class="detail-item">
+              <label>Client Server ID</label>
+              <span x-text="selectedAgent.agent_id"></span>
+            </div>
+
+            <div class="detail-item">
+              <label>Host IP ที่ผูกไว้</label>
+              <span x-text="selectedAgent.host_ip || 'รอการ setup'"></span>
+            </div>
+
+            <div class="detail-item">
+              <label>Interface ที่ Client Server ใช้</label>
+              <span x-text="selectedAgent.ip_interface || '-'"></span>
+            </div>
+
+            <div class="detail-item" x-show="selectedAgent.pending_ip">
+              <label>IP ที่ถูกปฏิเสธล่าสุด</label>
+              <span>
+                <span x-text="selectedAgent.pending_ip"></span>
+                (<span x-text="formatTime(selectedAgent.pending_ip_at)"></span>)
+              </span>
+            </div>
+
+            <div class="detail-item">
+              <label>Description</label>
+              <span x-text="selectedAgent.description || '-'"></span>
+            </div>
+
+            <div class="detail-item">
+              <label>Last Seen</label>
+              <span x-text="formatTime(selectedAgent.last_seen)"></span>
+            </div>
+
+            <div class="detail-item">
+              <label>Created At</label>
+              <span x-text="formatTime(selectedAgent.created_at)"></span>
+            </div>
+
+            <div class="detail-item">
+              <label>Active</label>
+              <div
+                class="active-badge"
+                :class="isActive(selectedAgent.is_active) ? 'enabled' : 'disabled'">
+                <span class="active-dot"></span>
+                <span x-text="isActive(selectedAgent.is_active) ? 'ใช้งาน' : 'ปิดใช้งาน'"></span>
+              </div>
+            </div>
+          </div>
+
+          
+
+          {% if user.role == 'admin' %}
+          <div class="agent-actions detail-actions">
+            <button class="btn-edit-detail" @click="openEditModal(selectedAgent)">แก้ไขข้อมูล</button>
+            <button class="btn-regen-detail" @click="regenDownload(selectedAgent)">Regenerate Token</button>
+            <button class="btn-delete-detail" @click="deleteAgent(selectedAgent)">ลบ Client Server</button>
+          </div>
+          {% endif %}
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Install Guide Modal -->
+  <div class="modal-backdrop" x-show="showGuideModal" style="display: none;" @click.self="showGuideModal = false">
+    <div class="modal guide-modal">
+      <div class="modal-header">
+        <div class="modal-title">คู่มือการติดตั้ง Client Server</div>
+        <button class="btn-close" @click="showGuideModal = false" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="guide-body">
+
+        <div class="guide-step">
+          <div class="guide-step-num">1</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">สร้าง Client Server แล้วกด Copy Linux Command หรือ Download</div>
+            <div class="guide-step-text">
+              <b>ลิงก์ใช้ได้ครั้งเดียว หมดอายุใน 2 นาที</b> — หมดอายุแล้วกด Regenerate Token
+            </div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">2</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">โหลดและแตก zip บนเครื่อง Client Server</div>
+            <div class="guide-code">sudo mkdir -p /opt/securelog-agent
+wget --no-check-certificate -O agent_package.zip "&lt;ลิงก์ที่ copy มา&gt;"
+sudo unzip agent_package.zip -d /opt/securelog-agent</div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">3</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">รัน setup.sh (เป็น root, รันซ้ำได้)</div>
+            <div class="guide-code">cd /opt/securelog-agent
+sudo ./setup.sh</div>
+          </div>
+        </div>
+
+        <div class="guide-step">
+          <div class="guide-step-num">4</div>
+          <div class="guide-step-body">
+            <div class="guide-step-title">เช็คผล — ต้อง active ทั้งคู่ และขึ้น Online ใน ~15 วินาที</div>
+            <div class="guide-code">systemctl status securelog-agent filebeat
+journalctl -u securelog-agent -f</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/agents.js') }}"></script>
+{% endblock %}

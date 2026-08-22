@@ -1,0 +1,9 @@
+[Unit]
+Description=SecureLog - all services
+# Wants (ไม่ใช่ Requires) = ตัวไหนพังตัวเดียว ไม่ลากทั้งกลุ่มล้มตาม
+# ไม่รวม centralredis.service — เป็น infrastructure แยกแบบ PostgreSQL
+# (restart ทั้งกลุ่มหลังแก้โค้ด ต้องไม่ลาก Redis/คิว log/connection agent ไปด้วย)
+Wants=securelog-web.service securelog-normalizer.service securelog-auth-detector.service securelog-web-detector.service securelog-firewall-detector.service securelog-agent-monitor.service securelog-blacklist-sweeper.service securelog-line-notifier.service securelog-line-webhook.service
+
+[Install]
+WantedBy=multi-user.target

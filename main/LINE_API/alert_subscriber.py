@@ -1,0 +1,145 @@
+"""
+Worker: subscribe Redis channel `security_alerts_stream` (ตัวเดียวกับที่ detector
+publish alert เข้ามา และ dashboard SSE ฟังอยู่) แล้ว push แจ้งเตือนไปยังผู้รับ LINE
+ที่แอดมิน "อนุมัติแล้ว" (status=approved) เท่านั้น
+
+รันเป็น process แยกเหมือน detector ตัวอื่น:
+    cd main && python -m LINE_API.alert_subscriber
+
+ดีไซน์เดียวกับ detector: sync redis pub/sub loop + event loop ถาวรสำหรับ async DB
+"""
+
+import asyncio
+import json
+import time
+
+import redis
+
+from alerts import SECURITY_ALERTS_STREAM_CHANNEL
+from database.connection import AsyncSessionLocal
+from database.crud import get_approved_line_user_ids
+from redis_client import get_redis
+
+from settings_cache import ensure_loaded
+
+from LINE_API import config, line_client
+from LINE_API.alert_formatter import format_alert
+
+
+async def _approved_user_ids() -> list[str]:
+    async with AsyncSessionLocal() as db:
+        return await get_approved_line_user_ids(db)
+
+
+def _is_new_alert(r: redis.Redis, alert_id) -> bool:
+    """
+    True = alert แถวนี้ (id นี้) ยังไม่เคยส่ง -> ส่งได้
+    ใช้ SET NX: ครั้งแรกของ id เซ็ตสำเร็จ (True); merge ซ้ำ id เดิม key มีอยู่แล้ว (False=ข้าม)
+    ไม่มี id (เช่น event ทดสอบ) ให้ส่งเสมอ
+    """
+    if alert_id is None:
+        return True
+    try:
+        key = f"{config.NOTIFY_DEDUP_KEY_PREFIX}{alert_id}"
+        # nx=True เซ็ตเฉพาะตอน key ยังไม่มี, ex=TTL ไว้ล้าง key อัตโนมัติ
+        return bool(r.set(key, "1", nx=True, ex=config.NOTIFY_DEDUP_TTL_SEC))
+    except Exception as e:
+        # fail-open: ถ้า Redis error ให้ส่ง (ยอมส่งซ้ำ ดีกว่าพลาด alert)
+        print(f"[LINE-NOTIFY] dedup check error (ส่งต่อ): {e}")
+        return True
+
+
+def handle_alert(alert: dict, loop: asyncio.AbstractEventLoop, r: redis.Redis) -> None:
+    label = alert.get("attack_type", "-")
+
+    # กันสแปม: alert แถวเดิมที่โจมตีซ้ำ (merge, id เดิม) ไม่ส่งซ้ำ
+    if not _is_new_alert(r, alert.get("id")):
+        print(f"[LINE-NOTIFY] ข้าม '{label}' (alert id={alert.get('id')} ส่งไปแล้ว)")
+        return
+
+    # อ่านค่า LINE ล่าสุดเข้า cache ก่อนใช้ — worker นี้เป็น process แยกและรันยาว
+    # ถ้าไม่เติม แอดมินเปลี่ยน token ในหน้า Settings แล้ว worker จะยังใช้ค่าเก่าจนกว่าจะ restart
+    loop.run_until_complete(ensure_loaded())
+
+    if not config.is_configured():
+        print("[LINE-NOTIFY] ยังไม่ได้ตั้งค่า LINE (หน้า System Settings) — ข้าม")
+        return
+
+    user_ids = loop.run_until_complete(_approved_user_ids())
+
+    if not user_ids:
+        print("[LINE-NOTIFY] ไม่มีผู้รับที่อนุมัติแล้ว — ข้าม")
+        return
+
+    text = format_alert(alert)
+    ok = line_client.multicast_text(user_ids, text)
+    print(f"[LINE-NOTIFY] ส่ง '{label}' ไป {len(user_ids)} คน: {'ok' if ok else 'FAIL'}")
+
+
+async def _configured_now() -> bool:
+    await ensure_loaded()
+    return config.is_configured()
+
+
+def start_line_notifier() -> None:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # เตือนตอน start เฉย ๆ ไม่ต้อง exit — แอดมินตั้งค่าทีหลังจากหน้า System Settings ได้
+    # แล้ว handle_alert จะเห็นค่าใหม่เอง (เช็คซ้ำทุกครั้งที่มี alert เข้ามา)
+    if not loop.run_until_complete(_configured_now()):
+        print("[LINE-NOTIFY] ยังไม่ได้ตั้งค่า LINE — ตั้งได้ที่หน้า System Settings แล้วมีผลทันที")
+
+    print("[LINE-NOTIFY] started")
+    print(f"[LINE-NOTIFY] subscribe channel: {SECURITY_ALERTS_STREAM_CHANNEL}")
+
+    while True:
+        pubsub = None
+        try:
+            r = get_redis()
+            pubsub = r.pubsub(ignore_subscribe_messages=True)
+            pubsub.subscribe(SECURITY_ALERTS_STREAM_CHANNEL)
+
+            for message in pubsub.listen():
+                if message.get("type") != "message":
+                    continue
+
+                try:
+                    alert = json.loads(message["data"])
+                except (ValueError, TypeError) as e:
+                    print(f"[LINE-NOTIFY] parse alert ไม่ได้: {e}")
+                    continue
+
+                try:
+                    handle_alert(alert, loop, r)
+                except Exception as e:
+                    print(f"[LINE-NOTIFY] ส่งแจ้งเตือนล้มเหลว: {e}")
+
+        except KeyboardInterrupt:
+            print("\n[LINE-NOTIFY] stopped")
+            break
+
+        except redis.exceptions.ConnectionError as e:
+            print(f"[LINE-NOTIFY] Redis connection error: {e}")
+            time.sleep(3)
+
+        except Exception as e:
+            print(f"[LINE-NOTIFY] error: {e}")
+            time.sleep(1)
+
+        finally:
+            # ปิดเฉพาะ pubsub (คืน connection เข้า pool) — client กลางห้ามปิด
+            try:
+                if pubsub:
+                    pubsub.close()
+            except Exception:
+                pass
+
+    try:
+        loop.close()
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    start_line_notifier()

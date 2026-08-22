@@ -1,0 +1,119 @@
+# SecureLog Agent — Filebeat config template
+# setup.sh จะแทนค่า placeholder (ขีดล่างคู่) ทั้งหมดแล้วติดตั้งเป็น /etc/filebeat/filebeat.yml
+# (อย่าแก้ /etc/filebeat/filebeat.yml ตรง ๆ — แก้ template นี้/ค่าใน setup.sh แล้วรัน setup.sh ใหม่)
+#
+# หมายเหตุ: input ที่ path ไม่มีไฟล์ (เช่นเครื่องไม่มี apache) ไม่ error —
+# filebeat แค่ยังไม่เจอไฟล์ และจะเก็บให้เองอัตโนมัติถ้าไฟล์โผล่มาทีหลัง
+
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/auth.log
+  fields:
+    log_type: auth
+  fields_under_root: true
+  tail_files: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/apache2/access.log
+  #  - /var/log/apache2/apache_ssl_access.log
+  fields:
+    log_type: apache_access
+    service_name: apache2
+    web_engine: apache
+  fields_under_root: true
+  tail_files: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/nginx/access.log
+  # - /var/log/nginx/nginx_ssl_access.log
+  fields:
+    log_type: nginx_access
+    service_name: nginx
+    web_engine: nginx
+  fields_under_root: true
+  tail_files: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/tomcat10/localhost_access_log.*.txt
+  fields:
+    log_type: tomcat_access
+    service_name: tomcat10
+    web_engine: tomcat
+  fields_under_root: true
+  tail_files: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/ufw.log
+  fields:
+    log_type: ufw
+    service_name: ufw
+  fields_under_root: true
+  tail_files: true
+
+- type: log
+  enabled: true
+  paths:
+    - /var/log/iptables.log
+  fields:
+    log_type: iptables
+    service_name: iptables
+  fields_under_root: true
+  tail_files: true
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+
+# ======================= Elasticsearch template setting =======================
+
+setup.template.settings:
+  index.number_of_shards: 1
+
+queue.mem:
+  events: 64
+  flush.min_events: 1
+  flush.timeout: 0s
+
+output.redis:
+  hosts: ["__CENTRAL_HOST__:__CENTRAL_REDIS_PORT__"]
+  db: 0
+  timeout: 5
+  key: "raw_logs_queue"
+  data_type: "list"
+
+  # ⚠️ ห้ามใส่ username ที่นี่ — output.redis ของ Beats "ไม่รองรับ" การยืนยันตัวตนแบบ
+  # ACL user (มีแต่ password) ต่อให้ใส่ username ไปก็ถูกกลืนหายไปเฉย ๆ ไม่มี error ให้เห็น
+  # Filebeat จะส่ง AUTH <password> อย่างเดียว ซึ่ง Redis ตีเป็นบัญชี `default` เสมอ
+  #
+  # ฝั่ง central จึงต้องเปิดบัญชี `default` ไว้ (จำกัดสิทธิ์เท่าที่จำเป็น) ใน redis/users.acl:
+  #   user default on ><password> -@all +ping +info +select +rpush +lpush ~raw_logs_queue resetchannels
+  #   (+info จำเป็น เพราะ Filebeat สั่ง INFO ตอนเชื่อมต่อ ไม่มีจะได้ NOPERM แล้ววน reconnect)
+  #
+  # ส่วน agent_core.py เป็น redis-py ส่ง username ได้ จึงยังใช้บัญชี agent_node ตามเดิม
+  # (ค่า REDIS_USERNAME ใน site.conf ยังจำเป็นสำหรับ agent_core — อย่าลบทิ้ง)
+  password: "__REDIS_PASSWORD__"
+  ssl.enabled: true
+  ssl.certificate_authorities: ["__INSTALL_DIR__/cert/__CA_FILE__"]
+  ssl.certificate: "__INSTALL_DIR__/cert/__CERT_FILE__"
+  ssl.key: "__INSTALL_DIR__/cert/__KEY_FILE__"
+  ssl.verification_mode: "full"
+  bulk_max_size: 1
+
+processors:
+  - add_fields:
+      target: host
+      fields:
+        id: "__AGENT_ID__"
+        ip: "__HOST_IP__"
+        SECRET_TOKEN: "__SECRET_TOKEN__"

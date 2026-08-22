@@ -1,0 +1,3 @@
+# dependency ของ agent_core.py — ที่เหลือเป็น stdlib ทั้งหมด
+redis==8.0.0
+psutil>=5.9

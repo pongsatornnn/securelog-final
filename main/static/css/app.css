@@ -1,0 +1,2008 @@
+/* SecureLog — สไตล์ที่ใช้ร่วมกันทุกหน้า (โหลดก่อน <style> ของแต่ละหน้าเสมอ
+   หน้าไหนต้องการค่าต่างจากนี้ให้ override ใน {% block head %} ของหน้านั้นได้เลย)
+
+   ธีม: มืด แนวเดียวกับ Wazuh/OpenSearch Dashboards (EUI) — พื้นเข้ม, มุมโค้ง 4px,
+   ตัวอักษรเล็กและตารางแน่น, เส้นขอบบางเป็นตัวแบ่งพื้นที่แทนเงา
+
+   ชื่อ token เดิมทั้งหมด (--primary, --card-bg, --bg-main, --border-color, ...) ถูกเก็บไว้
+   ครบและแค่เปลี่ยนค่าเป็นโทนมืด — CSS รายหน้าที่อ้างถึง token เหล่านี้จึงเปลี่ยนตามเองทันที
+   โดยไม่ต้องแก้ */
+
+/* ─── Design token ─── */
+
+:root {
+  /* พื้นผิว ไล่จากลึกสุดไปตื้นสุด */
+  --bg-main: #141519;        /* พื้นนอกสุดของหน้า */
+  --card-bg: #1d1e24;        /* การ์ด/พาเนล/แถวตาราง */
+  --bg-raised: #25262e;      /* หัวตาราง, ช่องกรอก, แถวที่ชี้เมาส์ */
+  --bg-nav: #101116;         /* แถบเมนูซ้าย + แถบบน */
+
+  --border-color: #343741;
+  --border-strong: #535966;
+
+  --text-main: #dfe5ef;
+  --text-muted: #98a2b3;
+  --text-dim: #6a7280;
+
+  --primary: #36a2ef;
+  --primary-soft: rgba(54, 162, 239, 0.15);
+  --primary-hover: #57b1f2;
+
+  /* โทนสีสถานะ — พื้นใช้สีโปร่งทับพื้นเข้ม ไม่ใช่สีพาสเทลทึบแบบธีมสว่าง */
+  --danger: #f86b63;
+  --danger-soft: rgba(248, 107, 99, 0.13);
+  --danger-border: rgba(248, 107, 99, 0.42);
+  --success: #7dded8;
+  --success-soft: rgba(125, 222, 216, 0.13);
+  --success-border: rgba(125, 222, 216, 0.42);
+  --warning: #f3d371;
+  --warning-soft: rgba(243, 211, 113, 0.13);
+  --warning-border: rgba(243, 211, 113, 0.42);
+
+  /* ระดับความรุนแรง — ไล่เฉดจากเทา→เหลือง→ส้ม→แดง ให้อ่านลำดับได้จากสีตรง ๆ */
+  --sev-low: #98a2b3;
+  --sev-medium: #f3d371;
+  --sev-high: #e7924c;
+  --sev-critical: #f86b63;
+
+  /* ชุดสีกราฟ (โทนเดียวกับ palette ของ EUI ที่ Wazuh ใช้) — แยกเฉดกันได้แม้ตาบอดสี */
+  --vis-0: #6092c0;
+  --vis-1: #d36086;
+  --vis-2: #9170b8;
+  --vis-3: #ca8eae;
+  --vis-4: #d6bf57;
+  --vis-5: #b9a888;
+  --vis-6: #da8b45;
+
+  --radius: 4px;             /* ปุ่ม/ช่องกรอก/ป้าย */
+  --radius-lg: 6px;          /* การ์ด/พาเนล/modal */
+
+  --rail-width: 232px;       /* เมนูซ้ายตอนกาง */
+  --rail-collapsed: 48px;    /* ตอนย่อเหลือแต่ไอคอน */
+  --appbar-height: 48px;
+
+  /* ความกว้าง modal — หน้าไหนต้องการกว้าง/แคบกว่านี้ตั้ง --modal-width ทับได้ */
+  --modal-width: 560px;
+}
+
+/* ─── Layout: rail ซ้าย / แถบบน / breadcrumb / page ─── */
+
+/* Alpine โหลดแบบ defer — ก่อน init ต้องซ่อน element ที่ x-show ควรซ่อนไว้ (กัน modal แว้บ) */
+
+[x-cloak] {
+  display: none !important;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-main);
+  min-height: 100vh;
+  color: var(--text-main);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ── เมนูซ้าย (rail) ── */
+
+.sidebar {
+  width: var(--rail-width);
+  background: var(--bg-nav);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 60;
+  transition: width 0.15s ease;
+  overflow: hidden;              /* ตอนย่อ ข้อความที่ยังอยู่ใน DOM ต้องไม่ทะลุออกมา */
+}
+
+.sidebar-brand {
+  height: var(--appbar-height);
+  flex-shrink: 0;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.brand-mark {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  color: var(--primary);
+}
+
+/* ไอคอนทั้งหมดเป็น SVG เส้น (ไม่มีสีในตัว) — รับสีจาก currentColor ของตัวที่ครอบอยู่
+   จึงเปลี่ยนตามสถานะ hover/active ของเมนูได้เองโดยไม่ต้องทำไอคอนหลายชุด */
+.nav-ico,
+.brand-mark {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-brand h1 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+}
+
+.sidebar-brand p {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 1px;
+}
+
+.sidebar-menu {
+  padding: 8px 0 16px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* หัวข้อกลุ่มเมนู (Wazuh จัดโมดูลเป็นหมวด ไม่ใช่รายการยาวแถวเดียว) */
+.nav-group {
+  padding: 14px 14px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.sidebar-menu a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--text-muted);
+  padding: 7px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-left: 2px solid transparent;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.sidebar-menu a:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+.sidebar-menu a.active {
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.nav-ico {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+
+.sidebar-menu a.active .nav-ico {
+  color: var(--primary);
+  opacity: 1;
+}
+
+.nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-footer {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* ── สถานะย่อเหลือแต่ไอคอน ── */
+
+.layout.is-collapsed .sidebar {
+  width: var(--rail-collapsed);
+}
+
+.layout.is-collapsed .main {
+  margin-left: var(--rail-collapsed);
+}
+
+.layout.is-collapsed .nav-label,
+.layout.is-collapsed .nav-group,
+.layout.is-collapsed .sidebar-brand .brand-text,
+.layout.is-collapsed .sidebar-footer,
+.layout.is-collapsed .sidebar-menu .nav-badge {
+  display: none;
+}
+
+.layout.is-collapsed .sidebar-brand {
+  padding: 0;
+  justify-content: center;
+}
+
+.layout.is-collapsed .sidebar-menu a {
+  padding: 9px 0;
+  justify-content: center;
+  border-left-width: 2px;
+}
+
+/* ── แถบบน ── */
+
+.main {
+  margin-left: var(--rail-width);
+  flex: 1;
+
+  /* flex item มีค่าเริ่มต้น min-width:auto = ห้ามแคบกว่าความกว้างขั้นต่ำของเนื้อหาข้างใน
+     ตารางที่กว้างกว่าจอจึงดัน .main ให้ยืดตาม แล้ว "ทั้งหน้า" เลื่อนซ้ายขวาแทนที่จะให้
+     .table-wrap เลื่อนในกรอบตัวเอง (topbar/sidebar หลุดขอบตามไปด้วย) — ต้องเป็น 0 */
+  min-width: 0;
+
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: margin-left 0.15s ease;
+}
+
+.topbar {
+  height: var(--appbar-height);
+  flex-shrink: 0;
+  background: var(--bg-nav);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.topbar-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ปุ่มย่อ/กางเมนู (จอใหญ่) — จอเล็กใช้ .nav-toggle เปิดเมนูแบบ off-canvas แทน */
+.rail-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.rail-toggle:hover {
+  background: var(--bg-raised);
+  color: var(--text-main);
+}
+
+.nav-user {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.nav-user strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.btn-logout {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 5px 11px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-logout:hover {
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* ── breadcrumb ── */
+
+.breadcrumbs {
+  flex-shrink: 0;
+  padding: 9px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--card-bg);
+  font-size: 12.5px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.breadcrumbs .crumb-sep {
+  color: var(--border-strong);
+}
+
+.breadcrumbs .crumb-current {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.page-content {
+  padding: 20px;
+  flex: 1;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+  margin-bottom: 3px;
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .page-content {
+    padding: 16px;
+  }
+}
+
+/* ─── Component ที่ใช้ร่วมกันหลายหน้า ─── */
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* base ของปุ่มเคยถูกนิยามซ้ำในทุก template (เนื้อเหมือนกันเป๊ะ) เหลือแต่ :hover/:disabled
+   ที่อยู่ในไฟล์นี้ — ย้าย base มารวมด้วยเพื่อไม่ให้หน้าใหม่ได้ hover แต่ไม่ได้ตัวปุ่ม */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0b1a26;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+}
+
+.btn-secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.btn-secondary:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+/* ─── ตาราง (หน้าที่มีตารางทุกหน้าใช้หน้าตาชุดนี้) ─── */
+
+.table-wrap {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;                /* ให้มุมตารางโค้งตามการ์ด */
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+thead th {
+  padding: 9px 14px;
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+td {
+  padding: 9px 14px;
+  color: var(--text-main);
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: var(--bg-raised);
+}
+
+/* ─── ตารางที่พับเป็นการ์ดบนจอมือถือ (หน้า Detection Rules / Detection Signatures) ───
+   ตารางสองหน้านี้ตรึงความกว้างไว้ 650–860px เพื่อให้คอลัมน์ของทุกหมวดตรงกัน บนจอ ~390px
+   จึงต้องเลื่อนซ้ายขวาตลอดเวลาจนอ่านแทบไม่ได้ — ต่ำกว่า 640px เปลี่ยนทุกแถวเป็นการ์ดใบเดียว
+   โดยเอาชื่อคอลัมน์จาก data-label ของ td มาเป็นป้ายกำกับหน้าค่าแทนหัวตารางที่ซ่อนไป
+
+   td ที่เป็นหัวการ์ด (ชื่อ rule / pattern) ใส่ .stack-head และแถวปุ่มใส่ .stack-full
+   เพื่อให้กินเต็มความกว้างและไม่มีป้ายกำกับ */
+@media (max-width: 640px) {
+  .stack-table {
+    display: block;
+    min-width: 0;
+  }
+
+  .stack-table colgroup,
+  .stack-table thead {
+    display: none;
+  }
+
+  .stack-table tbody,
+  .stack-table tr,
+  .stack-table td {
+    display: block;
+    width: auto;
+  }
+
+  .stack-table tr {
+    padding: 12px 14px;
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .stack-table tr:last-child {
+    border-bottom: none;
+  }
+
+  .stack-table td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 26px;
+    padding: 0;
+    border: none;
+    background: none;
+    text-align: right;
+  }
+
+  .stack-table td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .stack-table td.stack-head,
+  .stack-table td.stack-full {
+    display: block;
+    text-align: left;
+  }
+
+  .stack-table td.stack-head::before,
+  .stack-table td.stack-full::before {
+    content: none;
+  }
+
+  .stack-table td.stack-head {
+    margin-bottom: 8px;
+  }
+
+  .stack-table td.stack-full {
+    margin-top: 10px;
+  }
+
+  /* ปุ่มในการ์ดกินเต็มความกว้าง — นิ้วกดง่ายกว่าปุ่มเล็ก ๆ ชิดขวาแบบในตาราง
+     (> เอาไว้กันปุ่มที่อยู่ใน .row-actions ด้านล่างซึ่งต้องแบ่งพื้นที่กันเอง) */
+  .stack-table td.stack-full > .btn-edit {
+    width: 100%;
+    padding: 8px 12px;
+  }
+
+  /* หลายปุ่มในช่องเดียว: แบ่งความกว้างเท่า ๆ กัน ปุ่มไหนไม่พอที่ก็ตกลงบรรทัดใหม่ทั้งปุ่ม
+     ไม่ใช่ตัดข้อความขึ้นบรรทัดใหม่กลางปุ่ม */
+  .stack-table td.stack-full .row-actions {
+    flex-wrap: wrap;
+  }
+
+  .stack-table td.stack-full .row-actions > button {
+    flex: 1 1 auto;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+}
+
+.ip-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.modal-body {
+  padding: 0;
+}
+
+.bulk-row-head, .bulk-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 46px;
+  column-gap: 16px;
+}
+
+.bulk-row-head {
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.bulk-row {
+  margin-bottom: 14px;
+  align-items: start;
+}
+
+.bulk-field {
+  min-height: 58px;
+}
+
+.bulk-action {
+  min-height: 58px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.required-mark {
+  color: var(--danger);
+}
+
+.form-input {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  background: var(--bg-raised);
+  border-radius: var(--radius);
+  padding: 8px 11px;
+  font-size: 13px;
+  color: var(--text-main);
+  outline: none;
+  transition: 0.12s ease;
+}
+
+.form-input::placeholder {
+  color: var(--text-dim);
+}
+
+.form-input:focus {
+  border-color: var(--primary);
+  background: var(--bg-main);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.form-input.is-invalid {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.btn-row-remove {
+  width: 46px;
+  height: 40px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+}
+
+.btn-row-remove:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #1d1e24;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 20px;
+}
+
+.btn-add-row {
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.12s ease;
+}
+
+.btn-add-row:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-add-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ผลลัพธ์การเพิ่ม IP (Blacklist/Whitelist) — แสดงเป็นรายบรรทัดต่อ IP
+   เดิมเป็นกล่องสรุปตัวเลข 4 ช่อง (เพิ่มสำเร็จ/ซ้ำ/whitelist/ไม่ถูกต้อง) แล้วค่อยแยกลิสต์ตามหมวด
+   ทำให้ต้องกวาดตาหลายจุดกว่าจะรู้ว่า IP ที่พิมพ์ไปตัวไหนไม่เข้าและเพราะอะไร
+   ตอนนี้ยุบเหลือลิสต์เดียว 1 บรรทัด = 1 IP อ่านจบในแถวเดียว ไม่มีกรอบครอบ */
+.result-lines {
+  margin-top: 16px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 4px;
+}
+
+.result-line {
+  display: grid;
+  grid-template-columns: 14px minmax(0, max-content) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 7px 2px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.result-line + .result-line {
+  border-top: 1px solid var(--border-color);
+}
+
+.result-mark {
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.result-line.is-ok .result-mark {
+  color: var(--success);
+}
+
+.result-line.is-fail .result-mark {
+  color: var(--danger);
+}
+
+.result-ip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+.result-reason {
+  color: var(--text-muted);
+}
+
+/* จอแคบ: ให้เหตุผลตกลงมาบรรทัดใหม่ใต้ IP แทนที่จะบีบจนอ่านไม่ออก */
+@media (max-width: 560px) {
+  .result-line {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .result-reason {
+    grid-column: 2;
+  }
+}
+
+.badge-active {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.badge-inactive {
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.btn-edit {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-edit:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.category-block {
+  margin-bottom: 22px;
+}
+
+.category-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  padding: 2px 9px;
+}
+
+/* ป้ายระดับความรุนแรง — พื้นโปร่ง + ตัวอักษรสีเดียวกับขอบ (อ่านง่ายบนพื้นเข้ม) */
+.badge-LOW {
+  background: rgba(152, 162, 179, 0.14);
+  color: var(--sev-low);
+  border: 1px solid rgba(152, 162, 179, 0.45);
+}
+
+.badge-MEDIUM {
+  background: var(--warning-soft);
+  color: var(--sev-medium);
+  border: 1px solid var(--warning-border);
+}
+
+.badge-HIGH {
+  background: rgba(231, 146, 76, 0.14);
+  color: var(--sev-high);
+  border: 1px solid rgba(231, 146, 76, 0.45);
+}
+
+.badge-CRITICAL {
+  background: var(--danger-soft);
+  color: var(--sev-critical);
+  border: 1px solid var(--danger-border);
+}
+
+/* ปุ่มในคอลัมน์ Action — จัดกึ่งกลางให้ตรงกับหัวคอลัมน์ Action ที่จัดกลางเหมือนกันทุกหน้า
+   (เดิมชิดขวา ทำให้ปุ่มกับหัวคอลัมน์ของตัวเองไม่ตรงกันในตารางที่คอลัมน์นี้กว้าง) */
+.row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.btn-mini {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn-mini:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.btn-mini.danger:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-mini:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ─── มือถือ: rail เป็น off-canvas + ปุ่ม hamburger ───
+   เดิม sidebar เป็น position:fixed และ .main มี margin-left เท่ากันทุกขนาดจอ
+   จอมือถือจึงถูกเมนูกินพื้นที่ไปเกือบครึ่งและไม่มีทางปิด */
+
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.nav-toggle:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.nav-backdrop {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    width: 260px;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    z-index: 120;
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  /* จอเล็กใช้ off-canvas อย่างเดียว — สถานะย่อของจอใหญ่ต้องไม่มีผลที่นี่
+     (ไม่งั้นเปิดเมนูมาแล้วได้ rail แคบ ๆ ที่ไม่มีข้อความ) */
+  .layout.is-collapsed .sidebar {
+    width: 260px;
+  }
+
+  .layout.is-collapsed .nav-label,
+  .layout.is-collapsed .nav-group,
+  .layout.is-collapsed .sidebar-brand .brand-text,
+  .layout.is-collapsed .sidebar-footer,
+  .layout.is-collapsed .sidebar-menu .nav-badge {
+    display: revert;
+  }
+
+  .layout.is-collapsed .sidebar-brand {
+    padding: 0 12px;
+    justify-content: flex-start;
+  }
+
+  .layout.is-collapsed .sidebar-menu a {
+    padding: 7px 14px;
+    justify-content: flex-start;
+  }
+
+  .main,
+  .layout.is-collapsed .main {
+    margin-left: 0;
+  }
+
+  .rail-toggle {
+    display: none;
+  }
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 110;
+  }
+
+  .topbar {
+    padding: 0 12px;
+  }
+
+  .topbar-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ชื่อผู้ใช้ยาวเกินไปสำหรับ topbar จอเล็ก — ดูได้ที่หน้า Profile Setting */
+  .nav-user {
+    display: none;
+  }
+
+  .breadcrumbs {
+    padding: 8px 14px;
+  }
+
+  .page-content {
+    padding: 14px;
+  }
+
+  /* ตารางกว้างกว่าจอ: ให้เลื่อนในกรอบตัวเอง ไม่ใช่ให้ทั้งหน้าเลื่อนซ้ายขวา
+     (ต้องมาคู่กับ .main { min-width: 0 } ด้านบน ไม่งั้นกรอบนี้ไม่มีวันแคบพอจะต้องเลื่อน) */
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  /* หัวข้อหน้ากับปุ่ม action วางเรียงกันในแถวเดียวไม่พอบนจอมือถือ — ให้ขึ้นบรรทัดใหม่ */
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+/* ─── แท็บ (หน้า Detection Rules และ Detection Signatures) ───
+   ย้ายมาจาก rules.html ตอนหน้า signatures ต้องใช้ชุดเดียวกัน
+
+   ห้ามใส่ overflow-x: auto ที่ .tabs — ตาม spec ถ้า overflow-x ไม่ใช่ visible แล้ว
+   overflow-y ที่เป็น visible จะกลายเป็น auto ตามไปด้วย พอ .tab มี margin-bottom: -1px
+   กล่องปุ่มจะล้นกรอบลงมา 1px แล้วโผล่เป็นแถบเลื่อนเล็ก ๆ ที่ขวาสุดของแถบแท็บ
+   จอแคบใช้ flex-wrap ให้ตกบรรทัดแทน */
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 16px;
+}
+
+.tab {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;          /* ให้เส้นใต้ของแท็บทับเส้นของ .tabs พอดี */
+  padding: 9px 14px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.tab:hover {
+  color: var(--text-main);
+}
+
+.tab.is-active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* จำนวนรายการในแท็บนั้น */
+.tab-count {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  padding: 1px 7px;
+}
+
+.tab.is-active .tab-count {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: rgba(54, 162, 239, 0.35);
+}
+
+/* คำกำกับสั้น ๆ ใต้แถบแท็บ (บอกว่าแท็บนี้คืออะไร / มีกี่รายการ) */
+.section-subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+/* ─── พาเนล + stat tile (โครงหลักของหน้า overview แบบ Wazuh) ─── */
+
+.panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* แถวตัวเลขสรุป — Wazuh วางเป็นตัวเลขโต ๆ ในพาเนลเดียวคั่นด้วยเส้น ไม่ใช่การ์ดแยกใบ */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.stat-tile {
+  padding: 14px 18px;
+  border-left: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.stat-tile:first-child {
+  border-left: none;
+}
+
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+.stat-value.is-danger {
+  color: var(--danger);
+}
+
+.stat-label {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stat-sub {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+@media (max-width: 900px) {
+  .stat-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat-tile:nth-child(3) {
+    border-left: none;
+  }
+
+  .stat-tile:nth-child(n + 3) {
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+@media (max-width: 520px) {
+  .stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-tile {
+    border-left: none;
+  }
+
+  .stat-tile + .stat-tile {
+    border-top: 1px solid var(--border-color);
+  }
+}
+
+/* ─── กราฟ (วาดด้วย SVG เอง — ไม่มี lib chart ในโปรเจกต์และเครื่องนี้ออกเน็ตไม่ได้) ─── */
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 900px) {
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-body {
+  min-height: 190px;
+  display: flex;
+  align-items: center;
+}
+
+/* กราฟแท่ง: จำนวน alert ต่อช่วงเวลา */
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  width: 100%;
+  height: 160px;
+  padding-top: 8px;
+}
+
+.bar-col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* แยกพื้นที่ของแท่งออกจากป้ายชื่อ เพื่อให้ height เป็น % ของแท่งคิดจากพื้นที่กราฟจริง
+   (ถ้าให้แท่งกับป้ายอยู่กล่องเดียวกัน แท่ง 100% จะสูงเกินจนดันป้ายหลุดกรอบ) */
+.bar-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+/* ชื่อ .chart-bar ไม่ใช่ .bar เพราะ agents.css ใช้ .bar เป็นรางของแถบ CPU/RAM อยู่แล้ว */
+.chart-bar {
+  width: 100%;
+  min-height: 2px;
+  background: var(--primary);
+  border-radius: 1px 1px 0 0;
+  transition: height 0.25s ease;
+}
+
+.bar-col:hover .chart-bar {
+  background: var(--primary-hover);
+}
+
+.bar-label {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* โดนัท: สัดส่วนประเภทการโจมตี */
+.donut-layout {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.donut {
+  flex-shrink: 0;
+  width: 150px;
+  height: 150px;
+  transform: rotate(-90deg);   /* ให้ส่วนแรกเริ่มที่ 12 นาฬิกา */
+}
+
+.donut-track {
+  fill: none;
+  stroke: var(--bg-raised);
+  stroke-width: 5;
+}
+
+.donut-seg {
+  fill: none;
+  stroke-width: 5;
+  transition: stroke-width 0.12s ease;
+}
+
+.donut-seg:hover {
+  stroke-width: 6.5;
+}
+
+.donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.donut-holder {
+  position: relative;
+  flex-shrink: 0;
+  width: 150px;
+  height: 150px;
+}
+
+.donut-total {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1;
+}
+
+.donut-total-label {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.donut-legend {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.legend-swatch {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.legend-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend-value {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--text-main);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-pct {
+  flex-shrink: 0;
+  width: 40px;
+  text-align: right;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Badge "ยังไม่ได้อ่าน" ที่เมนู Alerts ─── */
+
+.nav-badge {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #1d1e24;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─── เครื่องหมาย "ยังไม่ได้เปิดดูรายละเอียด" ของแต่ละแถว (หน้า Alerts + Dashboard) ───
+
+   คนละสถานะกับ .nav-badge ที่เมนู:
+     badge  = มี alert ใหม่เข้ามาตั้งแต่ครั้งล่าสุดที่เปิดดูรายการ (เข้าหน้า Alerts = เคลียร์)
+     จุดนี้ = ยังไม่ได้กดดูรายละเอียดของเคสนั้น (หายเฉพาะตัวที่กดอ่านจริง ๆ)
+   ทั้งสองหน้าต้องใช้ชุดเดียวกัน ไม่งั้น alert เดียวกันจะดูเหมือนอ่านแล้วในหน้าหนึ่ง
+   แต่ยังไม่อ่านในอีกหน้าหนึ่ง */
+
+.unread-slot {
+  display: inline-block;
+  width: 15px;              /* จองที่ไว้เสมอ แถวที่อ่านแล้วเวลาจะได้ไม่เลื่อนไปชิดซ้ายกว่าแถวอื่น */
+  vertical-align: middle;
+}
+
+.unread-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+tr.unread td {
+  font-weight: 600;
+}
+
+/* ใช้ inset shadow แทน border-left เพราะไม่กินความกว้าง ตารางจึงไม่ขยับตอนจุดหาย */
+tr.unread td:first-child {
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+/* ─── Popup แจ้งเตือน alert ใหม่ (มุมขวาล่าง, โผล่ทุกหน้า) ─── */
+
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 200;             /* เหนือ modal (100) และ sidebar ตอนเปิดบนมือถือ (120) */
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;     /* ตอนไม่มี popup กล่องนี้ต้องไม่บังการคลิกอะไร */
+}
+
+.toast {
+  pointer-events: auto;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--sev-low);
+  border-radius: var(--radius-lg);
+  padding: 11px 13px;
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.7);
+  animation: toast-in 0.22s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* สีขอบซ้ายตามความรุนแรง (ชุดเดียวกับ .badge-* และโดนัทในหน้า Dashboard) */
+.toast-CRITICAL { border-left-color: var(--sev-critical); }
+.toast-HIGH     { border-left-color: var(--sev-high); }
+.toast-MEDIUM   { border-left-color: var(--sev-medium); }
+.toast-LOW      { border-left-color: var(--sev-low); }
+
+.toast-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.toast-severity {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: var(--radius);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.toast-time {
+  flex: 1;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.toast-close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast-close:hover {
+  background: var(--border-color);
+  color: var(--text-main);
+}
+
+.toast-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.toast-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.toast-ip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.toast-link {
+  margin-top: 9px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toast-link:hover {
+  text-decoration: underline;
+}
+
+/* ─── Modal (โครง .modal-backdrop > .modal ใช้เหมือนกันทุกหน้า) ───
+   เดิมนิยามซ้ำอยู่ใน <style> ของ 9 template โดยเนื้อเหมือนกันหมด ต่างแค่ max-width
+   หน้าไหนอยากได้กว้าง/แคบกว่านี้ตั้ง `--modal-width` ทับพอ ไม่ต้อง copy ทั้งบล็อก */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 18px;
+}
+
+.modal {
+  background: var(--card-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  width: 100%;
+  max-width: var(--modal-width);
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.modal-help {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.btn-close {
+  flex-shrink: 0;
+  background: var(--bg-raised);
+  border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.btn-close:hover {
+  background: var(--border-color);
+  color: var(--text-main);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+@media (max-width: 768px) {
+  .modal {
+    max-width: 96vw;
+    padding: 18px;
+  }
+}
+
+/* ─── ฟอร์ม ─── */
+
+.form-label {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.form-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* ค่าที่แสดงในฟอร์มแต่แก้ไม่ได้ — จงใจให้ต่างจาก .form-input ที่ disabled ชัดเจน
+   (ช่องกรอกสีเทาอ่านได้ว่า "แก้ไม่ได้ตอนนี้" ส่วนอันนี้คือ "ไม่มีวันแก้ได้จากที่นี่")
+   ความสูงเท่า .form-input พอดี เพื่อให้ช่องที่อยู่แถวเดียวกันในกริดไม่เหลื่อมกัน */
+.form-static {
+  padding: 8px 0;
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+/* ยังไม่มีค่า (รอ agent มาผูกให้) — ไม่ใช่ค่าจริง จึงไม่ควรอ่านเด่นเท่าค่าที่ผูกแล้ว */
+.form-static.is-pending {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.field-error {
+  margin-top: 5px;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* ─── ตัวเลือกระยะเวลาบล็อก (macro `duration_picker`) ───
+   ใช้ร่วมกันทุกหน้าที่ตั้งเวลาบล็อกได้ จึงอยู่ที่นี่ไม่ใช่ใน <style> ของหน้าใดหน้าหนึ่ง */
+.duration-field {
+  margin-bottom: 16px;
+}
+
+.duration-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.duration-row .duration-amount {
+  flex: 1;
+}
+
+.duration-row .duration-unit {
+  max-width: 170px;
+}
+
+/* ช่องตัวเลขตอนเลือก "ถาวร" — จางลงให้เห็นว่ายังอยู่แต่ไม่ได้ใช้ */
+.duration-row .form-input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.duration-preview {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.duration-hint {
+  margin-top: 6px;
+}
+
+@media (max-width: 480px) {
+  .duration-row {
+    flex-direction: column;
+  }
+
+  .duration-row .duration-unit {
+    max-width: none;
+  }
+}
+
+.error-box {
+  margin-top: 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  font-size: 12.5px;
+  color: var(--danger);
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ─── สถานะของกล่องข้อมูล: กำลังโหลด / โหลดไม่สำเร็จ / ไม่มีข้อมูล ───
+
+   ต้องแยก 3 อย่างนี้ให้ชัด — เดิมทุกหน้าโชว์ "ไม่พบข้อมูล" ตั้งแต่วินาทีแรกที่เปิดหน้า
+   และตอน API พังก็โชว์ข้อความเดียวกัน ทำให้ระบบล่มดูเหมือน "ไม่มีการโจมตี" */
+
+.state-box {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  background: var(--bg-main);
+}
+
+.state-box.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.state-title {
+  font-weight: 700;
+  color: inherit;
+  margin-bottom: 5px;
+}
+
+.state-detail {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.state-box.is-error .state-detail {
+  color: var(--danger);
+  opacity: 0.85;
+}
+
+.state-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  margin-bottom: 10px;
+  border: 2.5px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: state-spin 0.7s linear infinite;
+}
+
+@keyframes state-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .state-spinner {
+    animation-duration: 2s;
+  }
+}
+
+.btn-retry {
+  background: transparent;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-retry:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #1d1e24;
+}
+
+/* หน้าที่ auto-refresh (Agents, Dashboard) — เคยโหลดสำเร็จแล้วรอบล่าสุดพลาด
+   ไม่ล้างข้อมูลเดิมทิ้ง แค่บอกว่าที่เห็นอยู่อาจไม่ใช่ค่าล่าสุด */
+.stale-banner {
+  margin-bottom: 14px;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 9px 13px;
+  font-size: 12.5px;
+  color: var(--warning);
+}
+
+/* ─── กล่องยืนยัน (แทน confirm() ของเบราว์เซอร์) — markup อยู่ใน base.html ─── */
+
+.confirm-modal {
+  --modal-width: 440px;
+}
+
+.confirm-message {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-main);
+}
+
+.confirm-detail {
+  margin-top: 11px;
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d1e24;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s ease;
+}
+
+.btn-danger:hover {
+  background: #fa8079;
+  border-color: #fa8079;
+}
+
+/* ใช้เป็นปุ่มยืนยันในฟอร์มได้ด้วย (เช่น modal ย้ายไป Blacklist) จึงต้องมีสถานะกดไม่ได้
+   เหมือน .btn-primary — ไม่งั้นปุ่มที่ disabled ยังดูกดได้อยู่ */
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── แถบแจ้งผล (แทน alert() ของเบราว์เซอร์) — อยู่ใน .toast-stack เดียวกับ alert ───
+   วางไว้เหนือ toast ของ alert เพราะเป็นผลลัพธ์ของสิ่งที่ผู้ใช้เพิ่งกดเอง ต้องเห็นก่อน */
+
+.notice {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 11px 13px;
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.7);
+  animation: toast-in 0.22s ease-out;
+}
+
+.notice-success { border-left-color: var(--success); }
+.notice-error   { border-left-color: var(--danger); }
+.notice-info    { border-left-color: var(--primary); }
+
+.notice-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: #1d1e24;
+}
+
+.notice-success .notice-icon { background: var(--success); }
+.notice-error   .notice-icon { background: var(--danger); }
+.notice-info    .notice-icon { background: var(--primary); }
+
+.notice-text {
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.notice-close {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.notice-close:hover {
+  background: var(--border-color);
+  color: var(--text-main);
+}
+
+@media (max-width: 768px) {
+  .toast-stack {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* ─── ลิงก์ในเนื้อหา (หน้า Dashboard/Alerts ใช้เป็นปุ่ม "ดู"/"ดูทั้งหมด") ─── */
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+/* แถบเลื่อนให้เข้ากับพื้นเข้ม (ค่าเริ่มต้นของ Chrome บน Linux เป็นแถบขาวสว่างตัดกับธีม) */
+* {
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 5px;
+  border: 2px solid var(--bg-main);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}

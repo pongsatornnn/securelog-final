@@ -1,0 +1,57 @@
+{#
+  ตัวเลือกระยะเวลาบล็อก — ใช้ร่วมกันทุกหน้าที่ตั้งเวลาบล็อกได้
+  (Blacklist ตอนเพิ่ม · Whitelist ตอนย้ายไป Blacklist · Rules ตอนตั้งเวลาต่อประเภทการโจมตี)
+
+  กรอกตัวเลขเองแล้วเลือกหน่วย นาที/ชั่วโมง/วัน หรือเลือก "ถาวร" (ตอนถาวรช่องตัวเลขถูกปิด)
+  helper ที่ใช้ (isValidDuration / isPermanentDuration / durationExpiryText) เป็น global
+  จาก static/js/common.js — Alpine หาไม่เจอใน component จะไต่ไปหาที่ window ให้เอง
+
+  state    ชื่อ property ของ object { amount, unit } ในคอมโพเนนต์ เช่น 'form.duration'
+  prefix   ใช้ตั้ง id ของช่องกรอก ต้องไม่ซ้ำกันในหน้าเดียวกัน
+  expiry   true = โชว์บรรทัดสรุปว่าบล็อกถึงเมื่อไร (ใช้กับการบล็อกที่เริ่มทันที
+           ไม่ใช้กับหน้า Rules ที่เป็นค่านโยบายไว้ใช้ตอนตรวจพบการโจมตีครั้งถัดไป)
+#}
+{% macro duration_picker(state, prefix, label='ระยะเวลาบล็อก', hint='', expiry=true) %}
+<div class="duration-field">
+  <label class="form-label" for="{{ prefix }}-amount">{{ label }}</label>
+
+  <div class="duration-row">
+    <input
+      class="form-input duration-amount"
+      id="{{ prefix }}-amount"
+      type="number"
+      min="1"
+      step="1"
+      inputmode="numeric"
+      x-model.number="{{ state }}.amount"
+      :disabled="isPermanentDuration({{ state }})"
+      :class="{ 'is-invalid': !isValidDuration({{ state }}) }"
+      aria-label="จำนวนของ{{ label }}"
+    >
+
+    <select
+      class="form-input duration-unit"
+      id="{{ prefix }}-unit"
+      x-model="{{ state }}.unit"
+      aria-label="หน่วยของ{{ label }}"
+    >
+      <option value="minutes">นาที</option>
+      <option value="hours">ชั่วโมง</option>
+      <option value="days">วัน</option>
+      <option value="permanent">ถาวร (ไม่หมดอายุ)</option>
+    </select>
+  </div>
+
+  <div class="field-error" x-show="!isValidDuration({{ state }})" x-cloak>
+    กรอกเป็นจำนวนเต็มตั้งแต่ 1 ขึ้นไป และรวมแล้วไม่เกิน 10 ปี (นานกว่านั้นให้เลือก "ถาวร")
+  </div>
+
+  {% if expiry %}
+  <div class="duration-preview" x-show="isValidDuration({{ state }})" x-text="durationExpiryText({{ state }})" x-cloak></div>
+  {% endif %}
+
+  {% if hint %}
+  <div class="form-hint duration-hint">{{ hint }}</div>
+  {% endif %}
+</div>
+{% endmacro %}

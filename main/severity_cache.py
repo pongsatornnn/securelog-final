@@ -1,0 +1,138 @@
+"""
+Cache + DB layer สำหรับระดับความรุนแรง (severity) ของ alert ต่อ (detection_type, mode)
+โครงเดียวกับ rule_cache.py / blacklist_ttl_cache.py — cache-first, seed default ลง DB ครั้งแรก,
+เคลียร์ cache เมื่อแก้
+
+severity_key = "{detection_type}" เฉยๆ หรือ "{detection_type}:{mode}" ถ้าแยกตาม mode
+lookup ลอง key เฉพาะ mode ก่อน ถ้าไม่มี fallback ไปที่ key แบบไม่มี mode
+("ssh_brute_force") ถ้ายังไม่มีอีก -> "LOW" (ค่า default สุดท้ายเดิมจาก SEVERITY_MAP)
+
+ตอนนี้ยังไม่มี detection ตัวไหนใช้ mode แล้ว (ssh_brute_force รวม fast/slow เป็นกฎเดียว)
+แต่คง fallback chain ไว้ให้ alert เก่าที่มี mode ติดมายังหา severity เจอ + เผื่อ mode ในอนาคต
+"""
+
+from database.connection import AsyncSessionLocal
+from database.crud import get_alert_severity, upsert_alert_severity
+from database.defaults import snapshot_severity
+from redis_client import cache_get_json, cache_set_json, cache_delete
+
+
+SEVERITY_CACHE_TTL_SECONDS = 300  # fallback เผื่อไม่ได้ผ่าน update_severity() โดยตรง
+CACHE_KEY_PREFIX = "alert_severity:"
+
+LOG_PREFIX = "SEVERITY-CACHE"
+
+VALID_SEVERITIES = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
+DEFAULT_FALLBACK_SEVERITY = "LOW"
+
+# ค่า default ของแต่ละ severity_key (ย้ายมาจาก alerts.SEVERITY_MAP เดิม — ค่าเท่าเดิมทุกตัว)
+DEFAULT_SEVERITY = {
+    "ssh_brute_force": {
+        "severity": "CRITICAL",
+        "description": "SSH Brute Force",
+    },
+    "sudo_failed": {
+        "severity": "MEDIUM",
+        "description": "Sudo Authentication Failure",
+    },
+    "sql_injection": {
+        "severity": "CRITICAL",
+        "description": "SQL Injection",
+    },
+    "command_injection": {
+        "severity": "CRITICAL",
+        "description": "Command Injection",
+    },
+    "xss": {
+        "severity": "HIGH",
+        "description": "Cross-Site Scripting (XSS)",
+    },
+    "path_traversal": {
+        "severity": "HIGH",
+        "description": "Path Traversal",
+    },
+    "http_flood": {
+        "severity": "HIGH",
+        "description": "HTTP Flood (App-level DoS)",
+    },
+    "firewall_deny_rate": {
+        "severity": "HIGH",
+        "description": "Firewall Deny Flood",
+    },
+    "port_scan": {
+        "severity": "MEDIUM",
+        "description": "Port Scan",
+    },
+}
+
+
+def severity_key_for(detection_type: str, mode: str | None) -> str:
+    return f"{detection_type}:{mode}" if mode else detection_type
+
+
+def severity_cache_key(severity_key: str) -> str:
+    return f"{CACHE_KEY_PREFIX}{severity_key}"
+
+
+async def _load_one(severity_key: str) -> dict | None:
+    """
+    คืน {'severity_key','severity'} ของ key นี้เป๊ะๆ (cache-first แล้ว DB)
+    seed default ให้ถ้ายังไม่มีแถวแต่มีค่าอยู่ใน DEFAULT_SEVERITY
+    คืน None ถ้าไม่มีทั้งใน DB และไม่มี default (ให้ผู้เรียก fallback ไป key อื่นต่อ)
+    """
+    cached = cache_get_json(severity_cache_key(severity_key), log_prefix=LOG_PREFIX)
+    if cached is not None:
+        return cached
+
+    async with AsyncSessionLocal() as db:
+        row = await get_alert_severity(db, severity_key)
+
+        if not row:
+            # snapshot (database/seed_data.json) ทับค่าในโค้ด — ต้องได้ค่าเดียวกับตอน startup seed
+            default = {
+                **DEFAULT_SEVERITY.get(severity_key, {}),
+                **(snapshot_severity(severity_key) or {}),
+            }
+            if not default.get("severity"):
+                return None
+
+            row = await upsert_alert_severity(
+                db,
+                severity_key,
+                severity=default["severity"],
+                description=default.get("description"),
+            )
+            print(f"[{LOG_PREFIX}] seed default severity ลง DB: {severity_key} = {default['severity']}")
+
+        data = {"severity_key": row.severity_key, "severity": row.severity}
+
+    cache_set_json(severity_cache_key(severity_key), data, SEVERITY_CACHE_TTL_SECONDS, log_prefix=LOG_PREFIX)
+    return data
+
+
+async def get_severity(detection_type: str, mode: str | None = None) -> str:
+    """
+    Entry point หลัก — ตรงกับ alerts.get_severity เดิมทุกกรณี (แค่กลายเป็น async + DB-backed)
+    ลอง key เฉพาะ mode ก่อน แล้ว fallback ไป key แบบไม่มี mode แล้วค่อย "LOW"
+    """
+    if mode:
+        specific = await _load_one(severity_key_for(detection_type, mode))
+        if specific:
+            return specific["severity"]
+
+    generic = await _load_one(detection_type)
+    if generic:
+        return generic["severity"]
+
+    return DEFAULT_FALLBACK_SEVERITY
+
+
+async def update_severity(severity_key: str, severity: str) -> dict:
+    """แก้ severity (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)"""
+    async with AsyncSessionLocal() as db:
+        row = await upsert_alert_severity(db, severity_key, severity=severity)
+        result = {"severity_key": row.severity_key, "severity": row.severity}
+
+    cache_delete(severity_cache_key(severity_key), log_prefix=LOG_PREFIX)
+    print(f"[{LOG_PREFIX}] อัปเดต severity {severity_key} = {severity} (เคลียร์ cache แล้ว)")
+    return result

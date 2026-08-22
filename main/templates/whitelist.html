@@ -1,0 +1,640 @@
+{% extends "base.html" %}
+{% from "_duration_picker.html" import duration_picker %}
+
+{% block title %}IP Whitelist - SecureLog{% endblock %}
+
+{% block topbar_title %}IP Whitelist{% endblock %}
+
+{% block head %}
+<style>
+  /* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
+     หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
+  .modal { --modal-width: 760px; }
+  .btn-remove {
+    background: transparent;
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius);
+    padding: 7px 13px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--danger);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-remove:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: #1d1e24;
+  }
+
+  /* ย้ายไป Blacklist = เอาออกจาก Whitelist + สั่งบล็อกตามเวลาที่เลือกในคลิกเดียว
+     ใช้สีเตือน (warning) ให้ต่างจากปุ่ม Remove ที่เป็นสีอันตราย จะได้ไม่กดสลับกัน */
+  .btn-move {
+    background: transparent;
+    border: 1px solid var(--warning-border);
+    border-radius: var(--radius);
+    padding: 7px 13px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--warning);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+
+  .btn-move:hover {
+    background: var(--warning);
+    border-color: var(--warning);
+    color: #1d1e24;
+  }
+
+  .btn-move:disabled,
+  .btn-remove:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  @media (max-width: 760px) {
+    .page-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .page-actions {
+      justify-content: flex-end;
+    }
+
+    .modal {
+      max-width: 96vw;
+      padding: 22px;
+    }
+
+    .modal-header {
+      margin-bottom: 16px;
+    }
+
+    .bulk-row-head {
+      display: none;
+    }
+
+    .bulk-row {
+      grid-template-columns: 1fr;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+    }
+
+    .bulk-field,
+    .bulk-action {
+      min-height: auto;
+    }
+
+    .btn-row-remove {
+      width: 100%;
+    }
+
+    .modal-footer {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .modal-actions {
+      width: 100%;
+      flex-direction: column;
+    }
+
+    .btn-add-row,
+    .btn-primary,
+    .btn-secondary {
+      width: 100%;
+      justify-content: center;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div x-data="whitelistApp()" x-init="loadWhitelist()">
+
+  <div class="page-header">
+    <div>
+      <div class="page-title">IP Whitelist</div>
+      <div class="page-subtitle">IP ที่ยกเว้นไม่ให้ถูกบล็อก</div>
+    </div>
+
+    <div class="page-actions">
+      <button class="btn-secondary" @click="loadWhitelist()">
+        Refresh
+      </button>
+
+      {% if user.role == 'admin' %}
+      <button class="btn-primary" @click="openAddModal()">
+        + เพิ่ม Whitelist
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <!-- 3 สถานะแยกกัน — เดิมโชว์ "ยังไม่มี IP ใน Whitelist" ตั้งแต่วินาทีแรกและตอน API พังด้วย -->
+    <div class="state-box" x-show="loading">
+      <div class="state-spinner" aria-hidden="true"></div>
+      <div class="state-title">กำลังโหลด Whitelist...</div>
+    </div>
+
+    <div class="state-box is-error" x-show="!loading && loadError" x-cloak>
+      <div class="state-title">โหลด Whitelist ไม่สำเร็จ</div>
+      <div class="state-detail" x-text="loadError"></div>
+      <button class="btn-retry" type="button" @click="loadWhitelist()">ลองใหม่อีกครั้ง</button>
+    </div>
+
+    <div class="state-box" x-show="!loading && !loadError && whitelist.length === 0" x-cloak>
+      <div class="state-title">ยังไม่มี IP ใน Whitelist</div>
+      <!-- <div class="state-detail">IP ใน Whitelist จะไม่ถูกบล็อกอัตโนมัติแม้ระบบตรวจพบว่าโจมตี</div> -->
+    </div>
+
+    <table x-show="!loading && !loadError && whitelist.length > 0" x-cloak>
+      <thead>
+        <tr>
+          <th>IP Address</th>
+          <th>Description</th>
+          <th style="width: 150px;">เพิ่มโดย</th>
+          <th style="width: 230px; text-align: center;">Action</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        <template x-for="item in whitelist" :key="item.id">
+          <tr>
+            <td class="ip-text" x-text="item.ip_address"></td>
+            <td x-text="item.description || 'trusted_ip'"></td>
+            <td data-label="เพิ่มโดย" x-text="item.created_by || 'ไม่ทราบ'"></td>
+            <td style="text-align: center;">
+              {% if user.role == 'admin' %}
+              <div class="row-actions">
+                <button class="btn-remove" :disabled="movingId === item.id"
+                        @click="deleteWhitelist(item)">
+                  Remove
+                </button>
+
+                <button class="btn-move" :disabled="movingId === item.id"
+                        @click="openMoveModal(item)"
+                        title="เอาออกจาก Whitelist แล้วบล็อกตามเวลาที่เลือก">
+                  <span x-show="movingId !== item.id">→ Blacklist</span>
+                  <span x-show="movingId === item.id" x-cloak>กำลังย้าย...</span>
+                </button>
+              </div>
+              {% endif %}
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Add Whitelist Modal -->
+  <div
+    class="modal-backdrop"
+    x-show="showAddModal"
+    x-transition.opacity
+    @click.self="closeAddModal()"
+    @keydown.escape.window="closeAddModal()"
+    style="display: none;"
+  >
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">เพิ่ม IP Whitelist ใหม่</div>
+        <button class="btn-close" @click="closeAddModal()" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="modal-body">
+
+        <div class="modal-help">เพิ่มได้หลาย IP พร้อมกัน</div>
+
+        <div class="bulk-row-head">
+          <div class="form-label">IP Address <span class="required-mark">*</span></div>
+          <div class="form-label">Description</div>
+          <div></div>
+        </div>
+
+        <template x-for="(item, index) in form.items" :key="index">
+          <div class="bulk-row">
+            <div class="bulk-field">
+              <input
+                class="form-input"
+                :class="{ 'is-invalid': item.ip_address && !isValidIPv4(item.ip_address) }"
+                type="text"
+                x-model="item.ip_address"
+                placeholder="เช่น 192.168.56.101"
+                inputmode="decimal"
+                :aria-label="'IP Address รายการที่ ' + (index + 1)"
+                @input="item.ip_address = normalizeIpInput(item.ip_address)"
+              >
+
+              <div class="field-error" x-show="item.ip_address && !isValidIPv4(item.ip_address)">
+                IP ไม่ถูกต้อง
+              </div>
+            </div>
+
+            <div class="bulk-field">
+              <input
+                class="form-input"
+                type="text"
+                x-model="item.description"
+                placeholder="manual_whitelist"
+                :aria-label="'Description รายการที่ ' + (index + 1)"
+              >
+            </div>
+
+            <div class="bulk-action">
+              <button
+                x-show="form.items.length > 1"
+                class="btn-row-remove"
+                @click="removeWhitelistRow(index)"
+                title="ลบรายการนี้"
+              >
+                -
+              </button>
+            </div>
+          </div>
+        </template>
+
+        <template x-if="bulkLines.length > 0">
+          <div class="result-lines">
+            <template x-for="line in bulkLines" :key="line.key">
+              <div class="result-line" :class="line.ok ? 'is-ok' : 'is-fail'">
+                <span class="result-mark" x-text="line.ok ? '✓' : '✕'"></span>
+                <span class="result-ip" x-text="line.ip_address"></span>
+                <span class="result-reason" x-text="line.reason"></span>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <div class="modal-footer">
+          <button class="btn-add-row" @click="addWhitelistRow()" :disabled="isSubmitting">
+            + เพิ่ม IP
+          </button>
+
+          <div class="modal-actions">
+            <button class="btn-secondary" @click="closeAddModal()" :disabled="isSubmitting">
+              ยกเลิก
+            </button>
+
+            <button
+              class="btn-primary"
+              @click="addWhitelistBulk()"
+              :disabled="isSubmitting || !canSubmitWhitelist()"
+            >
+              <span x-show="!isSubmitting">เพิ่ม Whitelist</span>
+              <span x-show="isSubmitting">กำลังเพิ่ม...</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Move to Blacklist Modal — ใช้ modal แทนกล่องยืนยันธรรมดา เพราะต้องเลือกระยะเวลาบล็อกด้วย -->
+  <div
+    class="modal-backdrop"
+    x-show="showMoveModal"
+    x-transition.opacity
+    @click.self="closeMoveModal()"
+    @keydown.escape.window="closeMoveModal()"
+    style="display: none;"
+  >
+    <div class="modal" style="--modal-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title">ย้าย IP ไป Blacklist</div>
+        <button class="btn-close" @click="closeMoveModal()" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-help">
+          จะเอา <b class="ip-text" x-text="moveTarget ? moveTarget.ip_address : ''"></b>
+          ออกจาก Whitelist แล้วสั่งบล็อกที่ Client Server ทุกเครื่องทันที
+        </div>
+
+        {{ duration_picker('moveForm.duration', 'move-duration',
+                           hint='ครบกำหนดแล้วระบบปลดบล็อกให้เอง · เลือก "ถาวร" ถ้าไม่ต้องการให้หมดอายุ') }}
+
+        <div class="modal-actions">
+          <button class="btn-secondary" @click="closeMoveModal()" :disabled="isMoving">
+            ยกเลิก
+          </button>
+
+          <button
+            class="btn-danger"
+            @click="moveToBlacklist()"
+            :disabled="isMoving || !isValidDuration(moveForm.duration)"
+          >
+            <span x-show="!isMoving">ย้ายไป Blacklist</span>
+            <span x-show="isMoving" x-cloak>กำลังย้าย...</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function whitelistApp() {
+    return {
+      // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
+      loading: true,
+      loadError: '',
+
+      whitelist: [],
+      showAddModal: false,
+      isSubmitting: false,
+      bulkResult: null,
+      movingId: null,        // id ของแถวที่กำลังย้ายไป Blacklist (กันกดรัว)
+
+      // ย้ายไป Blacklist — ต้องเลือกระยะเวลาบล็อกก่อน จึงเป็น modal ไม่ใช่กล่องยืนยันธรรมดา
+      showMoveModal: false,
+      moveTarget: null,
+      isMoving: false,
+
+      moveForm: {
+        // ค่าตั้งต้น = ถาวร (พฤติกรรมเดิมของปุ่มนี้) แก้เป็นนาที/ชั่วโมง/วันได้
+        duration: newDuration('permanent')
+      },
+
+      form: {
+        items: [
+          {
+            ip_address: '',
+            description: 'manual_whitelist'
+          }
+        ]
+      },
+
+      // ยุบผลลัพธ์ที่ API ส่งมาเป็น 4 หมวด (added/invalid/blocked_by_blacklist/skipped)
+      // ให้เหลือลิสต์เดียว 1 บรรทัด = 1 IP พร้อมเหตุผล — ผู้ใช้จะได้ไม่ต้องไล่อ่านหลายกล่อง
+      // key ต้องมีชื่อหมวดนำหน้าด้วย เพราะ IP เดียวกันโผล่ได้ 2 หมวด (เช่น พิมพ์ซ้ำในชุดเดียวกัน)
+      get bulkLines() {
+        const r = this.bulkResult && this.bulkResult.results
+        if (!r) return []
+
+        const lines = []
+
+        for (const item of r.added || []) {
+          lines.push({
+            key: 'added:' + item.ip_address,
+            ok: true,
+            ip_address: item.ip_address,
+            reason: 'บันทึกแล้ว'
+          })
+        }
+
+        // หมวดที่ไม่ได้บันทึก — reason จาก API เป็นภาษาไทยอยู่แล้ว ใช้ตรง ๆ ได้
+        for (const group of ['invalid', 'blocked_by_blacklist', 'skipped']) {
+          for (const item of r[group] || []) {
+            lines.push({
+              key: group + ':' + item.ip_address,
+              ok: false,
+              ip_address: item.ip_address,
+              reason: item.reason || 'บันทึกไม่สำเร็จ'
+            })
+          }
+        }
+
+        return lines
+      },
+
+      openAddModal() {
+        this.showAddModal = true
+        this.bulkResult = null
+
+        if (this.form.items.length === 0) {
+          this.addWhitelistRow()
+        }
+      },
+
+      closeAddModal() {
+        this.showAddModal = false
+        this.bulkResult = null
+      },
+
+      addWhitelistRow() {
+        this.form.items.push({
+          ip_address: '',
+          description: 'manual_whitelist'
+        })
+      },
+
+      removeWhitelistRow(index) {
+        if (this.form.items.length === 1) {
+          return
+        }
+
+        this.form.items.splice(index, 1)
+      },
+
+      resetWhitelistForm() {
+        this.form.items = [
+          {
+            ip_address: '',
+            description: 'manual_whitelist'
+          }
+        ]
+      },
+
+      canSubmitWhitelist() {
+        const items = this.form.items
+          .map(item => ({
+            ip_address: item.ip_address.trim(),
+            description: item.description.trim() || 'manual_whitelist'
+          }))
+          .filter(item => item.ip_address.length > 0)
+
+        if (items.length === 0) {
+          return false
+        }
+
+        return items.every(item => isValidIPv4(item.ip_address))
+      },
+
+      async loadWhitelist() {
+        this.loading = true
+
+        try {
+          const res = await fetch('/api/get_whitelist')
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            throw new Error(data.detail || `เซิร์ฟเวอร์ตอบกลับ ${res.status}`)
+          }
+
+          this.whitelist = await res.json()
+          this.loadError = ''
+        } catch (err) {
+          this.loadError = err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'
+          console.error('error to load IP Whitelist', err)
+        } finally {
+          this.loading = false
+        }
+      },
+
+      async addWhitelistBulk() {
+        const items = this.form.items
+          .map(item => ({
+            ip_address: item.ip_address.trim(),
+            description: item.description.trim() || 'manual_whitelist'
+          }))
+          .filter(item => item.ip_address.length > 0)
+
+        if (items.length === 0) {
+          this.$store.ui.error('กรุณากรอก IP Address อย่างน้อย 1 รายการ')
+          return
+        }
+
+        const invalidItems = items.filter(item => !isValidIPv4(item.ip_address))
+
+        if (invalidItems.length > 0) {
+          this.$store.ui.error('กรุณากรอก IP Address ให้ถูกต้อง')
+          return
+        }
+
+        this.isSubmitting = true
+        this.bulkResult = null
+
+        try {
+          const res = await fetch('/api/add_whitelist_bulk', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              items: items
+            })
+          })
+
+          const data = await res.json()
+
+          if (!res.ok) {
+            this.$store.ui.error(data.detail || 'เพิ่ม Whitelist ไม่สำเร็จ')
+            return
+          }
+
+          this.bulkResult = data
+
+          await this.loadWhitelist()
+
+          if (data.summary && data.summary.added > 0) {
+            this.resetWhitelistForm()
+            this.$store.ui.success(`เพิ่ม ${data.summary.added} IP เข้า Whitelist แล้ว`)
+          }
+
+        } catch (err) {
+          console.error('ไม่สามารถเพิ่ม Whitelist ได้', err)
+          this.$store.ui.error('ไม่สามารถเพิ่ม Whitelist ได้')
+        } finally {
+          this.isSubmitting = false
+        }
+      },
+
+      async deleteWhitelist(item) {
+        const ok = await this.$store.ui.confirm({
+          title: 'ลบ IP ออกจาก Whitelist',
+          message: 'หลังจากนี้ระบบจะบล็อก IP นี้อัตโนมัติได้ตามปกติเมื่อตรวจพบว่าโจมตี',
+          detail: item.ip_address,
+          confirmText: 'ลบออกจาก Whitelist',
+          danger: true,
+        })
+        if (!ok) return
+
+        try {
+          const res = await fetch(`/api/delete_whitelist/${item.id}`, {
+            method: 'POST'
+          })
+
+          const data = await res.json()
+
+          if (!res.ok) {
+            this.$store.ui.error(data.detail || 'ไม่สามารถลบ Whitelist ได้')
+            return
+          }
+
+          await this.loadWhitelist()
+          this.$store.ui.success(`ลบ ${item.ip_address} ออกจาก Whitelist แล้ว`)
+
+        } catch (err) {
+          console.error('ไม่สามารถลบ Whitelist ได้', err)
+          this.$store.ui.error('ไม่สามารถลบ Whitelist ได้')
+        }
+      },
+
+      openMoveModal(item) {
+        this.moveTarget = item
+        this.showMoveModal = true
+      },
+
+      closeMoveModal() {
+        if (this.isMoving) return    // กำลังยิงคำขออยู่ ปิดทิ้งกลางคันไม่ได้
+
+        this.showMoveModal = false
+        this.moveTarget = null
+      },
+
+      // เอาออกจาก Whitelist + บล็อกตามเวลาที่เลือกในคำขอเดียว — ทำมือทีละหน้าต้องกด Remove
+      // ที่นี่ก่อนแล้วค่อยไปหน้า Blacklist ไม่งั้นจะติดเงื่อนไข "IP อยู่ใน Whitelist"
+      async moveToBlacklist() {
+        const item = this.moveTarget
+        if (!item) return
+
+        if (!isValidDuration(this.moveForm.duration)) {
+          this.$store.ui.error('ระยะเวลาบล็อกไม่ถูกต้อง — กรอกเป็นจำนวนเต็ม 1 ขึ้นไป และไม่เกิน 10 ปี')
+          return
+        }
+
+        const seconds = durationSeconds(this.moveForm.duration)   // null = ถาวร
+
+        this.isMoving = true
+        this.movingId = item.id
+
+        try {
+          const res = await fetch(`/api/move_to_blacklist/${item.id}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              duration_seconds: seconds
+            })
+          })
+
+          const data = await res.json()
+
+          if (!res.ok) {
+            this.$store.ui.error(data.detail || 'ย้ายไป Blacklist ไม่สำเร็จ')
+            return
+          }
+
+          this.isMoving = false
+          this.closeMoveModal()
+
+          await this.loadWhitelist()
+          this.$store.ui.success(`ย้าย ${item.ip_address} ไป Blacklist แล้ว · ${formatDuration(seconds)}`)
+
+        } catch (err) {
+          console.error('ย้ายไป Blacklist ไม่สำเร็จ', err)
+          this.$store.ui.error('ย้ายไป Blacklist ไม่สำเร็จ')
+        } finally {
+          this.isMoving = false
+          this.movingId = null
+        }
+      }
+    }
+  }
+</script>
+{% endblock %}

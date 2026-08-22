@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SecureLog{% endblock %}</title>
+
+  <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
+
+  <!-- ธีมมืด: บอกเบราว์เซอร์ด้วย เพื่อให้ scrollbar/ช่องกรอกที่ระบบวาดเองใช้โทนเข้มตาม -->
+  <meta name="color-scheme" content="dark">
+
+  <script src="{{ static_url('csrf.js') }}"></script>
+  <script src="{{ static_url('session.js') }}"></script>
+  <script src="{{ static_url('js/common.js') }}"></script>
+
+  <!-- SSE เส้นเดียวที่แชร์ทุกหน้า + popup/badge แจ้งเตือน alert ใหม่
+       (ต้องโหลดก่อน alpine.min.js ที่เป็น defer เพราะ alert-notify ผูก event alpine:init) -->
+  <script src="{{ static_url('js/alert-stream.js') }}"></script>
+  <script src="{{ static_url('js/alert-notify.js') }}"></script>
+
+  <!-- กล่องยืนยัน + แถบแจ้งผล (แทน confirm()/alert() ของเบราว์เซอร์) และ a11y ของ modal
+       ทุกหน้า — ต้องโหลดก่อน alpine.min.js เช่นกันเพราะผูก event alpine:init -->
+  <script src="{{ static_url('js/ui.js') }}"></script>
+
+  <script defer src="{{ static_url('alpine.min.js') }}"></script>
+
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
+
+  <script>
+    // สถานะของโครงหน้า (เมนูซ้าย) — ไม่เกี่ยวกับข้อมูลของระบบ จึงเก็บที่ browser
+    // ย่อ/กางเมนูค้างไว้ข้ามหน้าได้ (Wazuh ก็จำสถานะนี้ให้เหมือนกัน)
+    function shell() {
+      var KEY = 'securelog.nav.collapsed'
+
+      return {
+        navOpen: false,          // เมนูแบบ off-canvas บนจอมือถือ
+        collapsed: false,        // ย่อเหลือแต่ไอคอนบนจอใหญ่
+
+        init() {
+          try {
+            this.collapsed = window.localStorage.getItem(KEY) === '1'
+          } catch (err) {
+            /* localStorage ใช้ไม่ได้ (private mode) -> ใช้ค่าเริ่มต้น ไม่ต้องพัง */
+          }
+        },
+
+        toggleRail() {
+          this.collapsed = !this.collapsed
+
+          try {
+            window.localStorage.setItem(KEY, this.collapsed ? '1' : '0')
+          } catch (err) {
+            /* จำข้ามหน้าไม่ได้ แต่ยังย่อ/กางในหน้านี้ได้ตามปกติ */
+          }
+        },
+      }
+    }
+  </script>
+
+  {% block head %}{% endblock %}
+</head>
+
+<!-- data-page ให้ alert-notify.js รู้ว่ากำลังอยู่หน้าไหน (อยู่หน้า Alerts = เห็นแล้ว ไม่ต้องนับ unread) -->
+<body data-page="{{ page or '' }}">
+
+<!-- ชุดไอคอนของเมนู: นิยาม <symbol> ไว้ครั้งเดียวแล้วอ้างด้วย <use> ทุกจุด
+     (โปรเจกต์ไม่มี icon font และเครื่องออกเน็ตไม่ได้ จึงฝัง SVG มาเองทั้งหมด) -->
+<svg style="display:none" aria-hidden="true" focusable="false">
+  <symbol id="ico-dashboard" viewBox="0 0 16 16">
+    <rect x="2" y="2" width="5" height="5" rx="1"/>
+    <rect x="9" y="2" width="5" height="5" rx="1"/>
+    <rect x="2" y="9" width="5" height="5" rx="1"/>
+    <rect x="9" y="9" width="5" height="5" rx="1"/>
+  </symbol>
+  <symbol id="ico-alerts" viewBox="0 0 16 16">
+    <path d="M8 2a4 4 0 0 0-4 4v3l-1.2 2h10.4L12 9V6a4 4 0 0 0-4-4z"/>
+    <path d="M6.4 13.4a1.7 1.7 0 0 0 3.2 0"/>
+  </symbol>
+  <symbol id="ico-rules" viewBox="0 0 16 16">
+    <path d="M2.5 5h11M2.5 11h11"/>
+    <circle cx="6" cy="5" r="1.7"/>
+    <circle cx="10" cy="11" r="1.7"/>
+  </symbol>
+  <symbol id="ico-signatures" viewBox="0 0 16 16">
+    <path d="M5.6 4.6 2.6 8l3 3.4M10.4 4.6 13.4 8l-3 3.4M9.2 3.4 6.8 12.6"/>
+  </symbol>
+  <symbol id="ico-blacklist" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="5.6"/>
+    <path d="M4 4l8 8"/>
+  </symbol>
+  <symbol id="ico-whitelist" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="5.6"/>
+    <path d="M5.4 8.2l1.9 1.9 3.3-3.8"/>
+  </symbol>
+  <symbol id="ico-agents" viewBox="0 0 16 16">
+    <rect x="2" y="2.5" width="12" height="4.5" rx="1"/>
+    <rect x="2" y="9" width="12" height="4.5" rx="1"/>
+    <path d="M4.6 4.75h.01M4.6 11.25h.01"/>
+  </symbol>
+  <symbol id="ico-line" viewBox="0 0 16 16">
+    <path d="M13.5 7.4c0 2.5-2.5 4.5-5.5 4.5-.6 0-1.2-.06-1.7-.2L3 13l.85-2.3C3 9.9 2.5 8.7 2.5 7.4c0-2.5 2.5-4.5 5.5-4.5s5.5 2 5.5 4.5z"/>
+  </symbol>
+  <symbol id="ico-users" viewBox="0 0 16 16">
+    <circle cx="6" cy="5.8" r="2.3"/>
+    <path d="M2.4 13c0-2 1.6-3.5 3.6-3.5S9.6 11 9.6 13"/>
+    <path d="M10.6 4a2.3 2.3 0 0 1 0 4.4M11.6 9.8c1.3.35 2.1 1.6 2.1 3.2"/>
+  </symbol>
+  <symbol id="ico-profile" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="5.8"/>
+    <circle cx="8" cy="6.4" r="2"/>
+    <path d="M4.2 12.7a4.3 4.3 0 0 1 7.6 0"/>
+  </symbol>
+  <!-- เฟือง — หน้า System Settings (ต่างจาก ico-profile ที่เป็นรูปคน = ตั้งค่าของ "บัญชีเรา") -->
+  <symbol id="ico-settings" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="2.1"/>
+    <path d="M8 1.4v1.8M8 12.8v1.8M14.6 8h-1.8M3.2 8H1.4M12.67 3.33l-1.27 1.27M4.6 11.4l-1.27 1.27M12.67 12.67l-1.27-1.27M4.6 4.6L3.33 3.33"/>
+  </symbol>
+</svg>
+
+{#
+  หมวดของแต่ละหน้าสำหรับ breadcrumb — ใช้ค่าเดียวกับหัวข้อกลุ่มในเมนูซ้าย
+  (map ไว้ที่เดียวตรงนี้ หน้าอื่นจึงไม่ต้องเพิ่ม block อะไรเลย)
+#}
+{% set nav_group = {
+  'dashboard'      : 'ภาพรวม',
+  'alerts'         : 'ตรวจจับภัยคุกคาม',
+  'rules'          : 'ตอบสนองและป้องกัน',
+  'signatures'     : 'ตอบสนองและป้องกัน',
+  'blacklist'      : 'ตอบสนองและป้องกัน',
+  'whitelist'      : 'ตอบสนองและป้องกัน',
+  'agents'         : 'จัดการระบบ',
+  'line_recipients': 'จัดการระบบ',
+  'manage_users'   : 'จัดการระบบ',
+  'profile'        : 'จัดการระบบ'
+}.get(page, 'SecureLog') %}
+
+<div class="layout" x-data="shell()" :class="{ 'is-collapsed': collapsed }"
+     @keydown.escape.window="navOpen = false">
+
+  <aside class="sidebar" :class="{ 'is-open': navOpen }">
+    <div class="sidebar-brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2.5l7.5 3.2v5.8c0 4.6-3.1 8.6-7.5 9.9-4.4-1.3-7.5-5.3-7.5-9.9V5.7L12 2.5z"/>
+        <path d="M8.7 11.9l2.3 2.3 4.3-4.6"/>
+      </svg>
+
+      <div class="brand-text">
+        <h1>SecureLog</h1>
+        <p>Threat Response</p>
+      </div>
+    </div>
+
+    <nav class="sidebar-menu">
+      <div class="nav-group">ภาพรวม</div>
+
+      <a href="/dashboard" class="{% if page == 'dashboard' %}active{% endif %}"
+         title="Dashboard">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-dashboard"/></svg>
+        <span class="nav-label">Dashboard</span>
+      </a>
+
+      <div class="nav-group">ตรวจจับภัยคุกคาม</div>
+
+      <a href="/alerts" class="{% if page == 'alerts' %}active{% endif %}" title="Alerts">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-alerts"/></svg>
+        <span class="nav-label">Alerts</span>
+
+        <!-- จำนวนการโจมตีใหม่ที่ยังไม่ได้เข้าไปดู (เคลียร์เองเมื่อเปิดหน้า Alerts) -->
+        <span class="nav-badge" x-cloak
+              x-show="$store.alerts.unread > 0"
+              x-text="$store.alerts.unread > 99 ? '99+' : $store.alerts.unread"
+              :title="$store.alerts.unread + ' การโจมตีใหม่ที่ยังไม่ได้ดู'"></span>
+      </a>
+
+      <div class="nav-group">ตอบสนองและป้องกัน</div>
+
+      {% if user.role == 'admin' %}
+      <a href="/rules" class="{% if page == 'rules' %}active{% endif %}" title="Detection Rules">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-rules"/></svg>
+        <span class="nav-label">Detection Rules</span>
+      </a>
+
+      <a href="/signatures" class="{% if page == 'signatures' %}active{% endif %}"
+         title="Detection Signatures">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-signatures"/></svg>
+        <span class="nav-label">Detection Signatures</span>
+      </a>
+      {% endif %}
+
+      <a href="/ipblacklist" class="{% if page == 'blacklist' %}active{% endif %}"
+         title="IP Blacklist">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-blacklist"/></svg>
+        <span class="nav-label">IP Blacklist</span>
+      </a>
+
+      <a href="/whitelist" class="{% if page == 'whitelist' %}active{% endif %}"
+         title="IP Whitelist">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-whitelist"/></svg>
+        <span class="nav-label">IP Whitelist</span>
+      </a>
+
+      <div class="nav-group">จัดการระบบ</div>
+
+      <a href="/agents" class="{% if page == 'agents' %}active{% endif %}" title="Client Server">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-agents"/></svg>
+        <span class="nav-label">Client Server</span>
+      </a>
+
+      {% if user.role == 'admin' %}
+      <a href="/line-recipients" class="{% if page == 'line_recipients' %}active{% endif %}"
+         title="LINE Recipients">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-line"/></svg>
+        <span class="nav-label">LINE Recipients</span>
+      </a>
+
+      <a href="/manage-users" class="{% if page == 'manage_users' %}active{% endif %}"
+         title="Manage Users">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-users"/></svg>
+        <span class="nav-label">Manage Users</span>
+      </a>
+
+      <a href="/settings" class="{% if page == 'settings' %}active{% endif %}"
+         title="System Settings">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-settings"/></svg>
+        <span class="nav-label">System Settings</span>
+      </a>
+      {% endif %}
+
+      <a href="/profile" class="{% if page == 'profile' %}active{% endif %}"
+         title="Profile Setting">
+        <svg class="nav-ico" aria-hidden="true"><use href="#ico-profile"/></svg>
+        <span class="nav-label">Profile Setting</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      SecureLog v1.0
+    </div>
+  </aside>
+
+  <!-- ฉากหลังตอนเปิดเมนูบนมือถือ (จอใหญ่ CSS ซ่อนไว้) — แตะที่ไหนก็ปิดเมนู -->
+  <div class="nav-backdrop" x-show="navOpen" x-cloak @click="navOpen = false"></div>
+
+  <main class="main">
+
+    <header class="topbar">
+      <div class="topbar-left">
+        <!-- จอเล็ก: เปิด/ปิดเมนูแบบ off-canvas -->
+        <button class="nav-toggle" type="button"
+                @click="navOpen = !navOpen"
+                :aria-expanded="navOpen"
+                aria-label="เปิด/ปิดเมนู">☰</button>
+
+        <!-- จอใหญ่: ย่อเมนูเหลือแต่ไอคอน -->
+        <button class="rail-toggle" type="button"
+                @click="toggleRail()"
+                :aria-expanded="!collapsed"
+                :aria-label="collapsed ? 'กางเมนู' : 'ย่อเมนู'"
+                :title="collapsed ? 'กางเมนู' : 'ย่อเมนู'">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"
+               fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <path d="M2 4h12M2 8h12M2 12h12"/>
+          </svg>
+        </button>
+
+        <div class="topbar-title">
+          {% block topbar_title %}Dashboard{% endblock %}
+        </div>
+      </div>
+
+      <div class="topbar-right">
+        <span class="nav-user">
+          <strong id="topbarName">{{ user.name or user.username }}</strong>
+        </span>
+
+        <button class="btn-logout" type="button"
+                onclick="fetch('/api/logout', { method: 'POST' }).finally(function () { window.location.href = '/login'; })">
+          ออกจากระบบ
+        </button>
+      </div>
+    </header>
+
+    <!-- ตำแหน่งปัจจุบันในระบบ (หมวด / หน้า) แบบเดียวกับ breadcrumb ของ Wazuh -->
+    <div class="breadcrumbs" aria-label="ตำแหน่งปัจจุบัน">
+      <span>{{ nav_group }}</span>
+      <span class="crumb-sep" aria-hidden="true">/</span>
+      {# block ประกาศซ้ำในไฟล์เดียวกันไม่ได้ — เรียกซ้ำผ่าน self.<ชื่อ>() แทน #}
+      <span class="crumb-current">{{ self.topbar_title() }}</span>
+    </div>
+
+    <section class="page-content">
+      {% block content %}{% endblock %}
+    </section>
+
+  </main>
+
+</div>
+
+<!-- กล่องยืนยัน — ใบเดียวใช้ร่วมทุกหน้า แทน confirm() ของเบราว์เซอร์ (ดู static/js/ui.js)
+     อยู่นอก .layout เพราะ backdrop เป็น position:fixed ที่ต้องคลุมทั้งจอ -->
+<div class="modal-backdrop" x-data x-show="$store.ui.dialog.open" x-cloak
+     x-transition.opacity
+     @click.self="$store.ui.cancel()"
+     @keydown.escape.window="$store.ui.dialog.open && $store.ui.cancel()">
+
+  <div class="modal confirm-modal">
+    <div class="modal-header">
+      <div class="modal-title" x-text="$store.ui.dialog.title"></div>
+
+      <button class="btn-close" type="button"
+              @click="$store.ui.cancel()"
+              aria-label="ปิด">×</button>
+    </div>
+
+    <div class="confirm-message" x-text="$store.ui.dialog.message"></div>
+
+    <div class="confirm-detail" x-show="$store.ui.dialog.detail"
+         x-text="$store.ui.dialog.detail"></div>
+
+    <div class="modal-actions">
+      <button class="btn-secondary" type="button"
+              @click="$store.ui.cancel()"
+              x-text="$store.ui.dialog.cancelText"></button>
+
+      <button type="button"
+              :class="$store.ui.dialog.danger ? 'btn-danger' : 'btn-primary'"
+              @click="$store.ui.accept()"
+              x-text="$store.ui.dialog.confirmText"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Popup แจ้งเตือน alert ใหม่ มุมขวาล่าง — อยู่นอก .layout เพราะ position: fixed
+     และต้องโผล่ได้ทุกหน้า (x-data เปล่า ๆ เพื่อให้ $store ใช้ได้ในบล็อกนี้) -->
+<div class="toast-stack" x-data role="status" aria-live="polite">
+
+  <!-- แถบแจ้งผลของสิ่งที่ผู้ใช้เพิ่งกด (แทน alert()) — อยู่บนสุดของกองเพราะเกี่ยวกับ
+       สิ่งที่เพิ่งทำไป ต้องเห็นก่อน alert การโจมตีที่เด้งเข้ามาเองตลอดเวลา -->
+  <template x-for="notice in $store.ui.notices" :key="notice.id">
+    <div class="notice" :class="'notice-' + notice.kind"
+         @mouseenter="$store.ui.hold(notice.id)"
+         @mouseleave="$store.ui.release(notice.id)">
+
+      <span class="notice-icon" aria-hidden="true"
+            x-text="notice.kind === 'success' ? '✓' : (notice.kind === 'error' ? '!' : 'i')"></span>
+
+      <span class="notice-text" x-text="notice.message"></span>
+
+      <button class="notice-close" type="button"
+              @click="$store.ui.dismiss(notice.id)"
+              aria-label="ปิดข้อความ">×</button>
+    </div>
+  </template>
+
+  <template x-for="toast in $store.alerts.toasts" :key="toast.id">
+    <div class="toast" :class="'toast-' + toast.severity"
+         @mouseenter="$store.alerts.hold(toast.id)"
+         @mouseleave="$store.alerts.release(toast.id)">
+
+      <div class="toast-head">
+        <span class="toast-severity" :class="'badge-' + toast.severity"
+              x-text="toast.severity"></span>
+
+        <span class="toast-time" x-text="formatTime(toast.timestamp)"></span>
+
+        <button class="toast-close" type="button"
+                @click="$store.alerts.dismiss(toast.id)"
+                aria-label="ปิดการแจ้งเตือน">×</button>
+      </div>
+
+      <div class="toast-title" x-text="toast.attack_type"></div>
+
+      <div class="toast-meta">
+        <span class="toast-ip" x-text="toast.source_ip"></span>
+        →
+        <span x-text="toast.hostname"></span>
+        <template x-if="toast.fail_count">
+          <span x-text="' · ' + toast.fail_count + ' ครั้ง'"></span>
+        </template>
+      </div>
+
+      <button class="toast-link" type="button" @click="$store.alerts.open(toast.id)">
+        ดูรายละเอียด →
+      </button>
+    </div>
+  </template>
+</div>
+
+{% block scripts %}{% endblock %}
+
+</body>
+</html>

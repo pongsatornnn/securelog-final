@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - SecureLog{% endblock %}
+
+{% block topbar_title %}Dashboard{% endblock %}
+
+{% block head %}
+<style>
+  /* .panel / .panel-header / .section-title / .stat-* / .chart-* / .donut* / .bars
+     / .btn-link / table / .badge / .state-box มาจาก app.css แล้ว — ที่นี่เหลือเฉพาะ
+     ของที่ใช้แค่หน้านี้จริง ๆ */
+
+  .host-ip-text {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* .panel มีขอบของตัวเองอยู่แล้ว ตารางข้างในจึงไม่ต้องมีการ์ดซ้อนการ์ดอีกชั้น */
+  .panel .table-wrap {
+    border: none;
+    border-radius: var(--radius);
+  }
+
+  /* พื้นหลังของ .panel เป็นสีการ์ดอยู่แล้ว — เว้น .is-error ไว้ให้ยังเป็นพื้นแดงจาง ๆ ได้ */
+  .panel .state-box:not(.is-error) {
+    background: transparent;
+  }
+
+  /* กล่องสถานะในพาเนลกราฟต้องสูงเท่า ๆ กับกราฟ ไม่งั้นสองพาเนลข้างกันสูงไม่เท่ากัน
+     ตอนที่ฝั่งหนึ่งมีข้อมูลแล้วอีกฝั่งยังโหลดอยู่ */
+  .chart-grid .state-box {
+    padding: 0;
+    min-height: 190px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div x-data="dashboardApp()" x-init="loadAll(); setInterval(loadAll, 15000)">
+
+  <div class="page-title">Security Dashboard</div>
+  <div class="page-subtitle">ภาพรวมความปลอดภัยของระบบ</div>
+
+  <!-- โหลดครั้งแรกไม่ผ่าน: ตัวเลขทุกช่องจะเป็น 0 ซึ่งอ่านว่า "ปลอดภัยดี" ทั้งที่ยังไม่รู้อะไรเลย
+       ต้องบอกให้ชัดว่าเลขที่เห็นเชื่อไม่ได้ -->
+  <div class="state-box is-error" x-show="!loading && loadError && alerts.length === 0" x-cloak
+       style="border:1px solid var(--danger-border); border-radius:var(--radius-lg); margin-bottom:16px; padding:1.5rem;">
+    <div class="state-title">โหลดข้อมูลภาพรวมไม่สำเร็จ</div>
+    <div class="state-detail">
+      <span x-text="loadError"></span> — ตัวเลขด้านล่างยังไม่ใช่สถานะจริงของระบบ
+    </div>
+    <button class="btn-retry" type="button" @click="loading = true; loadAll()">ลองใหม่อีกครั้ง</button>
+  </div>
+
+  <!-- เคยโหลดได้แล้วแต่รอบล่าสุดพลาด: ตัวเลขเดิมยังมีประโยชน์ แค่บอกว่าอาจไม่สด -->
+  <div class="stale-banner" x-show="loadError && alerts.length > 0" x-cloak>
+    ข้อมูลอาจไม่เป็นปัจจุบัน — อัปเดตรอบล่าสุดไม่สำเร็จ (<span x-text="loadError"></span>)
+  </div>
+
+  <div class="stat-row">
+    <div class="stat-tile">
+      <div class="stat-value" x-text="alertsToday"></div>
+      <div class="stat-label">Alerts วันนี้</div>
+    </div>
+
+    <div class="stat-tile">
+      <div class="stat-value" x-text="agentsOnline + ' / ' + agents.length"></div>
+      <div class="stat-label">Client Server ออนไลน์</div>
+    </div>
+
+    <div class="stat-tile">
+      <div class="stat-value"
+           :class="{ 'is-danger': severityCounts.HIGH + severityCounts.CRITICAL > 0 }"
+           x-text="severityCounts.HIGH + severityCounts.CRITICAL"></div>
+      <div class="stat-label">High / Critical</div>
+    </div>
+
+    <div class="stat-tile">
+      <div class="stat-value" x-text="alerts.length"></div>
+      <div class="stat-label">Alerts ทั้งหมด</div>
+      <!-- ตัวเลขนี้ถูกจำกัดที่ 200 ตาม /api/alerts — ต้องบอกไว้ ไม่งั้นอ่านว่าระบบมีแค่นี้ -->
+      <!-- <div class="stat-sub">ล่าสุด 200 รายการ</div> -->
+    </div>
+  </div>
+
+  <div class="chart-grid">
+
+    <!-- ─── จำนวน alert ต่อวัน ─── -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="section-title">Alerts ย้อนหลัง 7 วัน</div>
+      </div>
+
+      <div class="chart-body">
+        <div class="state-box" x-show="loading">
+          <div class="state-spinner" aria-hidden="true"></div>
+          <div class="state-title">กำลังโหลด...</div>
+        </div>
+
+        <div class="state-box" x-show="!loading && alerts.length === 0" x-cloak>
+          <div class="state-title">ยังไม่พบการโจมตี</div>
+        </div>
+
+        <div class="bars" x-show="!loading && alerts.length > 0" x-cloak>
+          <template x-for="bucket in dailyCounts" :key="bucket.key">
+            <div class="bar-col" :title="bucket.label + ' — ' + bucket.count + ' รายการ'">
+              <div class="bar-slot">
+                <div class="chart-bar" :style="'height:' + (bucket.count / dailyMax * 100) + '%'"></div>
+              </div>
+              <div class="bar-label" x-text="bucket.label"></div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── สัดส่วนประเภทการโจมตี ─── -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="section-title">ประเภทการโจมตี</div>
+      </div>
+
+      <div class="chart-body">
+        <div class="state-box" x-show="loading">
+          <div class="state-spinner" aria-hidden="true"></div>
+          <div class="state-title">กำลังโหลด...</div>
+        </div>
+
+        <div class="state-box" x-show="!loading && alerts.length === 0" x-cloak>
+          <div class="state-title">ยังไม่พบการโจมตี</div>
+        </div>
+
+        <div class="donut-layout" x-show="!loading && alerts.length > 0" x-cloak>
+          <div class="donut-holder">
+            <!-- วงกลมรัศมี 15.9155 มีเส้นรอบวง = 100 พอดี ทำให้ใส่ stroke-dasharray
+                 เป็น "เปอร์เซ็นต์" ได้ตรง ๆ โดยไม่ต้องคำนวณความยาวส่วนโค้งเอง
+
+                 ใช้ x-html ไม่ใช่ <template x-for> เพราะ <template> ที่อยู่ใน <svg> ถูก
+                 เบราว์เซอร์ parse เป็น SVG element ธรรมดา (ไม่มี .content ให้ Alpine โคลน)
+                 แล้ว Alpine จะพังทั้งหน้าด้วย TypeError ที่ importNode -->
+            <svg class="donut" viewBox="0 0 42 42" role="img"
+                 aria-label="สัดส่วนประเภทการโจมตี" x-html="donutMarkup"></svg>
+
+            <div class="donut-center">
+              <div class="donut-total" x-text="alerts.length"></div>
+              <div class="donut-total-label">Alerts</div>
+            </div>
+          </div>
+
+          <div class="donut-legend">
+            <template x-for="seg in attackTypeStats" :key="seg.name">
+              <div class="legend-item">
+                <span class="legend-swatch" :style="'background:' + seg.color"></span>
+                <span class="legend-name" x-text="seg.name" :title="seg.name"></span>
+                <span class="legend-value" x-text="seg.count"></span>
+                <span class="legend-pct" x-text="Math.round(seg.pct) + '%'"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="section-title">การโจมตีล่าสุด</div>
+      <a class="btn-link" href="/alerts">ดูทั้งหมด →</a>
+    </div>
+
+    <div class="state-box" x-show="loading">
+      <div class="state-spinner" aria-hidden="true"></div>
+      <div class="state-title">กำลังโหลดการโจมตีล่าสุด...</div>
+    </div>
+
+    <div class="state-box is-error" x-show="!loading && loadError && alerts.length === 0" x-cloak>
+      <div class="state-title">โหลดไม่สำเร็จ</div>
+      <div class="state-detail">ยังตอบไม่ได้ว่ามีการโจมตีหรือไม่ — ไม่ได้แปลว่าไม่มี</div>
+    </div>
+
+    <div class="state-box" x-show="!loading && !loadError && alerts.length === 0" x-cloak>
+      <div class="state-title">ยังไม่พบการโจมตี</div>
+      <div class="state-detail">ระบบกำลังเฝ้าดูอยู่ — เหตุการณ์ใหม่จะขึ้นที่นี่ทันทีที่ตรวจพบ</div>
+    </div>
+
+    <div class="table-wrap" x-show="alerts.length > 0" x-cloak>
+    <table>
+      <thead>
+        <tr>
+          <th>เวลา</th>
+          <th>Host</th>
+          <th>ประเภทการโจมตี</th>
+          <th>Attacker IP</th>
+          <th>ความรุนแรง</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="alert in alerts.slice(0, 5)" :key="alert.id">
+          <!-- เครื่องหมาย "ยังไม่ได้เปิดดูรายละเอียด" ชุดเดียวกับหน้า Alerts (ดู app.css) -->
+          <tr :class="{ 'unread': !$store.alerts.isOpened(alert.id) }">
+            <td>
+              <span class="unread-slot">
+                <span class="unread-dot"
+                      x-show="!$store.alerts.isOpened(alert.id)"
+                      title="ยังไม่ได้เปิดดูรายละเอียด"></span>
+              </span>
+
+              <span x-text="formatTime(alert.timestamp)"></span>
+            </td>
+            <td x-text="alert.hostname || '-'"></td>
+            <td x-text="alert.attack_type"></td>
+            <td x-text="alert.source_ip || '-'" class="host-ip-text"></td>
+            <td>
+              <span class="badge" :class="'badge-' + alert.severity" x-text="alert.severity"></span>
+            </td>
+            <td>
+              <a class="btn-link" :href="'/alerts?focus=' + alert.id">ดู</a>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // ชุดสีของกราฟ — ต้องตรงกับ --vis-0..6 ใน app.css (ส่วนโค้งของโดนัทกับจุดสีใน legend
+  // ใช้สีคนละตัวต่อรายการ จึงต้องผูกค่าสีที่ตัว element ไม่ใช่ผ่าน class)
+  const VIS_COLORS = [
+    '#6092c0', '#d36086', '#9170b8', '#ca8eae', '#d6bf57', '#b9a888', '#da8b45',
+  ]
+
+  const TZ = 'Asia/Bangkok'
+
+  // วันที่แบบ YYYY-MM-DD ตามเวลาไทย — ใช้เป็นคีย์จับกลุ่มรายวัน (เทียบสตริงตรง ๆ ได้)
+  function bangkokDate(value) {
+    return new Date(value).toLocaleDateString('en-CA', { timeZone: TZ })
+  }
+
+  function dashboardApp() {
+    return {
+      alerts         : [],
+      agents         : [],
+      severityCounts : { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 },
+
+      // หน้านี้ refresh เองทุก 15 วิ — แยก "โหลดครั้งแรกอยู่" ออกจาก "รอบล่าสุดพลาด"
+      // เพราะสองอย่างนี้ต้องแสดงคนละแบบ (กล่องกำลังโหลด vs แถบเตือนว่าข้อมูลไม่สด)
+      loading   : true,
+      loadError : '',
+
+      get alertsToday() {
+        const today = bangkokDate(new Date())
+        return this.alerts.filter(a => a.timestamp && bangkokDate(a.timestamp) === today).length
+      },
+
+      get agentsOnline() {
+        return this.agents.filter(a => a.status === 'online').length
+      },
+
+      // ─── กราฟแท่ง: จำนวน alert ต่อวัน ย้อนหลัง 7 วัน ───
+
+      get dailyCounts() {
+        const DAYS = 7
+        const buckets = []
+        const byDate  = {}
+
+        for (let i = DAYS - 1; i >= 0; i--) {
+          const day = new Date(Date.now() - i * 86400000)
+
+          const bucket = {
+            key   : bangkokDate(day),
+            label : day.toLocaleDateString('th-TH', { timeZone: TZ, day: 'numeric', month: 'numeric' }),
+            count : 0,
+          }
+
+          byDate[bucket.key] = bucket
+          buckets.push(bucket)
+        }
+
+        for (const alert of this.alerts) {
+          if (!alert.timestamp) continue
+
+          // alert ที่เก่ากว่า 7 วันไม่มีช่องให้ลง — ข้ามไป ไม่ใช่ยัดรวมกับวันแรก
+          const bucket = byDate[bangkokDate(alert.timestamp)]
+          if (bucket) bucket.count++
+        }
+
+        return buckets
+      },
+
+      // อย่างน้อย 1 กันหารด้วยศูนย์ตอนไม่มี alert เลยในช่วง 7 วัน
+      get dailyMax() {
+        return Math.max(1, ...this.dailyCounts.map(b => b.count))
+      },
+
+      // ─── โดนัท: สัดส่วนประเภทการโจมตี ───
+
+      get attackTypeStats() {
+        const counts = {}
+
+        for (const alert of this.alerts) {
+          const key = alert.attack_type || 'ไม่ระบุ'
+          counts[key] = (counts[key] || 0) + 1
+        }
+
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+
+        // เกิน 7 ก้อนเริ่มอ่านไม่ออก (สีเริ่มซ้ำ + legend ยาวเกินพาเนล) — ที่เหลือยุบรวมกัน
+        const shown = sorted.slice(0, 6)
+        const rest  = sorted.slice(6)
+
+        if (rest.length > 0) {
+          shown.push([
+            'อื่น ๆ (' + rest.length + ' ประเภท)',
+            rest.reduce((sum, entry) => sum + entry[1], 0),
+          ])
+        }
+
+        const total = this.alerts.length || 1
+        let start = 0
+
+        return shown.map(([name, count], index) => {
+          const pct = (count / total) * 100
+
+          // start = จุดเริ่มของส่วนโค้งนี้ (หน่วยเป็น % ของเส้นรอบวง) ใช้เป็น
+          // stroke-dashoffset ค่าลบ เพื่อเลื่อนส่วนโค้งไปต่อท้ายก้อนก่อนหน้า
+          const segment = { name, count, pct, start, color: VIS_COLORS[index % VIS_COLORS.length] }
+
+          start += pct
+          return segment
+        })
+      },
+
+      // ส่วนโค้งของโดนัทประกอบเป็นสตริงเอง (ดูเหตุผลที่ไม่ใช้ x-for ใน markup)
+      // ค่าที่ประกอบเข้าไปมีแค่ตัวเลขที่คำนวณเองกับสีจาก VIS_COLORS — ไม่มีข้อความจาก
+      // ฐานข้อมูลปนเข้ามา จึงไม่มีช่องให้ยัด markup แปลกปลอม (ชื่อประเภทอยู่ใน legend
+      // ที่เป็น HTML ปกติและผูกด้วย x-text อยู่แล้ว)
+      get donutMarkup() {
+        const arcs = this.attackTypeStats.map(seg =>
+          '<circle class="donut-seg" cx="21" cy="21" r="15.9155"' +
+          ' stroke="' + seg.color + '"' +
+          ' stroke-dasharray="' + seg.pct + ' ' + (100 - seg.pct) + '"' +
+          ' stroke-dashoffset="' + (-seg.start) + '"></circle>'
+        )
+
+        return '<circle class="donut-track" cx="21" cy="21" r="15.9155"></circle>' + arcs.join('')
+      },
+
+      async loadAll() {
+        const results = await Promise.allSettled([this.loadAlerts(), this.loadAgents()])
+
+        // ส่วนไหนพลาดก็บอกเฉพาะส่วนนั้น ไม่ทิ้งทั้งหน้า (alert กับ agent คนละ endpoint)
+        const failed = results
+          .filter(r => r.status === 'rejected')
+          .map(r => r.reason && r.reason.message)
+          .filter(Boolean)
+
+        this.loadError = failed.join(' / ')
+        this.loading   = false
+      },
+
+      async loadAlerts() {
+        try {
+          // ขอ 200 แถวแรกตรง ๆ — หน้านี้ใช้ 5 แถวล่าสุดกับนับสัดส่วนความรุนแรงจากก้อนนี้
+          // (เท่าเดิมกับตอนที่ /api/alerts ยังคืน 200 แถวเสมอก่อนมีการแบ่งหน้า)
+          const res = await fetch('/api/alerts?per_page=200')
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `โหลด alert ไม่สำเร็จ (${res.status})`)
+          }
+
+          const data = (await res.json()).items || []
+          this.alerts = data
+
+          const counts = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
+          for (const alert of data) {
+            if (counts[alert.severity] !== undefined) {
+              counts[alert.severity]++
+            }
+          }
+          this.severityCounts = counts
+        } catch (err) {
+          console.error('โหลด alert ไม่สำเร็จ', err)
+          throw new Error(err.message || 'โหลด alert ไม่สำเร็จ')
+        }
+      },
+
+      async loadAgents() {
+        try {
+          const res = await fetch('/api/agents')
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.detail || `โหลด Client Server ไม่สำเร็จ (${res.status})`)
+          }
+
+          this.agents = await res.json()
+        } catch (err) {
+          console.error('โหลด agent ไม่สำเร็จ', err)
+          throw new Error(err.message || 'โหลด Client Server ไม่สำเร็จ')
+        }
+      },
+
+    }
+  }
+</script>
+{% endblock %}

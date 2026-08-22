@@ -1,0 +1,22 @@
+# SecureLog Agent — systemd unit template
+# setup.sh จะแทน __INSTALL_DIR__ แล้วติดตั้งเป็น /etc/systemd/system/securelog-agent.service
+#
+# รันเป็น root เพราะ agent ต้องสั่ง ufw/conntrack (สิทธิ์ root) —
+# ตัดปัญหา sudoers NOPASSWD ไปเลย
+
+[Unit]
+Description=SecureLog Agent (block/unblock + metrics)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/venv/bin/python __INSTALL_DIR__/agent_core.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,31 @@
+# Python dependencies ฝั่ง Central Server (SecureLog)
+# ติดตั้ง:  python3 -m venv venv && venv/bin/pip install -r requirements.txt
+# หมายเหตุ: เวอร์ชัน pin ตรงกับที่รัน/ทดสอบจริงบนเครื่องนี้ (venv Python 3.12)
+# ฝั่ง Agent มี dependency แยกอยู่ที่ for_Agent/package/requirements.txt (redis + psutil)
+
+# --- Web framework / ASGI ---
+fastapi==0.136.3
+starlette==1.3.0
+uvicorn==0.49.0
+Jinja2==3.1.6            # render templates (dashboard/alerts/…)
+pydantic==2.13.4         # request schemas (main/schemas/)
+# ฟอร์ม login (/api/login ใช้ OAuth2PasswordRequestForm = form-encoded ไม่ใช่ JSON)
+# ⚠️ ขาดตัวนี้ = แอป **start ไม่ขึ้นเลย** ไม่ใช่แค่ login ไม่ได้ — FastAPI เรียก
+# ensure_multipart_is_installed() ตอนวิเคราะห์ dependency ของ route (ตอน import)
+# แล้วโยน RuntimeError ทันที ทั้งที่ไม่มีใครยิง request เข้ามาสักคน
+python-multipart==0.0.32
+slowapi==0.1.9           # rate limit หน้า login (5/min)
+itsdangerous==2.2.0      # เซ็น CSRF token + one-time download link
+
+# --- Database (PostgreSQL แบบ async) ---
+SQLAlchemy==2.0.50
+asyncpg==0.31.0          # driver ของ postgresql+asyncpg:// (ดู main/database/connection.py)
+
+# --- Redis (message bus / cache / pub-sub, ต่อแบบ mTLS) ---
+redis==8.0.0
+
+# --- Auth ---
+python-jose==3.5.0       # JWT (HS256) — สร้าง/ตรวจ access_token cookie
+bcrypt==5.0.0            # hash รหัสผ่าน user
+cryptography==48.0.1     # เข้ารหัสค่า secret ในตาราง app_settings (main/secret_box.py)
+python-dotenv==1.2.2     # โหลด .env (secret/DB/Redis config)

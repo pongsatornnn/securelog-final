@@ -1,0 +1,784 @@
+/* หน้า Agents — โหลดต่อจาก app.css (ดู templates/agents.html)
+   เหลือเฉพาะของที่เป็นของหน้านี้จริง ๆ: การ์ด agent, แถบ metric, modal ดาวน์โหลด/คู่มือ
+
+   ของที่เคยนิยามซ้ำกับ app.css ถูกตัดออกแล้ว (:root, .page-header, .btn-primary/-secondary/
+   -danger, .form-label/.form-input, .state-box, .modal*, .btn-close, .error-box,
+   .required-mark, .modal-actions) — เดิม :root ที่นี่ประกาศ token ธีมสว่างทับของกลาง
+   ทำให้หน้านี้หน้าเดียวไม่เปลี่ยนเป็นธีมมืดตาม
+   (หมายเหตุ: `.success-result-box` ของหน้านี้เป็นคนละตัวกับ `.result-*` ใน app.css) */
+
+.modal { --modal-width: 760px; }
+
+/* หัวข้อในหน้านี้เป็นหัวของทั้งบล็อก ไม่ใช่หัวข้อย่อยในพาเนล จึงไม่ต้องเป็นตัวพิมพ์ใหญ่ */
+.section-title {
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ─── ปุ่มเฉพาะหน้านี้ ─── */
+
+.btn-copy-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0b1a26;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-copy-link:hover {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.copy-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.button-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-warning {
+  background: transparent;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--warning);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-warning:hover {
+  background: var(--warning-soft);
+  border-color: var(--warning);
+}
+
+/* ─── ตัวเลขสรุปด้านบน (markup ใช้ .summary-grid/.summary-card อยู่แล้ว) ─── */
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px;
+  border-left: 1px solid var(--border-color);
+  min-width: 0;
+}
+
+.summary-card:first-child {
+  border-left: none;
+}
+
+.summary-label {
+  order: 2;                 /* markup วาง label ไว้ก่อนตัวเลข แต่ต้องแสดงใต้ตัวเลข */
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.summary-value {
+  order: 1;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.monitor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+/* ─── ตัวกรองสถานะ ─── */
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-pill {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.filter-pill:hover,
+.filter-pill.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ─── การ์ด agent ─── */
+
+.agent-monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 14px;
+}
+
+.agent-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.12s ease;
+}
+
+.agent-card:hover {
+  border-color: var(--border-strong);
+}
+
+.agent-card-head {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.agent-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  border: 1px solid rgba(54, 162, 239, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  flex: 0 0 auto;
+}
+
+/* ไอคอน server ตัวเดียวกับเมนูซ้าย (#ico-agents ใน base.html) — เป็นเส้น ไม่ใช่ทึบ */
+.agent-icon svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.agent-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 2px;
+}
+
+.agent-host {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+/* ─── ป้ายสถานะ online / offline / pending ─── */
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.status-badge.online {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.status-badge.online .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.status-badge.offline {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+.status-badge.offline .status-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.status-badge.pending {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.status-badge.pending .status-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px var(--warning-soft);
+}
+
+.agent-card-body {
+  padding: 12px 14px 14px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.info-item {
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 10px;
+  min-width: 0;
+}
+
+.info-label {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 5px;
+}
+
+.info-value {
+  font-size: 12.5px;
+  color: var(--text-main);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ยังไม่ผูก IP = สถานะปกติของ agent ที่เพิ่งสร้าง ไม่ใช่ error — ใช้สีจาง ๆ ให้ต่างจากค่าจริง
+   พอให้รู้ว่ายังไม่มีค่า แต่ไม่ตะโกนเหมือนคำเตือน */
+.info-value.is-unbound {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+/* ─── คำเตือน IP ไม่ตรงกับที่ผูกไว้ ───
+   ระหว่างที่ขึ้นแถบนี้ ข้อมูลจาก agent ตัวนั้นถูกทิ้งทั้งหมด (ทั้ง metrics และ log) —
+   ต้องเด่นพอที่จะไม่ถูกมองข้าม เพราะถ้าเป็นเคส DHCP เปลี่ยน IP แปลว่าเครื่องนั้นกำลังเงียบอยู่ */
+.ip-mismatch {
+  margin-top: 12px;
+  padding: 11px 13px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+}
+
+.ip-mismatch-head {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-bottom: 6px;
+}
+
+.ip-mismatch-body {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.ip-mismatch-body + .ip-mismatch-body {
+  margin-top: 5px;
+}
+
+.ip-mismatch-body .strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.ip-mismatch-actions {
+  margin-top: 9px;
+}
+
+/* ─── แถบ CPU / RAM / Disk ─── */
+
+.monitor-panel {
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.panel-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+}
+
+.metric-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 42px 1fr 50px;
+  align-items: center;
+  gap: 10px;
+}
+
+.metric-label {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-weight: 700;
+}
+
+/* ชื่อ .bar ตรงกับกราฟแท่งของหน้า Dashboard แต่คนละหน้ากันและไฟล์นี้โหลดทีหลัง
+   จึงไม่ชนกันจริง — กราฟใน app.css ใช้ชื่อ .chart-bar แยกไว้ต่างหากแล้ว */
+.bar {
+  height: 8px;
+  background: var(--bg-raised);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: 999px;
+  transition: width 0.25s ease, background 0.25s ease;
+}
+
+.bar-fill.warn {
+  background: var(--warning);
+}
+
+.bar-fill.danger {
+  background: var(--danger);
+}
+
+.bar-fill.unknown {
+  background: var(--text-dim);
+}
+
+.metric-value {
+  font-size: 11.5px;
+  color: var(--text-main);
+  font-weight: 700;
+  text-align: right;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─── ป้ายเปิด/ปิดใช้งาน ─── */
+
+.active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.active-badge.enabled {
+  background: var(--success-soft);
+  color: var(--success);
+  border-color: var(--success-border);
+}
+
+.active-badge.disabled {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: var(--danger-border);
+}
+
+.active-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.active-badge.enabled .active-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.active-badge.disabled .active-dot {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+.live-hint {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+/* ─── ปุ่มในการ์ด / ในกล่องรายละเอียด ─── */
+
+.agent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.detail-actions {
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.btn-detail,
+.btn-edit-detail,
+.btn-regen-detail {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-detail:hover,
+.btn-edit-detail:hover,
+.btn-regen-detail:hover {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.btn-regenerate,
+.btn-delete-detail {
+  background: transparent;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-regenerate:hover,
+.btn-delete-detail:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* ─── modal ดาวน์โหลด / คู่มือติดตั้ง ─── */
+
+.download-modal {
+  --modal-width: 760px;
+}
+
+.download-modal .modal-header {
+  margin-bottom: 16px;
+}
+
+.download-modal .modal-title {
+  font-size: 15px;
+}
+
+.guide-modal {
+  --modal-width: 640px;
+}
+
+.guide-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.guide-step {
+  display: flex;
+  gap: 12px;
+}
+
+.guide-step-num {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #0b1a26;
+  font-size: 12.5px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.guide-step-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+
+.guide-step-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.guide-step-text code {
+  background: var(--bg-raised);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--text-main);
+}
+
+/* บล็อกคำสั่ง/ค่าที่ต้องคัดลอก — เข้มกว่าพื้นการ์ดเพื่อให้แยกออกว่าเป็นของที่ก๊อปได้ */
+.guide-code,
+.result-value {
+  margin-top: 8px;
+  background: #0b0c0f;
+  color: var(--text-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 11px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ─── ฟอร์มในกล่องเพิ่ม/แก้ไข agent ─── */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group.full {
+  grid-column: 1 / -1;
+}
+
+.form-grid-spaced {
+  margin-top: 14px;
+}
+
+/* ─── กล่องผลลัพธ์ / คำเตือน ─── */
+
+.success-result-box {
+  margin-top: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.warning-box {
+  margin-top: 12px;
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+  border-radius: var(--radius);
+  padding: 11px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.link-countdown {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--primary-soft);
+  border: 1px solid rgba(54, 162, 239, 0.35);
+  color: var(--primary);
+  border-radius: var(--radius);
+  padding: 7px 11px;
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.link-countdown.warn {
+  background: var(--warning-soft);
+  border-color: var(--warning-border);
+  color: var(--warning);
+}
+
+.link-countdown.expired {
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+  color: var(--danger);
+}
+
+.btn-primary.link-disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.important-read-box {
+  margin-top: 14px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 11px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+/* ─── ตารางรายละเอียด agent ─── */
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.detail-item {
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.detail-item label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.detail-item span {
+  font-size: 13px;
+  color: var(--text-main);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+/* ─── จอเล็ก ─── */
+
+@media (max-width: 1100px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .summary-card:nth-child(3) {
+    border-left: none;
+  }
+
+  .summary-card:nth-child(n + 3) {
+    border-top: 1px solid var(--border-color);
+  }
+
+  .monitor-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-card {
+    border-left: none;
+  }
+
+  .summary-card + .summary-card {
+    border-top: 1px solid var(--border-color);
+  }
+
+  .agent-monitor-grid,
+  .form-grid,
+  .detail-grid,
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
+
+  .filter-group {
+    flex-wrap: wrap;
+  }
+}

@@ -1,0 +1,89 @@
+"""
+Migration ครั้งเดียว: เพิ่มคอลัมน์สำหรับผูก IP เข้ากับ Agent
+
+ใช้กับเครื่องที่เคยรันระบบเวอร์ชันก่อนหน้ามาแล้ว — `Base.metadata.create_all()` สร้างได้แค่
+"ตารางที่ยังไม่มี" ไม่แก้ตารางที่มีอยู่แล้ว คอลัมน์ใหม่ใน models.py จึงไม่ขึ้นเองบน DB เก่า
+(เครื่องที่ติดตั้งใหม่ไม่ต้องรัน — create_all สร้างครบตั้งแต่แรก)
+
+สิ่งที่เพิ่มในตาราง agents:
+  - ip_interface   : ชื่อ interface ที่ agent ใช้เป็นแหล่งของ IP (เลือกตอน setup.sh)
+  - pending_ip     : IP ล่าสุดที่ถูกปฏิเสธเพราะไม่ตรงกับ ip_address
+  - pending_ip_at  : เวลาที่ถูกปฏิเสธครั้งล่าสุด
+
+ไม่แตะ `ip_address` ของ agent เดิม — ค่าที่แอดมินกรอกไว้จะกลายเป็น "IP ที่ผูกไว้" ทันที
+agent ตัวไหนที่ ip_address ยังว่างจะถูกผูกอัตโนมัติจาก IP ที่รายงานมาครั้งแรก (TOFU)
+
+ใช้ IF NOT EXISTS ทุกคำสั่ง จึงรันซ้ำได้โดยไม่พัง (idempotent)
+
+รันด้วย (จากโฟลเดอร์ main/): python -m database.migrate_agent_ip_binding
+"""
+
+import asyncio
+
+from sqlalchemy import text
+
+from database.connection import AsyncSessionLocal
+
+
+LOG_PREFIX = "MIGRATE-AGENT-IP"
+
+NEW_COLUMNS = (
+    ("ip_interface", "VARCHAR(50)"),
+    ("pending_ip", "VARCHAR(50)"),
+    ("pending_ip_at", "TIMESTAMP"),
+)
+
+
+async def migrate() -> None:
+    async with AsyncSessionLocal() as db:
+        existing = set(
+            (
+                await db.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'agents'"
+                    )
+                )
+            ).scalars().all()
+        )
+
+        for name, column_type in NEW_COLUMNS:
+            if name in existing:
+                print(f"[{LOG_PREFIX}] มี agents.{name} อยู่แล้ว ข้าม")
+                continue
+
+            await db.execute(
+                text(f"ALTER TABLE agents ADD COLUMN IF NOT EXISTS {name} {column_type}")
+            )
+            print(f"[{LOG_PREFIX}] เพิ่มคอลัมน์ agents.{name} ({column_type})")
+
+        await db.commit()
+
+        # สรุปสถานะการผูก IP ของ agent ที่มีอยู่ ให้เห็นว่าหลัง migration ตัวไหนล็อกแล้ว
+        # ตัวไหนยังรอผูกอัตโนมัติรอบแรก
+        rows = (
+            await db.execute(
+                text("SELECT agent_id, ip_address FROM agents ORDER BY agent_id")
+            )
+        ).all()
+
+        pinned = [r for r in rows if r.ip_address]
+        waiting = [r for r in rows if not r.ip_address]
+
+        for row in pinned:
+            print(f"[{LOG_PREFIX}] {row.agent_id} ผูกกับ IP {row.ip_address} แล้ว")
+
+        for row in waiting:
+            print(
+                f"[{LOG_PREFIX}] {row.agent_id} ยังไม่มี IP — "
+                f"จะผูกอัตโนมัติจากที่ agent รายงานมาครั้งแรก"
+            )
+
+        print(
+            f"[{LOG_PREFIX}] เสร็จแล้ว: agent ทั้งหมด {len(rows)} ตัว "
+            f"(ผูก IP แล้ว {len(pinned)} / รอผูก {len(waiting)})"
+        )
+
+
+if __name__ == "__main__":
+    asyncio.run(migrate())

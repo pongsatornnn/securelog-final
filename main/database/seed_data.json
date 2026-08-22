@@ -1,0 +1,978 @@
+{
+  "generated_at": "2026-08-06T17:05:19",
+  "source": "security_central@localhost",
+  "detection_rules": {
+    "firewall_deny_rate": {
+      "category": "firewall",
+      "window_seconds": 60,
+      "threshold": 5,
+      "description": "Firewall Deny Flood: 1 IP โดน firewall ปฏิเสธถี่มาก (นับจำนวน event deny)",
+      "is_active": true
+    },
+    "firewall_port_scan": {
+      "category": "firewall",
+      "window_seconds": 60,
+      "threshold": 5,
+      "description": "Port Scan: 1 IP ยิงหาหลาย port (นับจำนวน port ที่ไม่ซ้ำในหน้าต่างเวลา)",
+      "is_active": true
+    },
+    "login_lockout": {
+      "category": "login",
+      "window_seconds": 900,
+      "threshold": 5,
+      "description": "Login lockout: ล็อกบัญชีชั่วคราวเมื่อใส่รหัสผิดเกิน threshold ครั้งใน window",
+      "is_active": true
+    },
+    "ssh_brute_force": {
+      "category": "auth",
+      "window_seconds": 900,
+      "threshold": 5,
+      "description": "SSH brute force: ล็อกอิน SSH ผิดซ้ำจาก IP เดียวกัน (ครอบทั้งยิงถี่และยิงช้าสะสม)",
+      "is_active": true
+    },
+    "sudo_failed": {
+      "category": "auth",
+      "window_seconds": 300,
+      "threshold": 3,
+      "description": "Sudo authentication failure",
+      "is_active": true
+    },
+    "web_command_injection": {
+      "category": "web",
+      "window_seconds": 300,
+      "threshold": 2,
+      "description": "Command Injection จาก Web Access Log (signature-based)",
+      "is_active": true
+    },
+    "web_http_flood": {
+      "category": "web",
+      "window_seconds": 60,
+      "threshold": 300,
+      "description": "App-level DoS (HTTP flood): 1 IP ยิง request ถี่เกินปกติ (นับทุก request ต่อ IP)",
+      "is_active": true
+    },
+    "web_path_traversal": {
+      "category": "web",
+      "window_seconds": 300,
+      "threshold": 2,
+      "description": "Path Traversal จาก Web Access Log (signature-based)",
+      "is_active": true
+    },
+    "web_sql_injection": {
+      "category": "web",
+      "window_seconds": 300,
+      "threshold": 3,
+      "description": "SQL Injection จาก Web Access Log (signature-based)",
+      "is_active": true
+    },
+    "web_xss": {
+      "category": "web",
+      "window_seconds": 300,
+      "threshold": 3,
+      "description": "Cross-Site Scripting (XSS) จาก Web Access Log (signature-based)",
+      "is_active": true
+    }
+  },
+  "alert_severity": {
+    "command_injection": {
+      "severity": "CRITICAL",
+      "description": "Command Injection"
+    },
+    "firewall_deny_rate": {
+      "severity": "HIGH",
+      "description": "Firewall Deny Flood"
+    },
+    "http_flood": {
+      "severity": "HIGH",
+      "description": "HTTP Flood (App-level DoS)"
+    },
+    "path_traversal": {
+      "severity": "HIGH",
+      "description": "Path Traversal"
+    },
+    "port_scan": {
+      "severity": "MEDIUM",
+      "description": "Port Scan"
+    },
+    "sql_injection": {
+      "severity": "CRITICAL",
+      "description": "SQL Injection"
+    },
+    "ssh_brute_force": {
+      "severity": "HIGH",
+      "description": "SSH Brute Force"
+    },
+    "sudo_failed": {
+      "severity": "MEDIUM",
+      "description": "Sudo Authentication Failure"
+    },
+    "xss": {
+      "severity": "HIGH",
+      "description": "Cross-Site Scripting (XSS)"
+    }
+  },
+  "blacklist_ttl": {
+    "command_injection": {
+      "ttl_seconds": null,
+      "description": "ถาวร (default)"
+    },
+    "firewall_deny_rate": {
+      "ttl_seconds": 21600,
+      "description": null
+    },
+    "http_flood": {
+      "ttl_seconds": 21600,
+      "description": null
+    },
+    "path_traversal": {
+      "ttl_seconds": 43200,
+      "description": null
+    },
+    "port_scan": {
+      "ttl_seconds": 3600,
+      "description": null
+    },
+    "sql_injection": {
+      "ttl_seconds": null,
+      "description": "ถาวร (default)"
+    },
+    "ssh_brute_force": {
+      "ttl_seconds": 21600,
+      "description": null
+    },
+    "sudo_failed": {
+      "ttl_seconds": 10800,
+      "description": null
+    },
+    "xss": {
+      "ttl_seconds": 43200,
+      "description": null
+    }
+  },
+  "detection_signatures": {
+    "command_injection": [
+      {
+        "pattern": ";\\s*(cat|ls|id|whoami|uname|pwd|wget|curl|nc|bash|sh|rm|chmod|cp|mv|ping|kill|touch)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\|\\s*(cat|ls|id|whoami|uname|nc|bash|sh|wget|curl|grep|awk)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "&&\\s*(cat|ls|id|whoami|wget|curl|bash|sh|nc|ping)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\|\\|\\s*(cat|ls|id|whoami|wget|curl)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "`[^`]{1,80}`",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\$\\([^)]{1,80}\\)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/bin/(ba)?sh\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bnc\\s+-e\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(wget|curl)\\s+https?://",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bchmod\\s+[0-7]{3,4}\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bbash\\s+-i\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "%0a\\s*(cat|ls|id|whoami|wget|curl)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": ";\\s*(ncat|socat|python3?|perl|ruby|php|busybox|env|export|crontab|useradd|passwd|systemctl|service)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\|\\s*(ncat|socat|python3?|perl|ruby|php|xargs|tee|base64)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "&&\\s*(sleep|ping|python3?|perl|php|base64)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\|\\|\\s*(sleep|ping|nc|python3?|perl|bash|sh)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\$\\{IFS\\}",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bIFS\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bping\\s+-[cn]\\s+\\d+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bsleep\\s+\\d+\\s*(;|\\||&|$)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": ">\\s*/dev/null\\s*2>&1",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/dev/tcp/\\d{1,3}\\.\\d{1,3}",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bmkfifo\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(wget|curl)\\b[^|]{0,60}\\|\\s*(ba)?sh\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(sh|bash|zsh)\\s+-c\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(python3?|perl|ruby)\\s+-[ce]\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bphp\\s+-r\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bbase64\\s+-d\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(system|shell_exec|passthru|proc_open|popen)\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(cat|more|less|head|tail)\\s+/etc/(passwd|shadow)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      }
+    ],
+    "path_traversal": [
+      {
+        "pattern": "\\.\\./",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.\\\\",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.%2f",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "%2e%2e%2f",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "%2e%2e/",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.%5c",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.%c0%af",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "%252e%252e",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.\\.\\./+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/etc/passwd",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/etc/shadow",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/proc/self/environ",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "boot\\.ini",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "win\\.ini",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.%252f",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "%2e%2e%5c",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.%2e/",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "%c0%ae%c0%ae",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.%00",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\.\\.;/",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/etc/(group|hosts|hostname|issue|motd|crontab|resolv\\.conf)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/etc/ssh/ssh_host_\\w+_key",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/root/\\.(ssh|bash_history)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bid_rsa\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/proc/self/(cmdline|fd|maps|status)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/var/log/(auth\\.log|syslog|nginx|apache2)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\\\windows\\\\system32",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "WEB-INF/(web\\.xml|classes)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/\\.git/(config|HEAD|index)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/\\.(env|htpasswd|htaccess)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "php://(filter|input|memory)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(file|expect|zip|phar|data)://",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      }
+    ],
+    "sql_injection": [
+      {
+        "pattern": "select\\s.{1,120}?\\sfrom\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "insert\\s+into\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "delete\\s+from\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "update\\s.{1,80}?\\sset\\s",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "drop\\s+table",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "'\\s*or\\s*'?[^']{0,20}'?\\s*=\\s*'?[^']{0,20}",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bor\\b\\s+\\d+\\s*=\\s*\\d+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\band\\b\\s+\\d+\\s*=\\s*\\d+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "'\\s*;\\s*--",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "'\\s*--",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "sleep\\s*\\(\\s*\\d+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "benchmark\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "waitfor\\s+delay",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "pg_sleep\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "information_schema",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "group_concat\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "load_file\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "into\\s+outfile",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "xp_cmdshell",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "@@version",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "union\\s+(all\\s+)?select",
+        "category": "web",
+        "description": "UNION [ALL] SELECT",
+        "is_active": true
+      },
+      {
+        "pattern": "extractvalue\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "updatexml\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "floor\\s*\\(\\s*rand\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "exp\\s*\\(\\s*~",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "dbms_pipe\\.receive_message",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "rlike\\s+sleep\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\border\\s+by\\s+\\d+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bhaving\\s+\\d+\\s*=\\s*\\d+",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bnull\\s*,\\s*null\\s*,\\s*null",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bsys(objects|columns)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "cast\\s*\\(.{0,40}?\\s+as\\s+(char|int|signed|nchar|varchar)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "convert\\s*\\(\\s*int\\s*,",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "char\\s*\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "concat(_ws)?\\s*\\(\\s*(0x|')",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "'\\s*\\|\\|\\s*'",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "/\\*!\\d{5}",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": ";\\s*(drop|truncate|alter|create)\\s+(table|database|user)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "sp_executesql",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      }
+    ],
+    "xss": [
+      {
+        "pattern": "<\\s*script",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*/\\s*script",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "javascript:",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "on(error|load|mouseover|click|focus|submit|toggle)\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*svg",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*iframe",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*img[^>]*\\bon\\w+\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*body[^>]*\\bon\\w+\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "alert\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "prompt\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "confirm\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "document\\.cookie",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "document\\.location",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "String\\.fromCharCode",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "eval\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "expression\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*(object|embed|applet|frameset|frame)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*(video|audio|source|details|marquee|template|math)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "<\\s*(meta|base|link)[^>]{0,80}\\b(http-equiv|href)\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bon[a-z]{3,15}\\s*=\\s*[\\\"']?\\s*(alert|prompt|confirm|eval|fetch|atob|location|document|window|top|parent|this|String|setTimeout|setInterval|new\\s+Function)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bsrcdoc\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bformaction\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bxlink:href\\s*=",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "java\\s*script\\s*:",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "vbscript\\s*:",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "data:\\s*text/html",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "(&#x?[0-9a-f]{2,6};){3,}",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "document\\s*\\.\\s*(write|domain|referrer|createElement)",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "document\\s*\\[\\s*[\\\"']cookie",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "window\\s*\\.\\s*(location|open|name|top|parent)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "location\\s*\\.\\s*(href|hash|search|replace|assign)\\b",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\b(atob|btoa)\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bnew\\s+Function\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bfetch\\s*\\(|XMLHttpRequest",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      },
+      {
+        "pattern": "\\bset(Timeout|Interval)\\s*\\(",
+        "category": "web",
+        "description": null,
+        "is_active": true
+      }
+    ]
+  }
+}

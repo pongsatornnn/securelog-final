@@ -1,0 +1,39 @@
+venv/
+__pycache__/
+*.pyc
+
+# ค่าตั้งของเครื่อง — setup-server.sh สร้างให้ตอนติดตั้ง
+.env
+
+# กุญแจเข้ารหัสค่า secret ในตาราง app_settings (main/secret_box.py)
+# สุ่มให้เองครั้งแรกที่ใช้ · ต้องอยู่นอก git และนอก DB — สำรองไว้คู่กับ .env ถ้าย้ายเครื่อง
+.settings_key
+
+# cert ทั้งชุด (Root CA -> central mTLS -> dashboard HTTPS -> cert รายตัวของ agent)
+# setup-server.sh ออกให้ใหม่ตาม IP ของเครื่องนั้น
+cert/
+*.key
+*.crt
+*.csr
+*.srl
+
+# ชุดติดตั้ง agent ที่ระบบสร้างตอนกดปุ่ม (มี secret token อยู่ข้างใน)
+agent_packages/
+*.zip
+
+# รหัส Redis จริงทั้ง 3 บัญชี — setup-server.sh เขียนให้จาก users.acl.example
+# ห้าม track: ถ้า track ไว้ พอตั้งรหัสจริงแล้วเผลอ git add -A จะ commit รหัสขึ้น repo
+redis/users.acl
+redis/redis-mtls.conf
+redis/data-redis/
+dump.rdb
+
+# ค่าที่ฝังไปกับ zip ของ agent — สร้างใหม่จากหน้า System Settings ทุกครั้งที่ออก package
+for_Agent/package/site.conf
+
+# unit ที่ systemd/_gen.sh สร้างตาม user/path/IP ของเครื่องนั้น
+# (securelog.target ไม่มี path จึงยังอยู่ใน git ได้)
+systemd/securelog-*.service
+systemd/centralredis.service
+
+*.log
