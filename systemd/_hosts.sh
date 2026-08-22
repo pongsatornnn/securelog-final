@@ -68,12 +68,12 @@ pick_bind_host() {
     if [ ! -t 0 ]; then eval "$var=\$def"; return 0; fi
 
     if [ "$allow_any" = "1" ]; then
-        choices+=("0.0.0.0"); labels+=("ทุก interface")
+        choices+=("0.0.0.0"); labels+=("all interfaces")
     fi
     while IFS=$'\t' read -r ip iface; do
         [ -n "$ip" ] || continue
         choices+=("$ip")
-        if [ "$iface" = "lo" ]; then labels+=("$iface (เฉพาะในเครื่องนี้)"); else labels+=("$iface"); fi
+        if [ "$iface" = "lo" ]; then labels+=("$iface (this machine only)"); else labels+=("$iface"); fi
     done < <(list_host_ips)
 
     echo ""
@@ -86,23 +86,23 @@ pick_bind_host() {
     done
 
     while :; do
-        read -rp "    เลือกหมายเลข หรือพิมพ์เอง${def:+ [$def]}: " ans
+        read -rp "    Pick a number, or type a value${def:+ [$def]}: " ans
         ans="${ans:-$def}"
         # ตัวเลขล้วน = เลือกจากเมนู (เลขโดด ๆ ไม่มีทางเป็น IP ที่ถูกต้องอยู่แล้ว จึงไม่กำกวม)
         if printf '%s' "$ans" | grep -qE '^[0-9]+$'; then
             if [ "$ans" -ge 1 ] && [ "$ans" -le "${#choices[@]}" ]; then
                 ans="${choices[$((ans-1))]}"
             else
-                echo "    !! ไม่มีหมายเลข $ans ในรายการ (มี 1-${#choices[@]}) — ลองใหม่"
+                echo "    !! No option $ans in the list (1-${#choices[@]}) - try again"
                 continue
             fi
         fi
         if [ "$ans" = "0.0.0.0" ] && [ "$allow_any" != "1" ]; then
-            echo "    !! ช่องนี้ใส่ 0.0.0.0 ไม่ได้ — ต้องเป็น IP จริงที่เครื่องอื่นเรียกเข้ามาได้"
+            echo "    !! 0.0.0.0 is not valid here - it must be a real IP other machines can reach"
             continue
         fi
         valid_host "$ans" && break
-        echo "    !! '$ans' ไม่ใช่ IP/ชื่อโฮสต์ที่ถูกต้อง — ลองใหม่"
+        echo "    !! '$ans' is not a valid IP or hostname - try again"
     done
     eval "$var=\$ans"
 }

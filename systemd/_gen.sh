@@ -31,8 +31,8 @@ PROJECT_DIR="${PROJECT_DIR:-$(dirname "$DIR")}"
 # กันสร้าง unit ที่ชี้ไปที่ที่ไม่ใช่โปรเจกต์ (เช่น copy แค่โฟลเดอร์ systemd/ ไปไว้ที่อื่น)
 for need in main/main.py requirements.txt redis; do
     [ -e "$PROJECT_DIR/$need" ] || {
-        echo "!! $PROJECT_DIR ไม่ใช่โฟลเดอร์โปรเจกต์ (ไม่พบ $need)" >&2
-        echo "   ถ้าตั้งใจ ให้ระบุเอง: PROJECT_DIR=/path/to/securelog bash _gen.sh" >&2
+        echo "!! $PROJECT_DIR is not the project directory ($need not found)" >&2
+        echo "   If this is intentional, set it explicitly: PROJECT_DIR=/path/to/securelog bash _gen.sh" >&2
         exit 1
     }
 done
@@ -60,23 +60,23 @@ WEB_DEFAULT="${BIND_HOST:-}"
 [ -n "$WEB_DEFAULT" ] || WEB_DEFAULT="$(detect_primary_ip)"
 
 pick_bind_host WEB_BIND_HOST \
-    "dashboard (HTTPS :8000) — ให้เปิดรับทาง IP ไหน" "$WEB_DEFAULT" 1 \
-    "เลือก IP เดียว = เครือข่ายอื่นของเครื่องเข้าไม่ถึงเลย · ต้องเป็น IP ที่มีใน SAN ของ cert ด้วย"
+    "dashboard (HTTPS :8000) - which IP to listen on" "$WEB_DEFAULT" 1 \
+    "One IP = other networks on this host cannot reach it; it must also be in the cert SAN"
 
 # ไม่เคยติดตั้งมาก่อนจึงจะใช้ 0.0.0.0 = พฤติกรรมเดิมก่อนแยกค่านี้ออกมา (เดิมฮาร์ดโค้ดไว้ในบรรทัด gen)
 HOOK_DEFAULT="$(installed_bind_host securelog-line-webhook.service)"
 [ -n "$HOOK_DEFAULT" ] || HOOK_DEFAULT="0.0.0.0"
 
 pick_bind_host WEBHOOK_BIND_HOST \
-    "LINE webhook (HTTP :8080) — ให้เปิดรับทาง IP ไหน" "$HOOK_DEFAULT" 1 \
-    "LINE ยิงเข้ามาผ่าน tunnel · tunnel อยู่เครื่องเดียวกันเลือก 127.0.0.1 ได้ (ไม่โผล่ออกเครือข่าย)"
+    "LINE webhook (HTTP :8080) - which IP to listen on" "$HOOK_DEFAULT" 1 \
+    "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 keeps it off the network"
 
 for _v in WEB_BIND_HOST WEBHOOK_BIND_HOST; do
     [ -n "${!_v}" ] || {
-        echo "!! หา IP ของเครื่องไม่ได้ — ระบุเอง: $_v=10.0.0.5 bash _gen.sh" >&2
+        echo "!! Could not detect this machine's IP - set it explicitly: $_v=10.0.0.5 bash _gen.sh" >&2
         exit 1
     }
-    valid_host "${!_v}" || { echo "!! $_v='${!_v}' ไม่ใช่ IP/ชื่อโฮสต์ที่ถูกต้อง" >&2; exit 1; }
+    valid_host "${!_v}" || { echo "!! $_v='${!_v}' is not a valid IP or hostname" >&2; exit 1; }
 done
 
 # จำค่าที่ได้ลง .env เพื่อให้รอบถัดไปไม่ถามอีก และให้เห็นได้จากที่เดียวว่าตอนนี้ bind อะไรอยู่
@@ -223,20 +223,20 @@ fi
 echo "generated: $(ls "$DIR"/securelog-*.service | wc -l) securelog units + centralredis.service + redis-mtls.conf"
 echo "  APP_USER=$APP_USER  PROJECT_DIR=$PROJECT_DIR"
 echo "  dashboard :8000 -> $WEB_BIND_HOST   ·   LINE webhook :8080 -> $WEBHOOK_BIND_HOST"
-echo "  redis-server=$REDIS_SERVER_BIN  ·  After= postgres: ${PG_UNIT:-(ไม่พบ — ข้ามไป)}"
+echo "  redis-server=$REDIS_SERVER_BIN  |  After= postgres: ${PG_UNIT:-(not found - skipped)}"
 
 # เตือนกรณีที่ unit จะ start ไม่ขึ้นแน่ ๆ — บอกตอนนี้ดีกว่าไปงงตอน systemd ตอบ 203/EXEC
 if [ ! -x "$REDIS_SERVER_BIN" ]; then
-    echo "  [!] ไม่พบ $REDIS_SERVER_BIN — ติดตั้ง redis ก่อน (apt install redis-server) ไม่งั้น centralredis start ไม่ขึ้น"
+    echo "  [!] $REDIS_SERVER_BIN not found - install redis first (apt install redis-server) or centralredis will not start"
 fi
 
 if [ -z "$PG_UNIT" ]; then
-    echo "  [!] หา unit ของ PostgreSQL ไม่เจอ — unit จะไม่มี After= ของ DB (ตอน boot อาจ start ก่อน DB พร้อม"
-    echo "      แล้ว restart เองจนต่อได้) · ระบุเองได้: PG_UNIT=postgresql@17-main.service"
+    echo "  [!] PostgreSQL unit not found - the units will have no After= for the DB (on boot they may start before the DB is ready"
+    echo "      and restart themselves until it connects) - set it explicitly: PG_UNIT=postgresql@17-main.service"
 fi
 
 if [ ! -x "$PY" ]; then
-    echo "  [!] ยังไม่มี $PY — สร้าง venv ก่อน ไม่งั้น service จะ start ไม่ขึ้น"
+    echo "  [!] $PY does not exist yet - create the venv first or the services will not start"
 fi
 
 # เบราว์เซอร์จะขึ้น cert error ถ้าเข้าเว็บด้วย IP ที่ไม่มีใน SAN — เตือนตอนนี้ดีกว่าไปเจอตอนเปิดหน้า
@@ -244,11 +244,11 @@ fi
 if [ "$WEB_BIND_HOST" != "0.0.0.0" ] && [ -f "$DASH_CERT" ] && command -v openssl >/dev/null 2>&1; then
     if ! openssl x509 -in "$DASH_CERT" -noout -ext subjectAltName 2>/dev/null \
         | grep -qE "(IP Address|DNS):${WEB_BIND_HOST}([,[:space:]]|\$)"; then
-        echo "  [!] SAN ใน dashboard.crt ไม่มี $WEB_BIND_HOST — เบราว์เซอร์จะเตือน cert ไม่ตรง"
-        echo "      ออก cert ใหม่: sudo BIND_HOST=$WEB_BIND_HOST FORCE_CERT=1 $PROJECT_DIR/setup-server.sh"
+        echo "  [!] dashboard.crt SAN does not include $WEB_BIND_HOST - browsers will warn about a cert mismatch"
+        echo "      Reissue the cert: sudo BIND_HOST=$WEB_BIND_HOST FORCE_CERT=1 $PROJECT_DIR/setup-server.sh"
     fi
 fi
 
 if [ "$APP_USER" = "root" ]; then
-    echo "  [!] โปรเจกต์เป็นของ root — service จะรันด้วยสิทธิ์ root (ตั้ง APP_USER=... ถ้าไม่ต้องการ)"
+    echo "  [!] The project is owned by root - services will run as root (set APP_USER=... if you do not want that)"
 fi

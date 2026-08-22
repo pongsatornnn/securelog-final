@@ -31,7 +31,7 @@ ok()   { printf '  \033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m[!]\033[0m %s\n' "$*"; }
 err()  { printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
 
-[ "$(id -u)" -eq 0 ] || { err "ต้องรันเป็น root: sudo ./setup-server.sh"; exit 1; }
+[ "$(id -u)" -eq 0 ] || { err "Must be run as root: sudo ./setup-server.sh"; exit 1; }
 
 # ---------------------------------------------------------------------------
 # 0) ที่ตั้งของระบบ = ที่ที่วางโปรเจกต์ไว้ตอนรัน (วางไว้ตรงไหนก็ติดตั้งตรงนั้น)
@@ -43,22 +43,22 @@ SRC_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 INSTALL_DIR="$(readlink -f "${INSTALL_DIR:-$SRC_DIR}")"
 
 if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
-    log "ย้ายโปรเจกต์ไป $INSTALL_DIR"
+    log "Moving project to $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
     # copy ทุกอย่างยกเว้น venv (สร้างใหม่ให้ตรงเครื่อง) และ .git (ไม่จำเป็นบน production)
     tar -C "$SRC_DIR" --exclude=venv --exclude=.git -cf - . | tar -C "$INSTALL_DIR" -xf -
-    ok "คัดลอกไปที่ $INSTALL_DIR แล้ว — รันต่อจากที่นั่น"
+    ok "Copied to $INSTALL_DIR - continuing from there"
     exec bash "$INSTALL_DIR/setup-server.sh" "$@"
 fi
 
-log "ติดตั้งที่ $INSTALL_DIR"
+log "Installing at $INSTALL_DIR"
 
 PROJECT_DIR="$INSTALL_DIR"
 cd "$PROJECT_DIR"
 
 # ตรวจว่าเป็น repo จริง (กันรันผิดที่)
 for need in main/main.py systemd/_gen.sh systemd/_hosts.sh requirements.txt .env.example; do
-    [ -e "$PROJECT_DIR/$need" ] || { err "ไม่พบ $need ใน $PROJECT_DIR — วางโปรเจกต์ไม่ครบ"; exit 1; }
+    [ -e "$PROJECT_DIR/$need" ] || { err "$need not found in $PROJECT_DIR - project files are incomplete"; exit 1; }
 done
 
 # ตัวช่วยเลือก IP ที่จะ bind (ใช้ชุดเดียวกับ systemd/_gen.sh จะได้ถามเหมือนกันทั้งสองทาง)
@@ -71,20 +71,20 @@ source "$PROJECT_DIR/systemd/_hosts.sh"
 ask() {  # ask VAR "คำถาม" "ค่า default"
     local var="$1" prompt="$2" def="${3:-}" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"      # ถ้า preset มาทาง env แล้วใช้เลย
-    if [ -n "$cur" ]; then ok "$var = $cur (จาก env)"; return; fi
-    if [ ! -t 0 ]; then err "ไม่มี tty และไม่ได้ set $var มา"; exit 1; fi
+    if [ -n "$cur" ]; then ok "$var = $cur (from env)"; return; fi
+    if [ ! -t 0 ]; then err "No tty and $var was not preset"; exit 1; fi
     read -rp "  $prompt${def:+ [$def]}: " ans
     ans="${ans:-$def}"
-    [ -n "$ans" ] || { err "$var ห้ามว่าง"; exit 1; }
+    [ -n "$ans" ] || { err "$var must not be empty"; exit 1; }
     eval "$var=\$ans"
 }
 ask_secret() {  # ask_secret VAR "คำถาม"
     local var="$1" prompt="$2" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
-    if [ -n "$cur" ]; then ok "$var = ****** (จาก env)"; return; fi
-    if [ ! -t 0 ]; then err "ไม่มี tty และไม่ได้ set $var มา"; exit 1; fi
+    if [ -n "$cur" ]; then ok "$var = ****** (from env)"; return; fi
+    if [ ! -t 0 ]; then err "No tty and $var was not preset"; exit 1; fi
     read -rsp "  $prompt: " ans; echo
-    [ -n "$ans" ] || { err "$var ห้ามว่าง"; exit 1; }
+    [ -n "$ans" ] || { err "$var must not be empty"; exit 1; }
     eval "$var=\$ans"
 }
 
@@ -103,65 +103,65 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
     local var="$1" what="$2" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
     if [ -n "$cur" ]; then
-        valid_redis_pass "$cur" || { err "$var ไม่ผ่านเงื่อนไข (ยาว >=12 และใช้ได้เฉพาะ A-Z a-z 0-9 _-.~@%+=:,/)"; exit 1; }
-        ok "$var = ****** (จาก env)"
+        valid_redis_pass "$cur" || { err "$var fails the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"; exit 1; }
+        ok "$var = ****** (from env)"
         return
     fi
-    if [ ! -t 0 ]; then err "ไม่มี tty และไม่ได้ set $var มา"; exit 1; fi
+    if [ ! -t 0 ]; then err "No tty and $var was not preset"; exit 1; fi
 
     while :; do
-        read -rsp "  รหัส Redis ของ$what (Enter = สุ่มให้): " ans; echo
+        read -rsp "  Redis password for $what (Enter = generate): " ans; echo
         if [ -z "$ans" ]; then
             ans="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
             GENERATED_PASSWORDS="$GENERATED_PASSWORDS$var=$ans"$'\n'
-            ok "สุ่มรหัสให้แล้ว (จะแสดงตอนจบ ให้เก็บไว้)"
+            ok "Password generated (shown at the end - save it)"
             break
         fi
         valid_redis_pass "$ans" && break
-        err "ต้องยาวอย่างน้อย 12 ตัว และใช้ได้เฉพาะ A-Z a-z 0-9 _-.~@%+=:,/ — ลองใหม่"
+        err "Must be at least 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/ - try again"
     done
     eval "$var=\$ans"
 }
 
-log "ตั้งค่า (Enter เพื่อใช้ค่า default)"
+log "Configuration (press Enter to accept the default)"
 DETECTED_IP="$(detect_primary_ip)"
 DEFAULT_USER="${SUDO_USER:-$(stat -c '%U' "$PROJECT_DIR")}"
 
-ask        APP_USER   "ผู้ใช้ที่จะรัน service (User=)" "$DEFAULT_USER"
+ask        APP_USER   "User the services will run as (User=)" "$DEFAULT_USER"
 
 # ---- IP 3 ช่อง ถามแยกกัน (ความหมายต่างกัน — อ่านหัวไฟล์ systemd/_hosts.sh) ----
 # BIND_HOST เดาแทนไม่ได้: เครื่องหลาย interface มักมีเส้น NAT ที่ agent เรียกกลับมาไม่ได้ปนอยู่
 # ถ้าเดาผิดจะได้ cert ที่ SAN ผิดและชุดติดตั้ง agent ที่ต่อไม่ติด — โหมดไม่ถามจึงต้องส่งมาเอง
 if [ ! -t 0 ] && [ -z "${BIND_HOST:-}" ]; then
-    err "ไม่มี tty และไม่ได้ set BIND_HOST มา"; exit 1
+    err "No tty and BIND_HOST was not preset"; exit 1
 fi
 pick_bind_host BIND_HOST \
-    "ที่อยู่ของ central ที่ 'เครื่องอื่น' ใช้เรียกเข้ามา" "${DETECTED_IP:-}" 0 \
-    "ค่านี้ลง SAN ของ cert · REDIS_HOST · และฝังไปกับชุดติดตั้ง agent — ต้องเป็น IP จริง"
+    "Address other machines use to reach this central server" "${DETECTED_IP:-}" 0 \
+    "Goes into the cert SAN, REDIS_HOST and the agent installer - must be a real IP"
 pick_bind_host WEB_BIND_HOST \
-    "dashboard (HTTPS :8000) — ให้เปิดรับทาง IP ไหน" "$BIND_HOST" 1 \
-    "เลือก IP เดียว = เครือข่ายอื่นของเครื่องเข้าไม่ถึงเลย · 0.0.0.0 = ทุกเส้น"
+    "dashboard (HTTPS :8000) - which IP to listen on" "$BIND_HOST" 1 \
+    "One IP = other networks on this host cannot reach it; 0.0.0.0 = all interfaces"
 pick_bind_host WEBHOOK_BIND_HOST \
-    "LINE webhook (HTTP :8080) — ให้เปิดรับทาง IP ไหน" "0.0.0.0" 1 \
-    "LINE ยิงเข้ามาผ่าน tunnel · tunnel อยู่เครื่องเดียวกันเลือก 127.0.0.1 ได้"
+    "LINE webhook (HTTP :8080) - which IP to listen on" "0.0.0.0" 1 \
+    "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 is fine"
 
-ask        DB_NAME    "ชื่อ PostgreSQL database"        "security_central"
+ask        DB_NAME    "PostgreSQL database name"        "security_central"
 ask        DB_USER    "PostgreSQL user"                 "$APP_USER"
-ask_secret DB_PASSWORD "รหัส PostgreSQL ของ $DB_USER"
-ask        REDIS_USER "Redis user ของ central"          "admin"
-ask_redis_secret REDIS_PASS       "บัญชี $REDIS_USER (central ใช้ต่อ Redis)"
-ask_redis_secret AGENT_REDIS_PASS "บัญชีของ agent (agent_node + default)"
+ask_secret DB_PASSWORD "PostgreSQL password for $DB_USER"
+ask        REDIS_USER "Redis user for central"          "admin"
+ask_redis_secret REDIS_PASS       "account $REDIS_USER (central uses it for Redis)"
+ask_redis_secret AGENT_REDIS_PASS "agent accounts (agent_node + default)"
 
 APP_GROUP="${APP_GROUP:-$APP_USER}"
 
 # ---------------------------------------------------------------------------
 # 2) OS packages
 # ---------------------------------------------------------------------------
-log "ติดตั้ง OS packages (apt)"
+log "Installing OS packages (apt)"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq python3-venv python3-pip postgresql redis-server tar >/dev/null
-ok "python3-venv / postgresql / redis-server พร้อม"
+ok "python3-venv / postgresql / redis-server ready"
 
 # ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (:6380 mTLS)
 systemctl disable --now redis-server >/dev/null 2>&1 || true
@@ -170,66 +170,66 @@ systemctl disable --now redis-server >/dev/null 2>&1 || true
 # 3) ผู้ใช้ระบบ
 # ---------------------------------------------------------------------------
 if id "$APP_USER" >/dev/null 2>&1; then
-    ok "มี user '$APP_USER' อยู่แล้ว"
+    ok "User '$APP_USER' already exists"
 else
-    warn "ยังไม่มี user '$APP_USER' — สร้างเป็น system account ให้"
+    warn "User '$APP_USER' does not exist - creating it as a system account"
     useradd --system --shell /usr/sbin/nologin --home-dir "$PROJECT_DIR" "$APP_USER"
-    ok "สร้าง user '$APP_USER' แล้ว"
+    ok "Created user '$APP_USER'"
 fi
 
 # ---------------------------------------------------------------------------
 # 4) venv + Python deps
 # ---------------------------------------------------------------------------
-log "สร้าง venv + ติดตั้ง requirements.txt"
+log "Creating venv + installing requirements.txt"
 [ -x "$PROJECT_DIR/venv/bin/python" ] || python3 -m venv "$PROJECT_DIR/venv"
 "$PROJECT_DIR/venv/bin/pip" install -q --upgrade pip
 "$PROJECT_DIR/venv/bin/pip" install -q -r "$PROJECT_DIR/requirements.txt"
-ok "Python dependencies พร้อม"
+ok "Python dependencies ready"
 
 # ---------------------------------------------------------------------------
 # 5) .env (สร้างใหม่ถ้ายังไม่มี — ไม่ทับของเดิม)
 # ---------------------------------------------------------------------------
-log "ไฟล์ .env"
+log ".env file"
 if [ -f "$PROJECT_DIR/.env" ]; then
-    warn ".env มีอยู่แล้ว — ไม่แตะ (ถ้าต้องการสร้างใหม่ ลบทิ้งก่อนแล้วรันซ้ำ)"
+    warn ".env already exists - left untouched (delete it and re-run to recreate)"
 
     # .env เดิมคือแหล่งความจริงของรหัสที่ service ใช้อยู่ — ต้องยึดค่าจากไฟล์นี้ ไม่ใช่ค่าที่เพิ่งกรอก
     # ไม่งั้น users.acl ที่เขียนในขั้นถัดไปจะไม่ตรงกับ .env แล้ว central ต่อ Redis ไม่ได้ทันที
     ENV_REDIS_PASS="$(grep -E '^REDIS_PASS=' "$PROJECT_DIR/.env" | head -1 | cut -d= -f2- || true)"
     if [ -n "$ENV_REDIS_PASS" ] && [ "$ENV_REDIS_PASS" != "$REDIS_PASS" ]; then
         REDIS_PASS="$ENV_REDIS_PASS"
-        warn "ยึดรหัสของ $REDIS_USER จาก .env เดิม (ไม่ใช่ที่เพิ่งกรอก) — จะตั้ง users.acl ให้ตรงกับ .env"
+        warn "Keeping the $REDIS_USER password from the existing .env (not the one just entered) - users.acl will match .env"
     fi
 
     ENV_AGENT_PASS="$(grep -E '^AGENT_REDIS_PASSWORD=' "$PROJECT_DIR/.env" | head -1 | cut -d= -f2- || true)"
     if [ -n "$ENV_AGENT_PASS" ]; then
         if [ "$ENV_AGENT_PASS" != "$AGENT_REDIS_PASS" ]; then
             AGENT_REDIS_PASS="$ENV_AGENT_PASS"
-            warn "ยึดรหัสของ agent จาก .env เดิมเช่นกัน"
+            warn "Keeping the agent password from the existing .env as well"
         fi
     else
         # .env เก่าที่ยังไม่มีคีย์กลุ่ม agent — เติมให้ ไม่งั้นชุดติดตั้งกับ users.acl จะคนละรหัสกัน
         {
             echo ""
-            echo "# ค่าที่ถูกฝังลงชุดติดตั้ง agent (เติมโดย setup-server.sh)"
+            echo "# Values embedded into the agent installer (added by setup-server.sh)"
             echo "AGENT_CENTRAL_HOST=$BIND_HOST"
             echo "AGENT_CENTRAL_REDIS_PORT=6380"
             echo "AGENT_REDIS_USERNAME=agent_node"
             echo "AGENT_REDIS_PASSWORD=$AGENT_REDIS_PASS"
         } >> "$PROJECT_DIR/.env"
-        ok "เติมค่ากลุ่ม agent ลง .env เดิม"
+        ok "Added the agent settings to the existing .env"
     fi
 
     # ค่า bind ยึดตามที่เพิ่งตอบ (ต่างจากรหัสผ่านที่ต้องยึด .env เดิม) — ถ้าปล่อยให้ต่างกัน
     # unit จะ bind อย่างหนึ่งแต่ .env บอกอีกอย่าง ไล่ปัญหาทีหลังไม่รู้ว่าอันไหนจริง
     env_set WEB_BIND_HOST     "$WEB_BIND_HOST"     "$PROJECT_DIR/.env"
     env_set WEBHOOK_BIND_HOST "$WEBHOOK_BIND_HOST" "$PROJECT_DIR/.env"
-    ok "ตั้ง WEB_BIND_HOST=$WEB_BIND_HOST · WEBHOOK_BIND_HOST=$WEBHOOK_BIND_HOST ใน .env เดิม"
+    ok "Set WEB_BIND_HOST=$WEB_BIND_HOST and WEBHOOK_BIND_HOST=$WEBHOOK_BIND_HOST in the existing .env"
 else
     JWT_SECRET="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
     CSRF_SECRET_VAL="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
     cat > "$PROJECT_DIR/.env" <<EOF
-# สร้างโดย setup-server.sh — แก้ค่า LINE/GEMINI เพิ่มเองได้ภายหลัง
+# Generated by setup-server.sh - fill in the LINE/GEMINI values later if needed
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=$DB_NAME
@@ -251,8 +251,8 @@ CSRF_SECRET=$CSRF_SECRET_VAL
 COOKIE_SECURE=true
 ALGORITHM=HS256
 
-# IP ที่แต่ละ service เปิดรับ (systemd/_gen.sh อ่านค่านี้ไปใส่ --host ของ unit)
-# แก้แล้วต้องรัน sudo systemd/install.sh ใหม่ ค่าถึงจะมีผล
+# IP each service listens on (systemd/_gen.sh reads these into the unit --host)
+# After editing, re-run sudo systemd/install.sh for the change to take effect
 WEB_BIND_HOST=$WEB_BIND_HOST
 WEBHOOK_BIND_HOST=$WEBHOOK_BIND_HOST
 
@@ -260,14 +260,14 @@ LINE_CHANNEL_ACCESS_TOKEN=
 LINE_CHANNEL_SECRET=
 GEMINI_API_KEY=
 
-# ค่าที่ถูกฝังลงชุดติดตั้ง agent (แก้ทีหลังได้จากหน้า System Settings)
+# Values embedded into the agent installer (editable later on the System Settings page)
 AGENT_CENTRAL_HOST=$BIND_HOST
 AGENT_CENTRAL_REDIS_PORT=6380
 AGENT_REDIS_USERNAME=agent_node
 AGENT_REDIS_PASSWORD=$AGENT_REDIS_PASS
 EOF
     chmod 600 "$PROJECT_DIR/.env"
-    ok "สร้าง .env (JWT/CSRF secret สุ่มให้อัตโนมัติ, สิทธิ์ 600)"
+    ok "Created .env (JWT/CSRF secrets generated automatically, mode 600)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -286,8 +286,8 @@ PG_HOST="${PG_HOST:-localhost}"
 
 # ไม่ได้ preset รหัส superuser -> ลอง peer auth ก่อน; ต่อไม่ได้ค่อยถามรหัส (รองรับ Postgres ที่บังคับ password)
 if [ -z "$PG_SUPERUSER_PASSWORD" ] && ! sudo -u "$PG_SUPERUSER" psql -tAc "SELECT 1" >/dev/null 2>&1; then
-    warn "ต่อ PostgreSQL แบบ peer (sudo -u $PG_SUPERUSER) ไม่ได้ — superuser น่าจะต้องใช้รหัส"
-    ask_secret PG_SUPERUSER_PASSWORD "รหัสของ PostgreSQL superuser '$PG_SUPERUSER'"
+    warn "Peer auth to PostgreSQL (sudo -u $PG_SUPERUSER) failed - the superuser probably needs a password"
+    ask_secret PG_SUPERUSER_PASSWORD "Password for PostgreSQL superuser '$PG_SUPERUSER'"
 fi
 
 # helper: รัน psql/createdb ในฐานะ superuser — เลือก peer หรือ password อัตโนมัติ
@@ -308,16 +308,16 @@ pg_su_createdb() {
 
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")" = "1" ]; then
     pg_su_psql -qc "ALTER ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'" >/dev/null
-    ok "role '$DB_USER' มีอยู่แล้ว (อัปเดตรหัสให้ตรง .env)"
+    ok "Role '$DB_USER' already exists (password updated to match .env)"
 else
     pg_su_psql -qc "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD '$DB_PASSWORD'" >/dev/null
-    ok "สร้าง role '$DB_USER'"
+    ok "Created role '$DB_USER'"
 fi
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" = "1" ]; then
-    ok "database '$DB_NAME' มีอยู่แล้ว"
+    ok "Database '$DB_NAME' already exists"
 else
     pg_su_createdb -O "$DB_USER" "$DB_NAME"
-    ok "สร้าง database '$DB_NAME' (owner=$DB_USER) — ตาราง+admin ระบบสร้างเองตอน start แรก"
+    ok "Created database '$DB_NAME' (owner=$DB_USER) - tables and the admin account are created on first start"
 fi
 
 # ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ fi
 #    SAN ต้องมี BIND_HOST ไม่งั้น service ไม่ start และ agent ต่อ Redis ไม่ได้
 #    ของเดิมที่มีอยู่ไม่ทับ ยกเว้น SAN ไม่ครอบ BIND_HOST (ย้ายไปเก็บแล้วออกใหม่) หรือสั่ง FORCE_CERT=1
 # ---------------------------------------------------------------------------
-log "cert (mTLS ของ Redis + HTTPS ของ dashboard)"
+log "Certificates (Redis mTLS + dashboard HTTPS)"
 CERT_DIR="$PROJECT_DIR/cert/central"
 mkdir -p "$CERT_DIR"
 
@@ -347,7 +347,7 @@ if [ -f "$CERT_DIR/central.crt" ]; then
         mkdir -p "$BK"
         mv "$CERT_DIR"/central.crt "$CERT_DIR"/central.key "$BK/" 2>/dev/null || true
         mv "$CERT_DIR"/dashboard.crt "$CERT_DIR"/dashboard.key "$BK/" 2>/dev/null || true
-        warn "cert เดิมไม่ตรงกับ $BIND_HOST — ย้ายไป $(basename "$BK") แล้วออกใหม่"
+        warn "Existing cert does not match $BIND_HOST - moved to $(basename "$BK") and reissuing"
     fi
 fi
 
@@ -355,9 +355,9 @@ if [ ! -f "$CERT_DIR/ca.crt" ] || [ ! -f "$CERT_DIR/ca.key" ]; then
     openssl genrsa -out "$CERT_DIR/ca.key" 4096 2>/dev/null
     openssl req -x509 -new -nodes -key "$CERT_DIR/ca.key" -sha256 -days 3650 \
         -out "$CERT_DIR/ca.crt" -subj "/CN=Security-Root-CA" 2>/dev/null
-    ok "สร้าง Root CA"
+    ok "Created Root CA"
 else
-    ok "ใช้ Root CA เดิม (cert ของ agent ที่ออกไปแล้วยังใช้ได้)"
+    ok "Reusing the existing Root CA (certs already issued to agents stay valid)"
 fi
 
 cat > "$CERT_DIR/central_openssl.cnf" <<EOF
@@ -388,7 +388,7 @@ if [ ! -f "$CERT_DIR/central.crt" ]; then
         -CAcreateserial -out "$CERT_DIR/central.crt" -days 3650 -sha256 \
         -extensions req_ext -extfile "$CERT_DIR/central_openssl.cnf" 2>/dev/null
     rm -f "$CERT_DIR/central.csr"
-    ok "ออก central.crt (SAN $SAN_LINE)"
+    ok "Issued central.crt (SAN $SAN_LINE)"
 fi
 
 printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\n' "$SAN_LINE" > "$CERT_DIR/dashboard_ext.cnf"
@@ -401,13 +401,13 @@ if [ ! -f "$CERT_DIR/dashboard.crt" ]; then
         -CAcreateserial -out "$CERT_DIR/dashboard.crt" -days 3650 -sha256 \
         -extfile "$CERT_DIR/dashboard_ext.cnf" 2>/dev/null
     rm -f "$CERT_DIR/dashboard.csr"
-    ok "ออก dashboard.crt (SAN $SAN_LINE)"
+    ok "Issued dashboard.crt (SAN $SAN_LINE)"
 fi
 
 chmod 600 "$CERT_DIR"/*.key
 CERT_OK=1
 for f in ca.crt central.crt central.key dashboard.crt dashboard.key; do
-    [ -f "$CERT_DIR/$f" ] || { err "ออก cert/central/$f ไม่สำเร็จ"; CERT_OK=0; }
+    [ -f "$CERT_DIR/$f" ] || { err "Failed to issue cert/central/$f"; CERT_OK=0; }
 done
 
 # ---------------------------------------------------------------------------
@@ -428,15 +428,15 @@ user agent_node on >$AGENT_REDIS_PASS -@all +ping +lpush +publish +subscribe ~ra
 user default on >$AGENT_REDIS_PASS -@all +ping +info +select +rpush +lpush ~raw_logs_queue resetchannels
 EOF
     chmod 600 "$ACL_FILE"
-    ok "เขียน users.acl (3 บัญชี: $REDIS_USER / agent_node / default)"
+    ok "Wrote users.acl (3 accounts: $REDIS_USER / agent_node / default)"
 else
-    warn "users.acl ตั้งรหัสจริงไว้แล้ว — ไม่แตะ (บังคับเขียนใหม่ด้วย FORCE_ACL=1)"
+    warn "users.acl already holds real passwords - left untouched (force a rewrite with FORCE_ACL=1)"
 fi
 
 # ---------------------------------------------------------------------------
 # 7.2) for_Agent/package/site.conf — ค่าที่ถูกฝังลง zip ของ agent ทุกครั้งที่สร้าง
 # ---------------------------------------------------------------------------
-log "ค่าชุดติดตั้ง agent (site.conf)"
+log "Agent installer settings (site.conf)"
 SITE_CONF="$PROJECT_DIR/for_Agent/package/site.conf"
 if [ ! -f "$SITE_CONF" ] || [ "${FORCE_SITE_CONF:-0}" = "1" ]; then
     cat > "$SITE_CONF" <<EOF
@@ -446,23 +446,23 @@ REDIS_USERNAME="agent_node"
 REDIS_PASSWORD="$AGENT_REDIS_PASS"
 EOF
     chmod 600 "$SITE_CONF"
-    ok "เขียน site.conf — zip ของ agent จะฝังค่านี้ให้อัตโนมัติ"
+    ok "Wrote site.conf - agent zips embed these values automatically"
 else
-    warn "site.conf มีอยู่แล้ว — ไม่แตะ (บังคับเขียนใหม่ด้วย FORCE_SITE_CONF=1)"
+    warn "site.conf already exists - left untouched (force a rewrite with FORCE_SITE_CONF=1)"
 fi
 
 # ---------------------------------------------------------------------------
 # 8) สิทธิ์ไฟล์ + data dir ของ Redis
 # ---------------------------------------------------------------------------
-log "ตั้งเจ้าของไฟล์เป็น $APP_USER:$APP_GROUP"
+log "Setting file ownership to $APP_USER:$APP_GROUP"
 mkdir -p "$PROJECT_DIR/redis/data-redis"
 chown -R "$APP_USER":"$APP_GROUP" "$PROJECT_DIR"
-ok "chown เสร็จ"
+ok "chown done"
 
 # ---------------------------------------------------------------------------
 # 9) systemd: generate units (ตาม user/path/host) แล้วติดตั้ง
 # ---------------------------------------------------------------------------
-log "สร้าง systemd units + redis-mtls.conf (parametric) แล้วติดตั้ง"
+log "Generating systemd units + redis-mtls.conf, then installing them"
 APP_USER="$APP_USER" APP_GROUP="$APP_GROUP" PROJECT_DIR="$PROJECT_DIR" BIND_HOST="$BIND_HOST" \
     WEB_BIND_HOST="$WEB_BIND_HOST" WEBHOOK_BIND_HOST="$WEBHOOK_BIND_HOST" \
     bash "$PROJECT_DIR/systemd/_gen.sh"
@@ -471,7 +471,7 @@ if [ "$CERT_OK" -eq 1 ]; then
     bash "$PROJECT_DIR/systemd/install.sh"
     STARTED=1
 else
-    warn "ยังไม่ start service เพราะ cert ไม่ครบ — copy unit เข้าที่แต่ไม่รัน"
+    warn "Not starting services because certs are incomplete - units copied but not started"
     cp "$PROJECT_DIR"/systemd/securelog-*.service "$PROJECT_DIR"/systemd/securelog.target \
        "$PROJECT_DIR"/systemd/centralredis.service /etc/systemd/system/
     systemctl daemon-reload
@@ -481,31 +481,31 @@ fi
 # ---------------------------------------------------------------------------
 # สรุป
 # ---------------------------------------------------------------------------
-log "เสร็จแล้ว — สรุป"
-echo "  ที่ตั้ง       : $PROJECT_DIR"
-echo "  รันด้วย user  : $APP_USER"
-echo "  ที่อยู่ central : $BIND_HOST  (agent ต่อ Redis ทาง $BIND_HOST:6380)"
+log "Done - summary"
+echo "  Location      : $PROJECT_DIR"
+echo "  Runs as user  : $APP_USER"
+echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:6380)"
 echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$BIND_HOST:8000"
 echo "  LINE webhook  : bind $WEBHOOK_BIND_HOST:8080"
 echo "  database      : $DB_NAME (owner $DB_USER)"
 echo ""
 if [ "$STARTED" -eq 1 ]; then
-    ok "service ทำงานแล้ว — login ครั้งแรก admin/admin (ระบบบังคับเปลี่ยนรหัสทันที)"
-    echo "  ดูสถานะ: systemctl --plain list-units 'securelog-*'"
+    ok "Services are running - first login is admin/admin (you must change it immediately)"
+    echo "  Check status: systemctl --plain list-units 'securelog-*'"
 else
-    warn "ยังไม่รัน service เพราะ cert ไม่ครบ — ตรวจ $CERT_DIR แล้วสั่ง: sudo $PROJECT_DIR/systemd/install.sh"
+    warn "Services not started because certs are incomplete - check $CERT_DIR then run: sudo $PROJECT_DIR/systemd/install.sh"
 fi
 
 # รหัสที่สุ่มให้ไม่เคยถูกแสดงที่อื่นอีก — ต้องโชว์ตรงนี้ครั้งเดียวให้เก็บไว้
 if [ -n "$GENERATED_PASSWORDS" ]; then
     echo ""
-    warn "รหัสที่สุ่มให้ (เก็บไว้ให้ดี — ไม่แสดงอีก · อยู่ในไฟล์ .env และ redis/users.acl ด้วย):"
+    warn "Generated passwords (save them - not shown again; also stored in .env and redis/users.acl):"
     printf '%s' "$GENERATED_PASSWORDS" | while IFS='=' read -r k v; do
         [ -n "$k" ] && echo "     $k = $v"
     done
 fi
 
 echo ""
-echo "  ทำให้แล้วในรอบนี้: cert (SAN $BIND_HOST) · redis/users.acl 3 บัญชี · site.conf ของชุดติดตั้ง agent"
-echo "  ที่เหลือทำในหน้าเว็บ: คีย์ LINE / Gemini และค่าอื่นของชุดติดตั้ง (System Settings)"
-warn "ห้ามตั้ง 'user default off' ใน redis/users.acl — log จากทุก agent จะหยุดไหล (อ่าน redis/README.md)"
+echo "  Done this run: certs (SAN $BIND_HOST), redis/users.acl 3 accounts, site.conf for the agent installer"
+echo "  Remaining, in the web UI: LINE / Gemini keys and the other agent installer values (System Settings)"
+warn "Never set 'user default off' in redis/users.acl - logs from every agent stop flowing"

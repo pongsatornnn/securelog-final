@@ -17,7 +17,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$DIR")"
 
-[ "$(id -u)" -eq 0 ] || { echo "ต้องรันเป็น root: sudo ./install.sh" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || { echo "Must be run as root: sudo ./install.sh" >&2; exit 1; }
 
 # ---- สร้าง unit ตามที่ตั้งจริงของโปรเจกต์ก่อน (ค่าที่ export มาจะชนะการหาเองใน _gen.sh) ----
 if [ "${SKIP_GEN:-0}" != "1" ]; then
@@ -26,7 +26,7 @@ fi
 
 # unit ทุกตัวชี้ไป venv ของโปรเจกต์ — ไม่มี venv = systemd ตอบ 203/EXEC ทุกตัวโดยไม่บอกสาเหตุ
 if [ ! -x "$PROJECT_DIR/venv/bin/python" ]; then
-    echo "!! ไม่พบ $PROJECT_DIR/venv/bin/python — สร้าง venv ก่อนติดตั้ง service:" >&2
+    echo "!! $PROJECT_DIR/venv/bin/python not found - create the venv before installing the services:" >&2
     echo "   python3 -m venv $PROJECT_DIR/venv && $PROJECT_DIR/venv/bin/pip install -r $PROJECT_DIR/requirements.txt" >&2
     exit 1
 fi
@@ -52,14 +52,14 @@ done < <(
 )
 MANUAL="${MANUAL%$'\n'}"
 if [ -n "$MANUAL" ]; then
-    echo "!! พบ process ที่รันมืออยู่ — ต้องปิดก่อน ไม่งั้นชนกับ service:"
+    echo "!! Found manually started processes - stop them first or they will clash with the services:"
     echo "$MANUAL"
-    read -rp "จะ kill ให้เลยไหม? [y/N] " ans
+    read -rp "Kill them now? [y/N] " ans
     if [ "${ans,,}" = "y" ]; then
         echo "$MANUAL" | awk '{print $1}' | xargs -r kill
         sleep 2
     else
-        echo "ยกเลิก — ปิด process เองก่อนแล้วค่อยรันใหม่" >&2
+        echo "Aborted - stop those processes yourself, then run this again" >&2
         exit 1
     fi
 fi
@@ -72,10 +72,10 @@ systemctl daemon-reload
 # connection ของ agent ทุกตัวพร้อมกัน (ถ้าแก้ redis-mtls.conf/users.acl แล้วต้องการ reload ให้สั่งเอง)
 systemctl enable centralredis.service >/dev/null 2>&1
 if ! systemctl is-active --quiet centralredis.service; then
-    echo ">> เริ่ม centralredis.service (ยังไม่ทำงานอยู่)"
+    echo ">> Starting centralredis.service (not running yet)"
     systemctl start centralredis.service
 else
-    echo ">> centralredis.service ทำงานอยู่แล้ว — ข้าม (แก้ config แล้วอยากรีโหลดสั่งเอง: systemctl restart centralredis.service)"
+    echo ">> centralredis.service already running - skipped (after a config change, reload it yourself: systemctl restart centralredis.service)"
 fi
 
 # enable แค่ target ตัวเดียวพอ — ทุก service ถูกดึงผ่าน Wants= ใน target
@@ -84,9 +84,9 @@ systemctl enable securelog.target >/dev/null 2>&1
 systemctl restart securelog.target
 
 echo ""
-echo "=== สถานะ ==="
+echo "=== Status ==="
 sleep 2
 systemctl --no-pager --plain list-units 'securelog-*' || true
 echo ""
-echo "ดู log:   journalctl -u <ชื่อ service> -f"
-echo "ทั้งระบบ:  sudo systemctl restart securelog.target"
+echo "View logs:  journalctl -u <service name> -f"
+echo "Whole stack: sudo systemctl restart securelog.target"
