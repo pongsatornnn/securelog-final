@@ -21,15 +21,68 @@
 #   * ออก cert ใน cert/central/ ให้ SAN ตรง BIND_HOST (Root CA -> central mTLS -> dashboard HTTPS)
 #   * เขียน redis/users.acl ทั้ง 3 บัญชีด้วยรหัสจริงที่กรอก/สุ่มให้ (ไม่เหลือค่า default)
 #   * เขียน for_Agent/package/site.conf ให้ zip ของ agent ฝังค่าถูกต้องตั้งแต่ครั้งแรก
+#   * เปิด port ที่ระบบใช้บน firewall (ufw/firewalld): 6380 Redis mTLS, 8000 dashboard, 8080 LINE webhook
 #
 # ตัวแปรบังคับเขียนทับของเดิม (ปกติไม่ต้องใช้ — ของที่ตั้งไว้แล้วสคริปต์จะไม่แตะ):
 #   FORCE_CERT=1  ออก cert ใหม่ · FORCE_ACL=1 เขียน users.acl ใหม่ · FORCE_SITE_CONF=1 เขียน site.conf ใหม่
+#   SKIP_FIREWALL=1 ไม่ต้องแตะ firewall เลย (ปกติสคริปต์เปิด port ให้ผ่าน ufw/firewalld)
 set -euo pipefail
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m[!]\033[0m %s\n' "$*"; }
 err()  { printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# run_step — รันขั้นที่กินเวลานาน (apt/venv/pip) พร้อมตัวหมุน + เวลาที่ใช้ไป
+#
+# ของเดิมสั่ง apt/pip แบบ -q แล้วเงียบไปเป็นนาที แยกไม่ออกว่ากำลังโหลดอยู่หรือค้างไปแล้ว
+# ที่นี่จึงเก็บเอาต์พุตจริงลงไฟล์ log แล้วโชว์ตัวหมุนแทน — คำสั่งพังเมื่อไหร่ค่อยพ่น 20 บรรทัด
+# ท้าย log ออกมาให้เห็นสาเหตุ แล้ว return code เดิมกลับไป (set -e หยุดสคริปต์ให้เหมือนเดิม)
+#
+# stdin ต่อ /dev/null: ถ้ามีอะไรแอบถามขึ้นมา จะได้ตายไปเลยพร้อมข้อความ ไม่ใช่ค้างหมุนไม่รู้จบ
+# หลังตัวหมุนที่คนมองไม่เห็นว่ามันรอ input อยู่
+# ไม่มี tty (รันผ่าน pipe/cron/CI) ก็ปล่อยเอาต์พุตไหลตามปกติ ไม่ต้องหมุนให้ log รก
+# ---------------------------------------------------------------------------
+STEP_LOG=""
+run_step() {  # run_step "คำอธิบาย" cmd [args...]
+    local desc="$1"; shift
+    local rc=0 start="$SECONDS"
+
+    if [ ! -t 1 ]; then
+        printf '  ... %s\n' "$desc"
+        "$@" </dev/null || rc=$?
+        if [ "$rc" -ne 0 ]; then err "$desc failed (exit $rc)"; return "$rc"; fi
+        ok "$desc ($((SECONDS - start))s)"
+        return 0
+    fi
+
+    # สร้าง log ตอนใช้จริงครั้งแรก — ขั้นย้ายโปรเจกต์ด้านล่าง exec ทับตัวเอง ถ้าสร้างไว้ก่อนจะค้างทิ้ง
+    if [ -z "$STEP_LOG" ]; then
+        STEP_LOG="$(mktemp)"
+        trap 'rm -f "$STEP_LOG"' EXIT
+    fi
+
+    local pid i=0 frames='|/-\'
+    "$@" </dev/null >"$STEP_LOG" 2>&1 &
+    pid=$!
+
+    printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
+    while kill -0 "$pid" 2>/dev/null; do
+        printf '\r  \033[1;36m%s\033[0m %s \033[2m(%ds)\033[0m' \
+            "${frames:i++%4:1}" "$desc" "$((SECONDS - start))"
+        sleep 0.2
+    done
+    printf '\r\033[K\033[?25h'       # ล้างบรรทัดตัวหมุนแล้วคืน cursor
+
+    wait "$pid" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        err "$desc failed (exit $rc) - last lines of the output:"
+        tail -20 "$STEP_LOG" >&2
+        return "$rc"
+    fi
+    ok "$desc ($((SECONDS - start))s)"
+}
 
 [ "$(id -u)" -eq 0 ] || { err "Must be run as root: sudo ./setup-server.sh"; exit 1; }
 
@@ -159,9 +212,9 @@ APP_GROUP="${APP_GROUP:-$APP_USER}"
 # ---------------------------------------------------------------------------
 log "Installing OS packages (apt)"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq python3-venv python3-pip postgresql redis-server tar >/dev/null
-ok "python3-venv / postgresql / redis-server ready"
+run_step "apt-get update" apt-get update -qq
+run_step "Installing python3-venv / python3-pip / postgresql / redis-server / tar" \
+    apt-get install -y -qq python3-venv python3-pip postgresql redis-server tar
 
 # ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (:6380 mTLS)
 systemctl disable --now redis-server >/dev/null 2>&1 || true
@@ -181,10 +234,14 @@ fi
 # 4) venv + Python deps
 # ---------------------------------------------------------------------------
 log "Creating venv + installing requirements.txt"
-[ -x "$PROJECT_DIR/venv/bin/python" ] || python3 -m venv "$PROJECT_DIR/venv"
-"$PROJECT_DIR/venv/bin/pip" install -q --upgrade pip
-"$PROJECT_DIR/venv/bin/pip" install -q -r "$PROJECT_DIR/requirements.txt"
-ok "Python dependencies ready"
+if [ -x "$PROJECT_DIR/venv/bin/python" ]; then
+    ok "venv already exists"
+else
+    run_step "Creating venv" python3 -m venv "$PROJECT_DIR/venv"
+fi
+run_step "Upgrading pip" "$PROJECT_DIR/venv/bin/pip" install -q --upgrade pip
+run_step "Installing requirements.txt (this is the slow one)" \
+    "$PROJECT_DIR/venv/bin/pip" install -q -r "$PROJECT_DIR/requirements.txt"
 
 # ---------------------------------------------------------------------------
 # 5) .env (สร้างใหม่ถ้ายังไม่มี — ไม่ทับของเดิม)
@@ -479,6 +536,94 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 10) Firewall — เปิดเฉพาะ port ที่ระบบนี้ใช้จริง
+#       6380/tcp  Redis mTLS   เปิดเสมอ — ไม่เปิด agent ส่ง log เข้ามาไม่ได้เลย
+#       8000/tcp  dashboard    เปิดเมื่อ WEB_BIND_HOST ไม่ใช่ 127.0.0.1
+#       8080/tcp  LINE webhook เปิดเมื่อ WEBHOOK_BIND_HOST ไม่ใช่ 127.0.0.1
+#     PostgreSQL 5432 ไม่เปิด — ต่อผ่าน localhost อย่างเดียว
+#
+#     ไม่สั่ง `ufw enable` ให้เอง: คนติดตั้งส่วนใหญ่ ssh เข้ามาทำ พอ ufw ขึ้นมาพร้อม
+#     default deny incoming มันจะตัด ssh ของตัวเองทิ้งกลางคัน เข้าเครื่องไม่ได้อีก
+#     rule ที่เพิ่มไว้ตอน ufw ยัง inactive ไม่หายไปไหน enable ทีหลังมีผลทันที
+#     ข้ามทั้งขั้น: SKIP_FIREWALL=1
+# ---------------------------------------------------------------------------
+log "Firewall (opening the ports this system serves)"
+
+FW_KIND="none"
+if [ "${SKIP_FIREWALL:-0}" = "1" ]; then
+    FW_KIND="skip"
+elif command -v ufw >/dev/null 2>&1; then
+    FW_KIND="ufw"
+elif command -v firewall-cmd >/dev/null 2>&1; then
+    FW_KIND="firewalld"
+fi
+
+FW_OPENED=""
+# เปิดไม่สำเร็จแค่เตือน ไม่ล้มสคริปต์ — ของอื่นติดตั้งครบแล้ว และ firewall เครื่องนั้น
+# อาจเปิดทางไว้อยู่แล้วด้วยวิธีอื่น เอาไปเช็คเองได้จากบรรทัดที่เตือน
+fw_allow() {  # fw_allow PORT "คำอธิบาย"
+    local port="$1" what="$2"
+    case "$FW_KIND" in
+        ufw)
+            # ufw ก่อน 0.35 ไม่รู้จัก comment — ตกลงมาสั่งแบบไม่มี comment ให้
+            ufw allow "$port"/tcp comment "SecureLog $what" >/dev/null 2>&1 \
+                || ufw allow "$port"/tcp >/dev/null 2>&1 \
+                || { warn "ufw could not open $port/tcp ($what) - open it yourself"; return 0; }
+            ;;
+        firewalld)
+            firewall-cmd --permanent --add-port="$port"/tcp >/dev/null 2>&1 \
+                || { warn "firewalld could not open $port/tcp ($what) - open it yourself"; return 0; }
+            ;;
+        *) return 0 ;;
+    esac
+    ok "$port/tcp open - $what"
+    FW_OPENED="$FW_OPENED $port"
+}
+
+case "$FW_KIND" in
+    skip)
+        warn "SKIP_FIREWALL=1 - firewall left alone (open tcp 6380/8000/8080 yourself if one sits in front)"
+        FW_SUMMARY="skipped (SKIP_FIREWALL=1)"
+        ;;
+    none)
+        warn "Neither ufw nor firewalld found on this machine - nothing to open"
+        warn "If something else filters traffic, open tcp 6380 (agents), 8000 (dashboard), 8080 (LINE webhook)"
+        FW_SUMMARY="no ufw/firewalld - nothing opened"
+        ;;
+    *)
+        fw_allow 6380 "Redis mTLS (agents send logs in)"
+
+        if [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
+            warn "dashboard binds 127.0.0.1 - 8000/tcp left closed (local access only)"
+        else
+            fw_allow 8000 "dashboard HTTPS"
+        fi
+
+        if [ "$WEBHOOK_BIND_HOST" = "127.0.0.1" ]; then
+            warn "LINE webhook binds 127.0.0.1 - 8080/tcp left closed (the tunnel runs on this host)"
+        else
+            fw_allow 8080 "LINE webhook"
+        fi
+
+        FW_SUMMARY="$FW_KIND: opened${FW_OPENED:- (nothing)}"
+
+        if [ "$FW_KIND" = "firewalld" ]; then
+            firewall-cmd --reload >/dev/null 2>&1 \
+                || warn "firewall-cmd --reload failed - run it yourself for the rules to take effect"
+            if ! systemctl is-active --quiet firewalld; then
+                warn "firewalld is installed but not running - the rules are saved and apply once it starts"
+                FW_SUMMARY="$FW_SUMMARY (firewalld not running)"
+            fi
+        elif ! ufw status 2>/dev/null | grep -q "Status: active"; then
+            warn "ufw is installed but inactive - the rules are saved, they apply once you run:"
+            warn "  sudo ufw allow OpenSSH   <- do this FIRST or you lock yourself out"
+            warn "  sudo ufw enable"
+            FW_SUMMARY="$FW_SUMMARY (ufw still inactive)"
+        fi
+        ;;
+esac
+
+# ---------------------------------------------------------------------------
 # สรุป
 # ---------------------------------------------------------------------------
 log "Done - summary"
@@ -488,6 +633,7 @@ echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:6380)"
 echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$BIND_HOST:8000"
 echo "  LINE webhook  : bind $WEBHOOK_BIND_HOST:8080"
 echo "  database      : $DB_NAME (owner $DB_USER)"
+echo "  firewall      : $FW_SUMMARY"
 echo ""
 if [ "$STARTED" -eq 1 ]; then
     ok "Services are running - first login is admin/admin (you must change it immediately)"

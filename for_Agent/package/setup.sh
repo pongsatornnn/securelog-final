@@ -14,6 +14,9 @@
 #   4. sudo ./setup.sh
 #
 # รันซ้ำได้ (idempotent) — ใช้ตอนอัปเดตโค้ด/config ก็รันตัวเดิมซ้ำ
+#
+# firewall: เปิดทางออกไปหา central Redis ให้ผ่าน ufw + เปิด ufw logging ที่ตัวตรวจจับต้องใช้
+#           (ไม่ enable ufw ให้เอง — จะตัด ssh ตัวเองขาด) · ข้ามทั้งขั้น: SKIP_FIREWALL=1 sudo ./setup.sh
 set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,6 +26,58 @@ MARKER="$INSTALL_DIR/.setup_done"
 log()  { echo -e "\e[32m[SETUP]\e[0m $*"; }
 warn() { echo -e "\e[33m[WARN]\e[0m  $*"; }
 die()  { echo -e "\e[31m[ERROR]\e[0m $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# run_step — รันขั้นที่กินเวลานาน (apt/dpkg/venv/pip) พร้อมตัวหมุน + เวลาที่ใช้ไป
+#
+# ของเดิมสั่ง apt/pip แบบ -q แล้วจอเงียบไปเป็นนาที คนติดตั้งแยกไม่ออกว่ากำลังโหลดอยู่หรือค้าง
+# ที่นี่เก็บเอาต์พุตจริงลง log แล้วโชว์ตัวหมุนแทน — พังเมื่อไหร่ค่อยพ่น 20 บรรทัดท้ายให้เห็นสาเหตุ
+# แล้วคืน exit code เดิม (set -e หยุดสคริปต์ให้เหมือนเดิม ไม่มีอะไรถูกกลืนหาย)
+#
+# stdin ต่อ /dev/null: มีอะไรแอบถามขึ้นมาจะได้ตายพร้อมข้อความ ไม่ใช่หมุนค้างโดยไม่มีใครรู้ว่ามันรอ input
+# ไม่มี tty (รันผ่าน pipe/cron) ก็ปล่อยเอาต์พุตไหลตามปกติ ไม่ต้องหมุน
+# ---------------------------------------------------------------------------
+STEP_LOG=""
+run_step() {  # run_step "คำอธิบาย" cmd [args...]
+    local desc="$1"; shift
+    local rc=0 start="$SECONDS"
+
+    if [ ! -t 1 ]; then
+        log "$desc ..."
+        "$@" </dev/null || rc=$?
+        if [ "$rc" -ne 0 ]; then
+            echo -e "\e[31m[ERROR]\e[0m $desc failed (exit $rc)" >&2
+            return "$rc"
+        fi
+        log "$desc - done ($((SECONDS - start))s)"
+        return 0
+    fi
+
+    if [ -z "$STEP_LOG" ]; then
+        STEP_LOG="$(mktemp)"
+        trap 'rm -f "$STEP_LOG"' EXIT
+    fi
+
+    local pid i=0 frames='|/-\'
+    "$@" </dev/null >"$STEP_LOG" 2>&1 &
+    pid=$!
+
+    printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
+    while kill -0 "$pid" 2>/dev/null; do
+        printf '\r\033[32m[SETUP]\033[0m %s \033[2m(%ds)\033[0m %s' \
+            "$desc" "$((SECONDS - start))" "${frames:i++%4:1}"
+        sleep 0.2
+    done
+    printf '\r\033[K\033[?25h'       # ล้างบรรทัดตัวหมุนแล้วคืน cursor
+
+    wait "$pid" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        echo -e "\e[31m[ERROR]\e[0m $desc failed (exit $rc) - last lines of the output:" >&2
+        tail -20 "$STEP_LOG" >&2
+        return "$rc"
+    fi
+    log "$desc - done ($((SECONDS - start))s)"
+}
 
 [ "$(id -u)" -eq 0 ] || die "Must be run as root: sudo ./setup.sh"
 command -v python3 >/dev/null || die "python3 not found on this machine"
@@ -140,9 +195,8 @@ dpkg -s curl         >/dev/null 2>&1 || NEED_PKGS+=(curl)
 dpkg -s gnupg        >/dev/null 2>&1 || NEED_PKGS+=(gnupg)
 
 if [ "${#NEED_PKGS[@]}" -gt 0 ]; then
-    log "Installing packages: ${NEED_PKGS[*]}"
-    apt-get update -qq
-    apt-get install -y -qq "${NEED_PKGS[@]}"
+    run_step "apt-get update" apt-get update -qq
+    run_step "Installing packages: ${NEED_PKGS[*]}" apt-get install -y -qq "${NEED_PKGS[@]}"
 else
     log "python3-venv + conntrack + curl + gnupg already present"
 fi
@@ -157,8 +211,8 @@ if command -v filebeat >/dev/null 2>&1; then
 else
     DEB="$(ls "$INSTALL_DIR"/filebeat-*.deb 2>/dev/null | head -1 || true)"
     if [ -n "$DEB" ]; then
-        log "Installing filebeat from $DEB (found locally - used first, no internet needed)"
-        dpkg -i "$DEB"
+        log "Found $DEB locally - installing filebeat from it (used first, no internet needed)"
+        run_step "dpkg -i $(basename "$DEB")" dpkg -i "$DEB"
     elif curl -fsS --max-time 5 -o /dev/null https://artifacts.elastic.co 2>/dev/null; then
         log "No local .deb - installing filebeat from the Elastic APT repository instead"
 
@@ -172,8 +226,8 @@ else
                 > "$ELASTIC_LIST"
         fi
 
-        apt-get update -qq
-        apt-get install -y -qq filebeat
+        run_step "apt-get update (Elastic repo)" apt-get update -qq
+        run_step "Installing filebeat" apt-get install -y -qq filebeat
         log "Installed filebeat from the Elastic APT repo (on a later re-run apt will upgrade it if a newer version exists)"
     else
         die "filebeat not found and no internet access - put filebeat-<version>-amd64.deb next to this script (download it from elastic.co) or connect to the internet and run again"
@@ -182,13 +236,13 @@ fi
 
 # ---------- 6) สร้าง venv + ลง dependency ----------
 if [ ! -x "$INSTALL_DIR/venv/bin/python" ]; then
-    log "Creating venv (separate from system python - does not affect other processes)"
-    python3 -m venv "$INSTALL_DIR/venv"
+    run_step "Creating venv (separate from system python - does not affect other processes)" \
+        python3 -m venv "$INSTALL_DIR/venv"
 else
     log "venv already exists"
 fi
-"$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
-log "Installed python dependencies (redis, psutil) into the venv"
+run_step "Installing python dependencies (redis, psutil) into the venv" \
+    "$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
 
 # ---------- 7) generate /etc/filebeat/filebeat.yml จาก template ----------
 #
@@ -237,16 +291,43 @@ chown -R root:root "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/cert/$KEY_FILE" "$INFO_FILE" "$INSTALL_DIR/agent_config.json"
 log "Setting file permissions (key/token = 600, owned by root)"
 
-# ---------- 9) UFW ----------
-if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-    if ufw status verbose | grep -qi "Logging: off"; then
-        ufw logging low
-        log "Enabling ufw logging low (required by the firewall detector)"
-    else
-        log "ufw logging already enabled"
-    fi
+# ---------- 9) UFW: log ที่ตัวตรวจจับต้องใช้ + ทางออกไปหา central ----------
+#
+# เครื่อง agent ไม่ได้เปิด port รับเข้าเลย (agent_core ต่อออกไปหา central อย่างเดียว รวมทั้ง
+# ช่อง pubsub ที่รับคำสั่งบล็อก IP ก็วิ่งบน connection ขาออกเส้นเดิม) — ที่ต้องเปิดจึงมีแต่ขาออก
+# ไปหา central Redis  เครื่องที่ตั้ง `ufw default deny outgoing` ไว้ถ้าไม่เปิดให้ agent จะต่อไม่ติด
+# แบบไม่มีอะไรฟ้องชัด ๆ (เห็นแค่ timeout) เลยเปิดให้ตั้งแต่ตอนติดตั้ง
+#
+# ไม่สั่ง `ufw enable` ให้เอง — คนติดตั้งมัก ssh เข้ามาทำ พอ ufw ขึ้นพร้อม default deny incoming
+# มันจะตัด ssh ของตัวเองทิ้งกลางคัน  rule ที่เพิ่มไว้ตอน ufw ยัง inactive ไม่หาย enable ทีหลังมีผลเลย
+if [ "${SKIP_FIREWALL:-0}" = "1" ]; then
+    warn "SKIP_FIREWALL=1 - not touching ufw (the firewall detector needs 'ufw logging low' to be on)"
+elif ! command -v ufw >/dev/null 2>&1; then
+    warn "ufw is not installed - block IP commands have no effect on this machine"
+    warn "Install it and turn it on: sudo apt-get install ufw && sudo ufw allow OpenSSH && sudo ufw enable"
 else
-    warn "ufw is not active - block IP commands have no effect until you run: sudo ufw enable"
+    # ขาออกไปหา central — สั่งได้แม้ ufw ยัง inactive (rule ถูกเก็บไว้รอ) และสั่งซ้ำได้ ufw ข้ามให้เอง
+    if ufw allow out to "$CENTRAL_HOST" port "$CENTRAL_REDIS_PORT" proto tcp \
+            comment "SecureLog agent -> central Redis" >/dev/null 2>&1 \
+       || ufw allow out to "$CENTRAL_HOST" port "$CENTRAL_REDIS_PORT" proto tcp >/dev/null 2>&1; then
+        log "Allowed outbound $CENTRAL_HOST:$CENTRAL_REDIS_PORT/tcp in ufw (agent + filebeat -> central)"
+    else
+        warn "Could not add the ufw outbound rule for $CENTRAL_HOST:$CENTRAL_REDIS_PORT/tcp"
+        warn "If outgoing traffic is denied by default here, add it yourself or the agent cannot report in"
+    fi
+
+    if ufw status | grep -q "Status: active"; then
+        if ufw status verbose | grep -qi "Logging: off"; then
+            ufw logging low
+            log "Enabling ufw logging low (required by the firewall detector)"
+        else
+            log "ufw logging already enabled"
+        fi
+    else
+        warn "ufw is installed but inactive - block IP commands have no effect and no firewall logs are"
+        warn "produced until you run:  sudo ufw allow OpenSSH  (FIRST, or you lock yourself out)"
+        warn "                          sudo ufw enable"
+    fi
 fi
 
 # ---------- 10) systemd ----------
