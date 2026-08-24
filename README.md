@@ -25,7 +25,12 @@ sudo ./setup-server.sh
 > เข้าไปอ่านไฟล์ไม่ได้ (home ปกติเป็น 750) — หรือวางนอก home ไปเลยเช่น `/srv`, `/usr/local`
 
 สคริปต์จะถามทีละข้อ: user ที่ service ใช้รัน · IP 3 ช่อง · ชื่อ/รหัส PostgreSQL · รหัส Redis 2 ชุด
-กด Enter เพื่อรับค่า default ได้ · **รันซ้ำได้ (idempotent)** ไม่ทับ `.env`/cert/รหัสที่ตั้งไว้แล้ว
+กด Enter เพื่อรับค่า default ได้
+
+**รันซ้ำได้ (idempotent)** — รอบถัดไปสคริปต์อ่านค่าที่ติดตั้งไว้จาก `.env` มาเป็นค่าตั้งต้นให้เอง
+(ไม่ต้องจำรหัสเดิมมากรอกซ้ำ) เหลือถามแค่ user + IP 3 ช่อง โดยตั้งค่าเดิมไว้ให้แล้ว —
+**กด Enter รัว ๆ = ไม่มีอะไรเปลี่ยน** · คีย์ที่สคริปต์ไม่ได้ดูแล (`LINE_*`, `GEMINI_*`, `JWT_*`,
+`CSRF_*`) และ `users.acl` ที่ตั้งรหัสจริงไว้แล้ว ไม่ถูกแตะ
 
 รันแบบไม่ถาม (preset ผ่าน env):
 
@@ -70,6 +75,32 @@ sudo APP_USER=deploy BIND_HOST=10.0.0.5 DB_PASSWORD=xxx REDIS_PASS=yyy ./setup-s
 1. `.env` — รหัส DB/Redis เดิม
 2. `.settings_key` — **ขาดไม่ได้** ถ้าไม่มี ค่า secret ในตาราง `app_settings` (LINE token ฯลฯ) จะถอดรหัสไม่ออก
 3. dump ของ PostgreSQL
+
+### เปลี่ยน IP ของ Central
+
+รัน `sudo ./setup-server.sh` ซ้ำ แล้วตอบ IP ใหม่ในช่อง *"Address other machines use to reach this
+central server"* — สคริปต์ไล่แก้ให้ครบทุกที่ที่ IP เดิมฝังอยู่:
+
+| ที่ | ทำอะไรให้ |
+|---|---|
+| `cert/central/*.crt` | ออกใหม่ให้ SAN ตรง IP ใหม่ **ด้วย CA เดิม** (agent ที่ลงไปแล้วยังเชื่อถือใบใหม่) ของเก่าเก็บไว้ที่ `cert/central/old-<เวลา>/` |
+| `.env` | `REDIS_HOST` + `AGENT_CENTRAL_HOST` |
+| `for_Agent/package/site.conf` | `CENTRAL_HOST` |
+| ตาราง `app_settings` | แถว `agent_central_host` — ค่านี้แหละที่ package ใหม่ใช้จริง ไม่ใช่ `.env` |
+| systemd + `centralredis` | generate unit ใหม่ แล้ว restart Redis ให้ (Redis อ่าน cert ตอน start ครั้งเดียว) |
+
+> ⚠️ **agent ที่ติดตั้งไปแล้วยังชี้ IP เดิม** — IP ฝังอยู่ทั้งใน `agent_config.json` และ
+> `/etc/filebeat/filebeat.yml` แก้ไฟล์เดียวไม่พอ ต้องโหลด zip ใหม่จากหน้า Agents ไปรัน `setup.sh`
+> ทับบนเครื่องนั้น (หรือแก้ `CENTRAL_HOST` ใน `site.conf` ของเครื่องนั้นแล้วรัน `setup.sh` ซ้ำ)
+
+### ลงทับเครื่องที่มี PostgreSQL อยู่ก่อนแล้ว
+
+สคริปต์ตรวจให้ก่อนลงมือ: ฐานข้อมูลชื่อซ้ำแต่ **ไม่ใช่ของระบบนี้** (ไม่มีตารางของเราสักตัว) จะ**หยุด**
+ไม่ไปสร้างตารางทับฐานของแอปอื่น (ยืนยันว่าใช่ด้วย `ALLOW_FOREIGN_DB=1`) · ฐานเป็นของเราแต่เจ้าของ
+เป็น role อื่น จะโอน owner ของ database/ตาราง/sequence ให้ role ที่แอปใช้ · ปิดท้ายด้วยการ**ลอง
+ล็อกอิน PostgreSQL ด้วยรหัสจริงทาง TCP แบบเดียวกับที่แอปต่อ** ไม่ผ่านคือหยุดพร้อมบอกสาเหตุ
+(ข้ามด้วย `SKIP_DB_CHECK=1`) · เปลี่ยนรหัส DB ทีหลัง: `sudo DB_PASSWORD=รหัสใหม่ ./setup-server.sh`
+(แก้ทั้ง `ALTER ROLE` และ `.env` พร้อมกัน)
 
 ## อัปเดตทีหลัง
 
