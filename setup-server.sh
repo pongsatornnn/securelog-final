@@ -981,8 +981,7 @@ echo "  database      : $DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT"
 echo "  firewall      : $FW_SUMMARY"
 echo ""
 if [ "$STARTED" -eq 1 ]; then
-    ok "Services are running - first login is admin/admin (you must change it immediately)"
-    echo "  Check status: systemctl --plain list-units 'securelog-*'"
+    ok "First login is admin/admin"
 else
     warn "Services not started because certs are incomplete - check $CERT_DIR then run: sudo $PROJECT_DIR/systemd/install.sh"
 fi
@@ -1010,7 +1009,12 @@ if [ -n "$GENERATED_PASSWORDS" ]; then
     done
 fi
 
+# ปิดท้ายด้วยรายชื่อ service ที่รันจริง — เป็นสิ่งสุดท้ายที่ค้างอยู่บนจอหลังสคริปต์จบ
 echo ""
-echo "  Done this run: certs (SAN $BIND_HOST), redis/users.acl 3 accounts, site.conf for the agent installer"
-echo "  Remaining, in the web UI: LINE / Gemini keys and the other agent installer values (System Settings)"
-warn "Never set 'user default off' in redis/users.acl - logs from every agent stop flowing"
+if [ "$STARTED" -eq 1 ]; then
+    ok "Setup complete - services running:"
+    systemctl --no-pager --plain --no-legend list-units 'centralredis.service' 'securelog-*' 2>/dev/null \
+        | awk '{printf "     %-36s %s %s\n", $1, $3, $4}'
+else
+    warn "Setup finished - services are not running yet"
+fi
