@@ -117,6 +117,14 @@
     line-height: 1.6;
   }
 
+  /* ข้อความ error มีต้นฉบับจากปลายทางต่อท้ายอีกบรรทัด — ต้องขึ้นบรรทัดใหม่ตาม \n จริง
+     และตัดคำได้ เพราะข้อความของ Google เป็นประโยคยาวไม่มีเว้นวรรคให้ตัด
+     (ใส่ที่ตัวข้อความเท่านั้น ถ้าใส่ที่กล่อง การเว้นบรรทัดในไฟล์ HTML จะกลายเป็นช่องว่างจริง) */
+  .test-result-text {
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+
   .test-result.ok {
     background: var(--success-soft);
     color: var(--success);
@@ -362,10 +370,10 @@
     </div>
   </div>
 
-  <div class="scope-note">
-    แก้แล้วมีผล <b>ทันที ไม่ต้องรีสตาร์ต</b> · ยังไม่ตั้ง = ใช้ค่าจาก <code>.env</code><br>
-    <b>DB, ใบรับรอง, JWT/CSRF, IP/พอร์ต</b> ตั้งที่นี่ไม่ได้ — อยู่ใน <code>.env</code> และไฟล์ systemd
-  </div>
+  <!-- <div class="scope-note">
+    คีย์ของบริการภายนอกและค่าที่ฝังลงชุดติดตั้ง agent — แก้แล้วมีผล <b>ทันที ไม่ต้องรีสตาร์ต</b><br>
+    <b>DB, ใบรับรอง, JWT/CSRF, IP/พอร์ต</b> ตั้งที่นี่ไม่ได้ — อยู่ในไฟล์ <code>.env</code> และ systemd
+  </div> -->
 
   <!-- ── ค้างรีสตาร์ต ──
        ไม่ได้จำสถานะไว้ที่ไหน — ฝั่ง server เทียบเวลาที่แต่ละ service เริ่มทำงานกับ mtime ของ
@@ -434,7 +442,8 @@
 
       <div class="test-result" x-show="testResults[group.name]" x-cloak
            :class="testResults[group.name] && testResults[group.name].ok ? 'ok' : 'fail'">
-        <span x-text="testResults[group.name] ? testResults[group.name].message : ''"></span>
+        <span class="test-result-text"
+              x-text="testResults[group.name] ? testResults[group.name].message : ''"></span>
 
         <!-- ผลทดสอบ LINE คืน basicId ของ OA มาด้วย — ถ้ายังไม่ได้กรอกช่อง LINE OA ID
              ให้กดเติมจากค่าที่ยืนยันแล้วได้เลย ไม่ต้องไปหาเองใน LINE Console -->
@@ -448,8 +457,12 @@
             <span x-text="item.label"></span>
 
             <span class="set-tag saved" x-show="item.is_overridden && item.is_set">ตั้งไว้แล้ว</span>
-            <span class="set-tag env" x-show="!item.is_overridden && item.is_set"
+            <span class="set-tag env" x-show="!item.is_overridden && item.is_set && item.from_env"
                   :title="'ยังใช้ค่าจาก ' + item.env_name + ' ใน .env'">จาก .env</span>
+            <!-- ไม่มีทั้งค่าที่ตั้งไว้และตัวแปรใน .env = ค่าตั้งต้นในโค้ด — ป้ายต้องไม่ชี้ไปที่
+                 .env ไม่งั้นเปิดไฟล์ไปหาแล้วไม่เจอคีย์นั้น -->
+            <span class="set-tag env" x-show="!item.is_overridden && item.is_set && !item.from_env"
+                  title="ยังไม่มีใครตั้งค่านี้ ระบบใช้ค่าตั้งต้นของตัวเองอยู่">ค่าตั้งต้น</span>
             <span class="set-tag empty" x-show="!item.is_set">ยังไม่ได้ตั้ง</span>
           </div>
 
@@ -460,15 +473,46 @@
               <div class="set-masked" x-text="item.value || 'ยังไม่ได้ตั้งค่า'"></div>
 
               <button class="btn-mini" @click="openKeyModal(item)">เปลี่ยนรหัส</button>
-
-              <button class="btn-mini" x-show="item.is_overridden"
-                      :disabled="busyKey === item.key"
-                      @click="resetSetting(item)"
-                      title="ลบค่าที่ตั้งทับไว้ กลับไปใช้ค่าจาก .env">คืนค่า .env</button>
             </div>
           </template>
 
-          <template x-if="!item.modal_change">
+          <!-- ค่าที่มีรายชื่อให้เลือก (Model ของ Gemini) — เลือกเอาไม่ต้องพิมพ์ เพราะชื่อโมเดล
+               พิมพ์ผิดนิดเดียวก็ 404 · รายชื่อจริงมาจากคีย์ที่ตั้งไว้ (ปุ่มโหลดรายชื่อใหม่) -->
+          <template x-if="!item.modal_change && item.choices.length">
+            <div>
+              <div class="set-input-row">
+                <!-- x-effect: Alpine ตั้งค่าให้ <select> ก่อน x-for สร้าง <option> ลูกเสร็จ
+                     ค่าที่ตั้งจึงหลุดแล้วเบราว์เซอร์ตกไปโชว์ตัวแรก (บทเรียนเดียวกับช่อง
+                     "แสดงหน้าละ" ใน alerts.html) — applySelectValue ตั้งค่าซ้ำหลัง render
+                     ทุกครั้งที่รายชื่อหรือค่าที่เลือกเปลี่ยน ช่องจึงตรงกับค่าที่จะบันทึกเสมอ -->
+                <select class="form-input" x-model="selects[item.key]"
+                        @change="onSelectChange(item, $event.target.value)"
+                        x-effect="applySelectValue(item, $el)">
+                  <template x-for="opt in optionsFor(item)" :key="opt.name">
+                    <option :value="opt.name" :title="opt.label" x-text="opt.name"></option>
+                  </template>
+                  <option value="__custom__">อื่น ๆ (พิมพ์ชื่อเอง)</option>
+                </select>
+
+                <button class="btn-mini" x-show="item.key === 'gemini_model'"
+                        :disabled="models.busy" @click="loadGeminiModels()">
+                  <span x-show="!models.busy">โหลดรายชื่อใหม่</span>
+                  <span x-show="models.busy">กำลังโหลด...</span>
+                </button>
+              </div>
+
+              <!-- เผื่อโมเดลที่ยังไม่โผล่ในรายชื่อ — จะได้ไม่ตันถ้า Google ออกรุ่นใหม่ -->
+              <div class="set-input-row" style="margin-top: 8px;"
+                   x-show="selects[item.key] === '__custom__'" x-cloak>
+                <input class="form-input" placeholder="พิมพ์ชื่อโมเดล เช่น gemini-3.5-flash"
+                       :value="drafts[item.key] !== undefined ? drafts[item.key] : item.value"
+                       @input="setDraft(item, $event.target.value)"
+                       autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+          </template>
+
+          <template x-if="!item.modal_change && !item.choices.length">
             <div class="set-input-row">
               <!-- ค่า secret: ช่องเริ่มต้นว่างเสมอ + placeholder เป็นค่าที่ mask ไว้
                    พิมพ์ทับ = ตั้งค่าใหม่ · ไม่แตะ = ไม่ส่งคีย์นั้นไปเลย ของเดิมจึงไม่ถูกเขียนทับ -->
@@ -483,11 +527,6 @@
               <button class="btn-mini" x-show="item.is_secret && drafts[item.key] !== undefined"
                       @click="toggleReveal(item.key)"
                       x-text="revealed.includes(item.key) ? 'ซ่อน' : 'แสดง'"></button>
-
-              <button class="btn-mini" x-show="item.is_overridden"
-                      :disabled="busyKey === item.key"
-                      @click="resetSetting(item)"
-                      title="ลบค่าที่ตั้งทับไว้ กลับไปใช้ค่าจาก .env">คืนค่า .env</button>
             </div>
           </template>
 
@@ -510,6 +549,11 @@
               <span> · ช่องนี้แสดงเฉพาะ 4 ตัวท้ายของค่าที่ตั้งไว้ พิมพ์ทับเพื่อเปลี่ยนเป็นค่าใหม่</span>
             </template>
           </div>
+
+          <!-- ที่มาของรายชื่อในช่อง Model — อยู่ใต้คำอธิบายปกติ เพราะเป็นสถานะของรายชื่อ
+               ไม่ใช่คำอธิบายว่าค่านี้คืออะไร -->
+          <div class="set-hint" x-show="item.key === 'gemini_model' && models.note" x-cloak
+               x-text="models.note"></div>
         </div>
       </template>
     </div>
@@ -795,7 +839,14 @@
       loading: true,
       loadError: '',
       isSaving: false,
-      busyKey: null,
+
+      // ตัวที่เลือกอยู่ในช่องที่เป็น dropdown (key -> ชื่อโมเดล หรือ '__custom__' ตอนพิมพ์เอง)
+      // แยกจาก drafts เพราะ '__custom__' เป็นสถานะของช่อง ไม่ใช่ค่าที่จะบันทึก
+      selects: {},
+
+      // รายชื่อโมเดลที่ "คีย์ที่ตั้งไว้" เรียกได้จริง — ดึงจาก Google ตอนเปิดหน้า
+      // ดึงไม่ได้ก็ไม่เป็นไร ตกไปใช้รายชื่อตั้งต้นที่ server ส่งมากับแต่ละ item (item.choices)
+      models: { list: [], busy: false, note: '' },
 
       testing: null,
       testResults: {},
@@ -1071,6 +1122,77 @@
         }
       },
 
+      // ค่าที่จะถูกบันทึกจริงของแถวนี้ (ที่แก้ค้างไว้ ถ้าไม่มีก็ค่าที่ตั้งอยู่)
+      currentValue(item) {
+        return this.drafts[item.key] !== undefined ? this.drafts[item.key] : item.value
+      },
+
+      // ตัวเลือกในช่อง — ดึงรายชื่อจากคีย์จริงได้เมื่อไหร่ ใช้ชุดนั้นแทนรายชื่อตั้งต้นทั้งชุด
+      // เพราะโมเดลที่คีย์นี้เรียกไม่ได้ไม่ควรโผล่ให้เลือก · ค่าที่ตั้งไว้อยู่แล้วต้องมีในรายการเสมอ
+      // ไม่งั้นเปิดหน้ามาช่องจะเด้งไปโชว์ตัวอื่นทั้งที่ระบบยังใช้ค่าเดิม
+      optionsFor(item) {
+        const live = item.key === 'gemini_model' && this.models.list.length ? this.models.list : null
+        const options = live ? live.slice() : item.choices.map(name => ({ name, label: name }))
+
+        const current = this.currentValue(item)
+        if (current && !options.some(o => o.name === current)) {
+          options.unshift({ name: current, label: current + ' (ค่าที่ตั้งไว้ตอนนี้)' })
+        }
+
+        return options
+      },
+
+      // ให้ช่องตรงกับค่าที่ระบบใช้อยู่ — เรียกทุกครั้งที่โหลดค่าใหม่/ยกเลิกที่แก้/รายชื่อเปลี่ยน
+      syncSelects() {
+        for (const item of this.items) {
+          if (!item.choices.length) continue
+          this.selects[item.key] = this.currentValue(item) || '__custom__'
+        }
+      },
+
+      // ตั้งค่าที่เลือกให้ <select> จริง ๆ หลัง <option> ถูก render เสร็จ (ดูคำอธิบายในหน้า HTML)
+      // อ่าน selects/optionsFor ตรงนี้แบบตรง ๆ ให้ Alpine รู้ว่า effect นี้ขึ้นกับสองตัวนั้น —
+      // ถ้าอ่านแต่ในคอลแบ็กของ $nextTick จะจับ dependency ไม่ทัน effect จะไม่ทำงานซ้ำ
+      applySelectValue(item, el) {
+        const value = this.selects[item.key]
+        this.optionsFor(item)
+        this.$nextTick(() => { el.value = value })
+      },
+
+      onSelectChange(item, value) {
+        this.selects[item.key] = value
+        // '__custom__' เป็นแค่การเปิดช่องพิมพ์ ยังไม่ใช่ค่าที่จะบันทึก
+        if (value !== '__custom__') this.setDraft(item, value)
+      },
+
+      // รายชื่อโมเดลขึ้นกับคีย์ที่ตั้งไว้ — คีย์ที่ออกใหม่ใช้รุ่นเก่าไม่ได้แล้ว จึงต้องถาม Google
+      // ทุกครั้งแทนการฝังรายชื่อไว้ในโค้ด · ดึงไม่ได้ไม่ใช่เรื่องคอขาดบาดตาย แค่บอกไว้ใต้ช่อง
+      async loadGeminiModels() {
+        this.models.busy = true
+
+        try {
+          const res = await fetch('/api/settings/gemini/models')
+          const data = await res.json()
+
+          if (!res.ok || !data.ok) {
+            this.models.list = []
+            this.models.note = 'ดึงรายชื่อโมเดลจาก Google ไม่ได้ (ใช้รายชื่อตั้งต้นแทน) — '
+              + (data.message || data.detail || `เซิร์ฟเวอร์ตอบกลับ ${res.status}`)
+            return
+          }
+
+          this.models.list = data.models
+          this.models.note = data.message + ' — รายชื่อจากคีย์ที่ตั้งไว้ตอนนี้'
+        } catch (err) {
+          console.error('ดึงรายชื่อโมเดลไม่สำเร็จ', err)
+          this.models.list = []
+          this.models.note = 'ดึงรายชื่อโมเดลไม่ได้ (ใช้รายชื่อตั้งต้นแทน) — ' + err.message
+        } finally {
+          this.models.busy = false
+          this.syncSelects()
+        }
+      },
+
       setDraft(item, value) {
         // พิมพ์กลับมาเท่าค่าเดิม (เฉพาะค่าไม่ลับ) ถือว่าไม่ได้แก้ — ลบออกจาก drafts
         if (!item.is_secret && value === item.value) {
@@ -1106,6 +1228,7 @@
       discardDrafts() {
         this.drafts = {}
         this.revealed = []
+        this.syncSelects()
       },
 
       groupItems() {
@@ -1138,6 +1261,10 @@
           this.groupItems()
           this.discardDrafts()
           this.loadError = ''
+
+          // รายชื่อโมเดลต้องใช้คีย์ — ยังไม่ตั้งคีย์ก็ไม่ต้องยิงไปให้เสียเวลา
+          // ไม่ await เหมือนกัน: ต่อ Google ช้าไม่ควรทำให้หน้าค่าตั้งโหลดช้าตาม
+          if (this.items.some(i => i.key === 'gemini_api_key' && i.is_set)) this.loadGeminiModels()
 
           // เช็คความพร้อมของกล่องเปลี่ยนรหัส Redis คู่กันไป — ไม่ await เพราะเป็นคนละเรื่องกับ
           // ค่าตั้งข้างบน ต่อ Redis ไม่ได้ก็ไม่ควรทำให้ทั้งหน้าโหลดช้าหรือขึ้น error
@@ -1180,36 +1307,6 @@
           this.$store.ui.error('บันทึกไม่สำเร็จ')
         } finally {
           this.isSaving = false
-        }
-      },
-
-      async resetSetting(item) {
-        const ok = await this.$store.ui.confirm({
-          title: 'คืนค่าจาก .env',
-          message: 'ลบค่าที่ตั้งทับไว้ในระบบ แล้วกลับไปใช้ค่าจากไฟล์ .env ของเครื่องนี้',
-          detail: item.label + ' (' + item.env_name + ')',
-          confirmText: 'คืนค่า',
-        })
-        if (!ok) return
-
-        this.busyKey = item.key
-
-        try {
-          const res = await fetch(`/api/settings/${item.key}/reset`, { method: 'POST' })
-          const data = await res.json()
-
-          if (!res.ok) {
-            this.$store.ui.error(data.detail || 'คืนค่าไม่สำเร็จ')
-            return
-          }
-
-          await this.loadSettings()
-          this.$store.ui.success(data.message)
-        } catch (err) {
-          console.error('คืนค่าไม่สำเร็จ', err)
-          this.$store.ui.error('คืนค่าไม่สำเร็จ')
-        } finally {
-          this.busyKey = null
         }
       },
 

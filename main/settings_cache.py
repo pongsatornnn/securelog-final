@@ -32,7 +32,6 @@ from database.crud import (
     get_app_setting,
     get_all_app_settings,
     upsert_app_setting,
-    delete_app_setting,
     log_app_setting_change,
     get_app_setting_changes,
     get_latest_app_setting_changes,
@@ -53,6 +52,38 @@ LOADED_FLAG_KEY = f"{CACHE_KEY_PREFIX}_loaded"
 LOG_PREFIX = "SETTINGS-CACHE"
 
 
+# โมเดลที่ระบบรองรับ — รายการนี้ทำสองหน้าที่ (แหล่งเดียว ไม่ต้องไล่แก้สองที่):
+#   1. ตัวเลือกในช่อง Model ตอนที่ยังดึงรายชื่อจาก Google ไม่ได้ (ยังไม่ตั้งคีย์/เน็ตไม่ถึง)
+#   2. **allowlist** ที่ `AI_API.gemini_client.list_models()` เอาไปกรองรายชื่อจริงจาก Google
+#      (ผ่าน `config.MODEL_ALLOWLIST`) — Google ส่งมา 50 ตัวและมีของใหม่โผล่เรื่อย ๆ
+#      จะเอามาโชว์ทั้งหมดไม่ได้ ต้องเป็นตัวที่วัดมาแล้วว่าสรุป log ได้เร็วและนิ่งพอ
+#
+# วัดด้วย prompt สรุป alert ของจริง (log 40 บรรทัด) รุ่นละ 5 รอบ:
+#   gemini-3.5-flash-lite  สำเร็จ 5/5  2.7-3.1 วินาที  ไม่ "คิด" สักรอบ  <- ค่าตั้งต้น
+#   gemini-3.1-flash-lite  สำเร็จ 5/5  3.9-9.1 วินาที
+#   gemini-2.5-flash       ตัวที่ใช้มาแต่เดิม — **คีย์เก่าเท่านั้น** ที่ยังเรียกได้
+#                          (คีย์ที่ออกใหม่ ขึ้นต้น `AQ.` ได้ 404 no longer available to new users)
+# ตัวที่ตัดออก (3.5/3.6/3.7-flash) พลาดกลางคัน 2-3 รอบจาก 5 ด้วย 503/429 และช้าถึง 98 วินาที
+#
+# เรียงตามลำดับที่อยากให้เห็นใน dropdown — ตัวแนะนำอยู่บนสุด
+# โมเดลนอกรายการนี้ยังตั้งได้ผ่านตัวเลือก "อื่น ๆ (พิมพ์ชื่อเอง)" ถ้าจำเป็น
+GEMINI_MODEL_CHOICES = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+]
+
+# คีย์ที่ออกใหม่ (ขึ้นต้น AQ.) ใช้ gemini-2.5-* ไม่ได้แล้ว — Google ตอบ 404 ว่า
+# "no longer available to new users" ค่าตั้งต้นจึงต้องเป็นรุ่น 3 ที่คีย์ใหม่เรียกได้
+#
+# เลือก flash-lite ไม่ใช่ flash: วัดด้วย prompt สรุป alert ของระบบ รุ่นละ 5 รอบ —
+#   gemini-3.5-flash-lite  สำเร็จ 5/5  2.7-3.1 วินาที  ไม่คิดสักรอบ
+#   gemini-3.1-flash-lite  สำเร็จ 5/5  3.9-9.1 วินาที
+#   gemini-3.5-flash       สำเร็จ 3/5  15-27 วินาที (อีก 2 รอบได้ 503)
+#   gemini-3.6-flash       สำเร็จ 2/5  38-98 วินาที (อีก 3 รอบได้ 429 = ชนโควตาฟรี)
+# ค่าตั้งต้นต้องเป็นตัวที่ "กดแล้วได้คำตอบ" มากที่สุด ไม่ใช่ตัวที่ฉลาดที่สุดบนกระดาษ
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 # ── รายการคีย์ที่ระบบรู้จัก ────────────────────────────────────────────────
 # secret=True  -> API ส่งกลับเป็นค่าที่ mask แล้วเท่านั้น ไม่เคยส่งค่าเต็มออกจากเซิร์ฟเวอร์
 # env          -> ชื่อตัวแปรใน .env ที่ใช้เป็น fallback (ของเดิมก่อนมีหน้านี้ จึงไม่พังตอนอัปเกรด)
@@ -61,7 +92,7 @@ SETTING_DEFS: dict[str, dict] = {
     "line_channel_access_token": {
         "group": "line",
         "label": "Channel Access Token",
-        "hint": "token ของ Messaging API — ใช้ส่งข้อความและดึงโปรไฟล์",
+        "hint": "โทเคนของ Messaging API ที่ใช้ส่งข้อความ",
         "secret": True,
         "env": "LINE_CHANNEL_ACCESS_TOKEN",
         "default": "",
@@ -69,7 +100,7 @@ SETTING_DEFS: dict[str, dict] = {
     "line_channel_secret": {
         "group": "line",
         "label": "Channel Secret",
-        "hint": "ใช้ตรวจลายเซ็น webhook — ไม่มีค่านี้ webhook ปฏิเสธทุก request",
+        "hint": "คีย์สำหรับตรวจลายเซ็น webhook ของ LINE",
         "secret": True,
         "env": "LINE_CHANNEL_SECRET",
         "default": "",
@@ -77,7 +108,7 @@ SETTING_DEFS: dict[str, dict] = {
     "line_oa_id": {
         "group": "line",
         "label": "LINE OA ID",
-        "hint": "Basic ID ของ OA เช่น @123abcd — ใช้สร้างลิงก์แอดเพื่อน",
+        "hint": "Basic ID ของ LINE OA เช่น @123abcd",
         "secret": False,
         "env": "LINE_OA_ID",
         "default": "",
@@ -86,7 +117,7 @@ SETTING_DEFS: dict[str, dict] = {
     "gemini_api_key": {
         "group": "gemini",
         "label": "API Key",
-        "hint": "API key จาก Google AI Studio — ไม่มีค่านี้ ปุ่มวิเคราะห์ AI ใช้ไม่ได้",
+        "hint": "API key จาก Google AI Studio",
         "secret": True,
         "env": "GEMINI_API_KEY",
         "default": "",
@@ -94,10 +125,33 @@ SETTING_DEFS: dict[str, dict] = {
     "gemini_model": {
         "group": "gemini",
         "label": "Model",
-        "hint": "โมเดลที่ใช้สรุป log เช่น gemini-2.5-flash",
+        "hint": "โมเดลที่ใช้สรุปเหตุการณ์",
         "secret": False,
         "env": "GEMINI_MODEL",
-        "default": "gemini-2.5-flash",
+        "default": DEFAULT_GEMINI_MODEL,
+        # เลือกจากรายชื่อแทนการพิมพ์เอง — ชื่อโมเดลของ Google เปลี่ยนบ่อยและพิมพ์ผิดนิดเดียว
+        # ก็ได้ 404 ที่ไม่บอกอะไร · หน้าเว็บดึงรายชื่อจริงจากคีย์มาแทนรายการนี้เมื่อดึงได้
+        "choices": GEMINI_MODEL_CHOICES,
+        # ค่านี้ถูกต่อท้าย URL ตรง ๆ (models/<ชื่อ>:generateContent) — จำกัดอักขระไว้
+        # กันทั้งพิมพ์ผิดและกันค่าที่พาไปยิง path อื่น
+        "pattern": r"[A-Za-z0-9][A-Za-z0-9._-]*",
+        "pattern_error": "ต้องเป็นชื่อโมเดล เช่น gemini-3.5-flash (ใช้ได้เฉพาะ A-Z a-z 0-9 . _ -)",
+    },
+    "gemini_timeout_sec": {
+        "group": "gemini",
+        "label": "Timeout (วินาที)",
+        "hint": "รอ Gemini ตอบนานสุดกี่วินาทีก่อนยอมแพ้",
+        "secret": False,
+        "env": "GEMINI_TIMEOUT_SEC",
+        # 120 ไม่ใช่ 60: วัดจริงด้วย prompt สรุป alert ของระบบ (40 บรรทัด log) รุ่น flash ตัวใหญ่
+        # แกว่งมาก — gemini-3.6-flash ใช้ 10.6 วินาทีรอบหนึ่ง แต่ 71.5 วินาทีอีกรอบหนึ่ง
+        # (รอบที่ช้าคือรอบที่โมเดล "คิด" 2,256 token ทั้งที่สั่ง thinkingLevel=low ไปแล้ว)
+        # เพดาน 60 เดิมจึงตัดงานที่กำลังจะสำเร็จทิ้งบ่อย ๆ
+        "default": "120",
+        # อยู่หน้านี้เพราะต้องขยับตามโมเดลที่เลือก — โมเดลแต่ละตัวช้าไม่เท่ากันเป็นสิบเท่า
+        # จำกัด 1-600 กันพิมพ์ผิดจนคำขอค้างยาว (คนกดปุ่มต้องนั่งรออยู่หน้าเว็บ)
+        "pattern": r"[1-9][0-9]?|[1-5][0-9]{2}|600",
+        "pattern_error": "ต้องเป็นตัวเลข 1-600 วินาที",
     },
     # ── ค่าที่ฝังลงชุดติดตั้ง Agent (site.conf ใน zip) ──
     #
@@ -110,7 +164,7 @@ SETTING_DEFS: dict[str, dict] = {
     "agent_central_host": {
         "group": "agent",
         "label": "Central Host",
-        "hint": "IP/hostname ที่ Client Server ต่อเข้ามา — ต้องตรงกับ SAN ในใบรับรอง",
+        "hint": "IP/hostname ของเครื่อง Central ที่ Client Server ต่อเข้ามา",
         "secret": False,
         "env": "AGENT_CENTRAL_HOST",
         "default": "",
@@ -118,7 +172,7 @@ SETTING_DEFS: dict[str, dict] = {
     "agent_central_redis_port": {
         "group": "agent",
         "label": "Central Redis Port",
-        "hint": "พอร์ต Redis ฝั่ง Central (mTLS)",
+        "hint": "พอร์ต Redis ของ Central",
         "secret": False,
         "env": "AGENT_CENTRAL_REDIS_PORT",
         "default": "6380",
@@ -126,7 +180,7 @@ SETTING_DEFS: dict[str, dict] = {
     "agent_redis_username": {
         "group": "agent",
         "label": "Redis Username ของ Client Server",
-        "hint": "user ที่ agent_core ใช้ต่อ Redis · Filebeat ไม่ใช้ค่านี้ (เข้าเป็น default เสมอ)",
+        "hint": "ชื่อผู้ใช้ Redis ที่ Client Server ใช้ต่อเข้ามา",
         "secret": False,
         "env": "AGENT_REDIS_USERNAME",
         "default": "agent_node",
@@ -134,7 +188,7 @@ SETTING_DEFS: dict[str, dict] = {
     "agent_redis_password": {
         "group": "agent",
         "label": "Redis Password ของ Client Server",
-        "hint": "ใช้ร่วมกัน 2 บัญชี (agent_node + default) — ระบบแก้ redis/users.acl ให้เอง",
+        "hint": "รหัสผ่าน Redis ของ Client Server",
         "secret": True,
         "env": "AGENT_REDIS_PASSWORD",
         "default": "",
@@ -455,34 +509,6 @@ async def update_setting(
     return value
 
 
-async def reset_setting(
-    key: str, actor: str = "system", source: str = "settings",
-    actor_id: int | None = None,
-) -> str:
-    """
-    ลบค่าที่ตั้งทับไว้ กลับไปใช้ค่าจาก .env — ต่างจากการตั้งเป็นค่าว่าง
-    (ค่าว่าง = ตั้งใจปิดฟีเจอร์นั้น · reset = ยกเลิกการตั้งทับทั้งหมด)
-    """
-    if key not in SETTING_DEFS:
-        raise KeyError(f"ไม่รู้จัก setting key: {key}")
-
-    async with AsyncSessionLocal() as db:
-        removed = await delete_app_setting(db, key)
-        await log_app_setting_change(
-            db, key, "reset", actor,
-            old_value=_for_audit(key, removed.value if removed else None),
-            new_value=None,          # กลับไปใช้ค่าจาก .env — ไม่มีค่าตั้งทับแล้ว
-            source=source,
-            changed_by_user_id=actor_id,
-        )
-
-    value = env_default(key)
-    # cache ต้องเก็บรูปเดียวกับที่ตัวอ่านคาดไว้เสมอ (secret = ciphertext) ไม่งั้น decrypt()
-    # จะเจอ plaintext จาก .env แล้วคืนไปตรง ๆ — ได้ค่าถูก แต่รูปไม่สม่ำเสมอ
-    _cache_one(key, encrypt(value) if SETTING_DEFS[key]["secret"] else value)
-    return value
-
-
 def mask_secret(value: str) -> str:
     """
     ค่าที่เป็น secret ห้ามส่งกลับหน้าเว็บเต็ม ๆ — โชว์แค่ 4 ตัวท้ายพอให้แอดมินเทียบได้ว่าใช่ตัวที่ตั้งไว้
@@ -523,9 +549,14 @@ async def all_settings_for_admin() -> list[dict]:
             "is_set": bool(value),
             "is_overridden": row is not None,
             "env_name": spec["env"],
+            # ค่าที่ยังไม่ได้ตั้งทับ มาจากได้ 2 ทาง: ตัวแปรใน .env จริง ๆ หรือค่าตั้งต้นในโค้ด
+            # หน้าเว็บติดป้ายคนละแบบ — ป้าย "จาก .env" ทั้งที่ไฟล์ไม่มีคีย์นั้นเลยทำให้คนหาไม่เจอ
+            "from_env": bool(os.getenv(spec["env"], "").strip()),
             # ยังไม่เคยตั้งค่า = ไม่มีรหัสเดิมให้ยืนยัน (ตั้งครั้งแรกผ่านได้เลย)
             "confirm_current": bool(spec.get("confirm_current")) and bool(value),
             "password_rules": bool(spec.get("password_rules")),
+            # มีตัวเลือก = หน้าเว็บแสดงเป็น dropdown แทนช่องพิมพ์
+            "choices": list(spec.get("choices") or []),
             "modal_change": bool(spec.get("change_via_modal")),
             "change_warning": spec.get("change_warning") or "",
             # secret ส่งเฉพาะค่าที่ mask แล้ว · ค่าไม่ลับส่งเต็มเพื่อให้แก้ต่อจากของเดิมได้

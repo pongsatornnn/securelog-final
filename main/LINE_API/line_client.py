@@ -85,6 +85,9 @@ def get_bot_info(timeout: int = 10) -> tuple[int, dict]:
     ข้อมูลของ OA ตัวเอง — ใช้เช็คว่า channel access token ที่ตั้งไว้ใช้ได้จริงไหม
     (เรียกได้ด้วย token อย่างเดียว ไม่ต้องมี userId ของใคร และไม่มีผลข้างเคียง)
     คืน (http_status, body) · status 0 = ต่อไม่ติด
+
+    ตอนพลาด body คือ error ของ LINE ({"message": "..."}) ไม่ใช่ dict ว่าง — คนกดปุ่มทดสอบ
+    ต้องได้อ่านเหตุผลจริง ไม่ใช่เห็นแค่เลข status
     """
     req = urllib.request.Request(
         config.BOT_INFO_URL,
@@ -96,10 +99,14 @@ def get_bot_info(timeout: int = 10) -> tuple[int, dict]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        return e.code, {}
+        body = e.read().decode("utf-8", "replace")
+        try:
+            return e.code, json.loads(body)
+        except Exception:
+            return e.code, {"message": body.strip()[:300]}
     except Exception as e:
         print(f"[LINE] get_bot_info ไม่สำเร็จ: {e}")
-        return 0, {}
+        return 0, {"message": str(e)}
 
 
 def push_text(user_id: str, text: str) -> bool:

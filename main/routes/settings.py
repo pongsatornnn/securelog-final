@@ -17,6 +17,7 @@ System Settings — ค่าตั้งของระบบที่แก้
 
 import asyncio
 import hmac
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -37,7 +38,6 @@ from settings_cache import (
     ensure_loaded,
     get_setting_async,
     log_external_setting_change,
-    reset_setting,
     setting_history,
     setting_page,
     update_setting,
@@ -97,6 +97,15 @@ async def _check_protected_values(payload: UpdateSettingsRequest) -> None:
                 validate_password(value)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=f"{spec['label']}: {e}")
+
+        # ค่าที่ถูกเอาไปต่อเป็น URL/พารามิเตอร์ของบริการภายนอก (ชื่อโมเดล Gemini) —
+        # ต้องตรงรูปแบบก่อนถึงจะบันทึก ไม่งั้นไปพังตอนเรียกใช้จริงแล้วอ่าน error ไม่ออก
+        pattern = spec.get("pattern")
+        if pattern and not re.fullmatch(pattern, value or ""):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{spec['label']}: {spec['pattern_error']}",
+            )
 
 
 @router.post("/api/settings")
@@ -186,24 +195,6 @@ async def api_update_settings(
     }
 
 
-@router.post("/api/settings/{setting_key}/reset")
-async def api_reset_setting(setting_key: str, user=Depends(require_admin)):
-    """ลบค่าที่ตั้งทับไว้ กลับไปใช้ค่าจาก .env"""
-    if setting_key not in SETTING_DEFS:
-        raise HTTPException(status_code=404, detail=f"ไม่รู้จักค่าตั้ง: {setting_key}")
-
-    if setting_page(setting_key) != "settings":
-        raise HTTPException(
-            status_code=400,
-            detail=f"ค่านี้ตั้งจากหน้าอื่น ไม่ใช่หน้า System Settings: {setting_key}",
-        )
-
-    await reset_setting(
-        setting_key, actor=user["username"], actor_id=user["id"], source="settings"
-    )
-    return {"status": "ok", "message": f"คืนค่า {SETTING_DEFS[setting_key]['label']} เป็นค่าจาก .env แล้ว"}
-
-
 @router.get("/api/settings/history")
 async def api_setting_history(
     user=Depends(require_admin),
@@ -227,6 +218,31 @@ async def api_setting_history(
             {**row, "changed_at": iso_utc(row["changed_at"]) if row["changed_at"] else None}
             for row in rows
         ]
+    }
+
+
+@router.get("/api/settings/gemini/models")
+async def api_gemini_models(user=Depends(require_admin)):
+    """
+    โมเดลที่ **คีย์ที่ตั้งไว้ตอนนี้** เรียกได้จริง — หน้าเว็บเอาไปเป็นตัวเลือกในช่อง Model
+
+    ต้องถาม Google ทุกครั้งเพราะคีย์แต่ละใบเห็นโมเดลไม่เท่ากัน (คีย์ที่ออกใหม่ใช้รุ่น 2.5
+    ไม่ได้แล้ว) และรายชื่อฝั่ง Google เปลี่ยนเองเรื่อย ๆ · ดึงไม่ได้ไม่ถือเป็น error ของ
+    endpoint — คืน ok=false พร้อมเหตุผล ให้หน้าเว็บตกไปใช้รายชื่อตั้งต้นแทน
+    """
+    await ensure_loaded()
+
+    from AI_API import gemini_client
+
+    ok, result = await asyncio.to_thread(gemini_client.list_models)
+
+    if not ok:
+        return {"ok": False, "models": [], "message": result}
+
+    return {
+        "ok": True,
+        "models": result,
+        "message": f"คีย์นี้ใช้ได้ {len(result)} โมเดล จากรายการที่ระบบรองรับ",
     }
 
 
@@ -311,6 +327,9 @@ async def api_test_service(service: str, user=Depends(require_admin)):
     """
     ยิงของจริงไปเช็คว่าคีย์ที่ตั้งไว้ใช้ได้ไหม — ตรวจก่อนดีกว่ามารู้ตอนเกิดเหตุจริงแล้วแจ้งเตือนไม่ออก
     ใช้ endpoint ที่ไม่มีผลข้างเคียง (ไม่ส่งข้อความหาใคร ไม่สร้างอะไรทิ้งไว้)
+
+    **ข้อความที่ปลายทางตอบมาต้องติดกลับไปด้วยเสมอ** — บอกแค่ "HTTP 404" แอดมินเดาไม่ออกว่า
+    ต้องไปแก้อะไร ทั้งที่ Google/LINE เขียนสาเหตุมาให้ครบแล้วใน body
     """
     await ensure_loaded()
 
@@ -334,23 +353,22 @@ async def api_test_service(service: str, user=Depends(require_admin)):
                 "detail": {"basic_id": basic_id, "display_name": name},
             }
 
-        if status == 401:
-            return {"ok": False, "message": "Channel Access Token ไม่ถูกต้องหรือหมดอายุ (401)"}
+        # LINE ตอบ error เป็น {"message": "..."} — เอาข้อความนั้นต่อท้ายให้แอดมินอ่านเอง
+        detail = body.get("message") or ""
+        detail = f"\nLINE ตอบกลับ: {detail}" if detail else ""
 
-        return {"ok": False, "message": f"เรียก LINE API ไม่สำเร็จ (HTTP {status})"}
+        if status == 401:
+            return {"ok": False, "message": f"Channel Access Token ไม่ถูกต้องหรือหมดอายุ (HTTP 401){detail}"}
+
+        if status == 0:
+            return {"ok": False, "message": f"ต่อ LINE API ไม่ได้{detail}"}
+
+        return {"ok": False, "message": f"เรียก LINE API ไม่สำเร็จ (HTTP {status}){detail}"}
 
     if service == "gemini":
-        from AI_API import config as ai_config, gemini_client
+        from AI_API import gemini_client
 
-        if not ai_config.is_configured():
-            return {"ok": False, "message": "ยังไม่ได้ตั้ง API Key"}
-
-        # prompt สั้นที่สุดเท่าที่จะสั้นได้ — จุดประสงค์คือดูว่า key/model ใช้ได้ ไม่ได้เอาคำตอบ
-        ok, result = await asyncio.to_thread(gemini_client.generate, "ตอบกลับคำว่า OK คำเดียว")
-
-        if ok:
-            return {"ok": True, "message": f"เชื่อมต่อได้ — โมเดล {ai_config.model()} ตอบกลับแล้ว"}
-
-        return {"ok": False, "message": result}
+        # test_connection คืนทั้งผล ข้อความไทย และคำตอบดิบจาก Google มาให้ครบในตัวแล้ว
+        return await asyncio.to_thread(gemini_client.test_connection)
 
     raise HTTPException(status_code=404, detail=f"ไม่รู้จักบริการ: {service}")
