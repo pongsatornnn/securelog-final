@@ -58,14 +58,22 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
         trap 'rm -f "$STEP_LOG"' EXIT
     fi
 
-    local pid i=0 frames='|/-\'
+    local pid i=0 frames='|/-\' spent=0 tail_line hint=''
     "$@" </dev/null >"$STEP_LOG" 2>&1 &
     pid=$!
 
     printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
     while kill -0 "$pid" 2>/dev/null; do
-        printf '\r\033[32m[SETUP]\033[0m %s \033[2m(%ds)\033[0m %s' \
-            "$desc" "$((SECONDS - start))" "${frames:i++%4:1}"
+        spent=$((SECONDS - start))
+        # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
+        # ตอนนี้มันติดอยู่กับอะไร — ของเดิมซ่อนเอาต์พุตไว้หมด ขั้นที่ค้าง (เช่น apt/pip ที่ต่อเน็ต
+        # ไม่ติดแล้ว retry เงียบ ๆ) จึงหน้าตาเหมือนขั้นที่กำลังทำงานปกติเป๊ะ ๆ
+        if [ "$spent" -ge 15 ]; then
+            tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-52)"
+            if [ -n "$tail_line" ]; then hint="  "$'\033[2m'"| $tail_line"$'\033[0m'; fi
+        fi
+        printf '\r\033[K\033[32m[SETUP]\033[0m %s \033[2m(%ds)\033[0m %s%s' \
+            "$desc" "$spent" "${frames:i++%4:1}" "$hint"
         sleep 0.2
     done
     printf '\r\033[K\033[?25h'       # ล้างบรรทัดตัวหมุนแล้วคืน cursor
@@ -241,8 +249,13 @@ if [ ! -x "$INSTALL_DIR/venv/bin/python" ]; then
 else
     log "venv already exists"
 fi
+# --no-input: มีอะไรจะถามให้ตายไปเลย ไม่ใช่ค้างรอ input อยู่หลังตัวหมุนที่คนดูไม่เห็น
+# --timeout/--retries: default ของ pip คือ 15 วิ x 5 รอบ + backoff = เน็ตตันแล้วค้างเงียบได้หลายนาที
+# (requirements.txt ที่นี่ pin `==` ไว้ทุกตัว ลงครบแล้ว pip ตอบจากในเครื่อง ไม่ออกเน็ตอยู่แล้ว)
 run_step "Installing python dependencies (redis, psutil) into the venv" \
-    "$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
+    "$INSTALL_DIR/venv/bin/pip" install -q --disable-pip-version-check --no-input \
+    --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}" \
+    -r "$INSTALL_DIR/requirements.txt"
 
 # ---------- 7) generate /etc/filebeat/filebeat.yml จาก template ----------
 #
