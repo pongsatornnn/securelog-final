@@ -112,11 +112,24 @@ class CSRFMiddleware:
                 await response(scope, receive, send)
                 return
 
-        # ---- ตั้ง cookie csrf_token ให้ถ้ายังไม่มี (บน request ปลอดภัย, self-heal, race-free) ----
+        # ---- ตั้ง cookie csrf_token ให้ใหม่ (บน request ปลอดภัย, self-heal, race-free) ----
+        #
+        # เงื่อนไขคือ "ยังไม่มี **หรือมีแต่ใช้ไม่ได้แล้ว**" ไม่ใช่แค่ "ยังไม่มี"
+        #
+        # ⚠️ ของเดิมออก cookie ให้เฉพาะตอนที่ยังไม่มี cookie เลย -> cookie ที่ค้างอยู่แต่ verify
+        #    ไม่ผ่านจะไม่มีวันถูกแทน ผู้ใช้ติดหล่ม 403 ทุก POST จนกว่าจะไปลบ cookie เอง ทั้งที่
+        #    ข้อความ error บอกให้ "รีเฟรชหน้าแล้วลองใหม่" ซึ่งรีเฟรชกี่ครั้งก็ไม่มีทางหาย
+        #    เจอจริงตอน **ติดตั้งใหม่ทับของเดิม**: .env ใบใหม่ได้ CSRF_SECRET ที่สุ่มใหม่ แต่เบราว์เซอร์
+        #    ยังถือ cookie ที่เซ็นด้วย secret เก่า (โดเมน/พอร์ตเดิม อายุ cookie = JWT_EXPIRE_MIN นาที)
+        #    -> `POST /api/login` โดน 403 = **ล็อกอินเข้าระบบที่เพิ่งลงเสร็จไม่ได้เลย**
+        #    อีกเคสคือ cookie หมดอายุระหว่างเปิดหน้าค้างไว้ ซึ่งก็ค้างแบบเดียวกัน
+        #
+        # cookie ที่ยัง verify ผ่านจะไม่ถูกแตะ — ยัง race-free เหมือนเดิม (GET พร้อมกันหลายเส้น
+        # ไม่แย่งกันออก token ใหม่ทับของที่ใช้งานได้อยู่) ส่วนใบที่ใช้ไม่ได้แล้วยังไงก็ต้องทิ้ง
         need_set_cookie = (
             method in SAFE_METHODS
             and not _is_exempt(path)
-            and not cookie_token
+            and not (cookie_token and verify_csrf(cookie_token))
         )
 
         if not need_set_cookie:

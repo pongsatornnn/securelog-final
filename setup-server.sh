@@ -503,6 +503,168 @@ if [ "$ENV_EXISTED" = "1" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# 1.2) เช็กฐานข้อมูล "ก่อนจะไปแตะอะไรทั้งนั้น"
+#
+# ของเดิมกว่าจะรู้ว่าต่อฐานไม่ได้ ต้องผ่าน apt + สร้าง venv + ลง requirements.txt ไปก่อน
+# (หลายนาที) แล้วค่อยไปตายที่ขั้น 5 · และ "ฐานนี้มีข้อมูลอยู่แล้วหรือเปล่า" ก็เป็นแค่บรรทัดเดียว
+# แทรกกลางขั้น 5 ซึ่งอ่านผ่านตาไปง่ายมาก
+#
+# ขั้นนี้จึงถามฐานตั้งแต่ยังไม่ลงมือ **ทุกคำสั่งเป็น SELECT ล้วน ไม่สร้าง ไม่แก้อะไรสักอย่าง**:
+#   - server ตอบที่ $DB_HOST:$DB_PORT ไหม
+#   - role ที่กรอกล็อกอินได้ไหม ด้วยเส้นทางเดียวกับที่ service จะต่อจริง (TCP + password)
+#   - ฐาน $DB_NAME มีอยู่ไหม · เป็นของระบบนี้ไหม · **มีข้อมูลอยู่เท่าไร**
+#     (เครื่องที่ลงซ้ำ บางเครื่องมีข้อมูลเดิมอยู่ บางเครื่องเป็นฐานเปล่า — ต้องรู้ตั้งแต่ตอนนี้ว่า
+#      กำลังจะใช้ของเดิมต่อหรือเริ่มจากศูนย์ ไม่ใช่ไปเซอร์ไพรส์ตอนเปิดเว็บแล้วเจอ admin/admin
+#      กับหน้าว่าง ๆ)
+#
+# ต่อไม่ได้แล้วสคริปต์ช่วยอะไรไม่ได้จริง ๆ (postgres อยู่อีกเครื่อง) = หยุดตรงนี้เลย ยังไม่มีอะไรถูกแตะ
+# ส่วนเคสที่ขั้นถัดไปแก้ให้ได้อยู่แล้ว (ยังไม่ได้ลง postgres / ยังไม่ start / role ยังไม่มี /
+# รหัสยังไม่ตรงเพราะรอบนี้ตั้งใจเปลี่ยน) = แค่บอกให้รู้แล้วไปต่อ ไม่ต้องหยุด
+# ---------------------------------------------------------------------------
+log "Database check (read-only - nothing has been installed or changed yet)"
+
+PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
+# peer auth (sudo -u postgres) ใช้ได้เฉพาะ postgres ที่อยู่บนเครื่องนี้เท่านั้น (ขั้น 5 ใช้ค่านี้ต่อ)
+PG_LOCAL=0
+case "$PG_HOST" in localhost|127.0.0.1|::1|"") PG_LOCAL=1 ;; esac
+
+# ตารางที่ชี้ขาดว่า "ฐานนี้เป็นของระบบนี้" — ไม่นับ users ที่ชื่อโหลเกินกว่าจะใช้ตัดสิน (ขั้น 5 ใช้ชุดเดียวกัน)
+OUR_TABLES_SQL="'agents','security_alerts','ip_black_list','ip_white_list','detection_rules','detection_signatures','alert_severity','alert_reads','blacklist_ttl','line_recipients','agent_downloads','app_settings'"
+
+DB_STATE=""      # ไปโผล่ในบรรทัดสรุปท้ายสคริปต์ด้วย
+DB_ROWS=""
+
+# ต่อด้วย role ของแอปเองทาง TCP = เส้นทางเดียวกับที่ service ต่อจริง (ล้มเหลวคืนค่าว่าง ไม่ทำสคริปต์ตาย)
+app_psql() {  # app_psql SQL [DATABASE]
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
+        -d "${2:-$DB_NAME}" -tAc "$1" 2>/dev/null || true
+}
+# สำรองสำหรับตอน role ของแอปยังล็อกอินไม่ได้ — peer auth ไม่ต้องรหัส จึงไม่ต้องไปถามอะไรเพิ่มตอนนี้
+# `sudo -n` (ไม่ถามรหัส): สคริปต์นี้รันเป็น root อยู่แล้ว -n จึงไม่เปลี่ยนอะไร แต่กันไม่ให้ขั้น
+# "ตรวจเฉย ๆ" กลายเป็นขั้นที่ค้างรอรหัส sudo อยู่บนจอถ้าถูกเรียกในบริบทที่ไม่ใช่ root
+peer_psql() {  # peer_psql SQL [DATABASE]
+    [ "$PG_LOCAL" = "1" ] || return 0
+    sudo -n -u "$PG_SUPERUSER" psql -p "$DB_PORT" -d "${2:-$DB_NAME}" -tAc "$1" 2>/dev/null || true
+}
+db_rows() {  # db_rows TABLE VIA(app|peer) — จำนวนแถว (ว่าง = ยังไม่มีตารางนั้น/อ่านไม่ได้)
+    [ "$("${2}_psql" "SELECT to_regclass('public.$1') IS NOT NULL")" = "t" ] || return 0
+    "${2}_psql" "SELECT count(*) FROM public.$1"
+}
+
+# ★ ใจความของขั้นนี้: ฐานนี้ "มีข้อมูลอยู่เท่าไร" — ตอบเป็นจำนวนแถวจริง ไม่ใช่แค่ว่ามีตารางกี่ตัว
+report_db_contents() {  # report_db_contents VIA(app|peer)
+    local via="$1" pub our ag al us
+    pub="$("${via}_psql" "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
+    if [ -z "$pub" ]; then
+        warn "Cannot read what is inside '$DB_NAME' from here - step 5 reports it once it can connect"
+        DB_STATE="exists, contents unknown"
+        return 0
+    fi
+    our="$("${via}_psql" "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ($OUR_TABLES_SQL)")"
+    if [ "${pub:-0}" -eq 0 ]; then
+        ok "Database '$DB_NAME' is empty - tables are created on first start, the system begins from scratch (admin/admin)"
+        DB_STATE="exists but empty"
+    elif [ "${our:-0}" -gt 0 ]; then
+        ag="$(db_rows agents "$via")"; al="$(db_rows security_alerts "$via")"; us="$(db_rows users "$via")"
+        DB_ROWS="agents ${ag:-?} · alerts ${al:-?} · users ${us:-?}"
+        ok "Database '$DB_NAME' already belongs to this system ($our tables) - the data in it is kept and used as is"
+        echo "       rows right now: $DB_ROWS"
+        DB_STATE="existing data ($DB_ROWS)"
+    else
+        warn "Database '$DB_NAME' holds $pub tables that are NOT this system's"
+        warn "  Step 5 stops there rather than creating our tables inside someone else's database"
+        warn "  Answer with another database name, or confirm it really is ours with ALLOW_FOREIGN_DB=1"
+        DB_STATE="someone else's database ($pub tables)"
+    fi
+}
+
+if [ "${SKIP_DB_CHECK:-0}" = "1" ]; then
+    warn "SKIP_DB_CHECK=1 - the database is not checked at all"
+    DB_STATE="not checked (SKIP_DB_CHECK=1)"
+
+elif ! command -v psql >/dev/null 2>&1; then
+    ok "PostgreSQL is not on this machine yet - it gets installed in step 2, the database created in step 5"
+    DB_STATE="to be created"
+
+elif command -v pg_isready >/dev/null 2>&1 && ! pg_isready -h "$DB_HOST" -p "$DB_PORT" >/dev/null 2>&1; then
+    if [ "$PG_LOCAL" = "1" ]; then
+        warn "Nothing is answering on $DB_HOST:$DB_PORT yet - PostgreSQL is enabled and started for you in step 5"
+        DB_STATE="not running yet"
+    else
+        err "Cannot reach PostgreSQL at $DB_HOST:$DB_PORT"
+        err "  It is on another machine, so this script cannot start it - and every later step needs it."
+        err "  ** Nothing has been installed or changed on this machine yet. **"
+        err "  Check the host/port/firewall and that postgres listens on that address, or point elsewhere:"
+        err "    sudo DB_HOST=... DB_PORT=... $PROJECT_DIR/setup-server.sh"
+        err "  To carry on regardless: SKIP_DB_CHECK=1"
+        exit 1
+    fi
+
+else
+    ok "PostgreSQL answers on $DB_HOST:$DB_PORT"
+
+    # ⚠️ ต้องรู้ก่อนว่า "ล็อกอินได้ทางไหนบ้าง" ไม่งั้นแยก 2 อย่างนี้ไม่ออก แล้วรายงานผิด:
+    #      ฐานไม่มีอยู่จริง   vs.   ฐานมีอยู่แต่เรายังเข้าไปถามไม่ได้
+    #    (เจอตอนทดสอบ: กรอกรหัสผิด แล้วรายงานว่า "ฐานยังไม่มี" ทั้งที่ฐานมีข้อมูลเต็มอยู่)
+    CAN_APP=0
+    if [ "$(app_psql "SELECT 1" postgres)" = "1" ]; then CAN_APP=1; fi
+    CAN_PEER=0
+    if [ "$(peer_psql "SELECT 1" postgres)" = "1" ]; then CAN_PEER=1; fi
+
+    # รอบนี้ตั้งใจเปลี่ยนรหัสอยู่แล้ว = ล็อกอินไม่ผ่านตอนนี้เป็นเรื่องปกติ ขั้น 5 ALTER ROLE ให้
+    PW_CHANGING=0
+    if [ "$ENV_EXISTED" = "1" ] && [ -n "$OLD_DB_PASSWORD" ] && [ "$OLD_DB_PASSWORD" != "$DB_PASSWORD" ]; then
+        PW_CHANGING=1
+    fi
+
+    if [ "$CAN_APP" = "0" ] && [ "$CAN_PEER" = "0" ]; then
+        DB_STATE="could not be checked (no login yet)"
+        if [ "$PW_CHANGING" = "1" ]; then
+            ok "'$DB_USER' cannot log in with the new password yet - expected, step 5 runs ALTER ROLE to set it"
+        else
+            warn "PostgreSQL answers, but nothing can log in yet - '$DB_USER' is rejected and peer auth is not available here"
+        fi
+        warn "  So it cannot be said from here whether '$DB_NAME' exists or how much data it holds"
+        warn "  Step 5 connects as superuser '$PG_SUPERUSER' (asking for its password if peer auth is off) and reports it there"
+
+    else
+        if [ "$CAN_APP" = "1" ]; then
+            DB_EXISTS="$(app_psql "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" postgres)"
+        else
+            DB_EXISTS="$(peer_psql "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" postgres)"
+        fi
+
+        if [ "$DB_EXISTS" != "1" ]; then
+            ok "Database '$DB_NAME' does not exist yet - it is created in step 5, the system starts empty (first login admin/admin)"
+            DB_STATE="new, empty"
+
+        elif [ "$(app_psql "SELECT 1")" = "1" ]; then
+            ok "Logged in as '$DB_USER' to '$DB_NAME' - the services will connect exactly this way"
+            report_db_contents app
+
+        else
+            # ฐานมีอยู่ แต่ role ของแอปยังเข้าไม่ได้ — บอกสาเหตุที่ตรงเคส แล้วอ่านสภาพฐานผ่าน peer แทน
+            if [ "$PW_CHANGING" = "1" ]; then
+                ok "'$DB_USER' cannot log in with the new password yet - expected, step 5 runs ALTER ROLE to set it"
+            elif [ "$CAN_PEER" = "1" ] \
+                 && [ "$(peer_psql "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" postgres)" != "1" ]; then
+                ok "Role '$DB_USER' does not exist yet - it is created in step 5"
+            else
+                warn "Cannot log in as '$DB_USER' to '$DB_NAME' with the password given"
+                warn "  Step 5 sets the role password to the one typed now and verifies it before going on"
+                warn "  If it still fails there, the cause is pg_hba.conf (needs a 'host $DB_NAME $DB_USER ... scram-sha-256' line)"
+            fi
+            if [ "$CAN_PEER" = "1" ]; then
+                report_db_contents peer
+            else
+                warn "  Cannot read what is inside '$DB_NAME' from here either - step 5 reports it"
+                DB_STATE="exists, contents unknown"
+            fi
+        fi
+    fi
+fi
+
 # ก่อนลงมือ: บอกให้เห็นเป็นข้อ ๆ ว่ารอบนี้จะไปแตะอะไรของจริงบ้าง แล้วให้ยืนยันครั้งเดียว
 # (ทำเฉพาะโหมดตั้งค่าใหม่ + มีของเปลี่ยนจริง — รันซ้ำเพื่อซ่อมแบบเดิมจะไม่มีจอนี้มากวน)
 if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
@@ -510,8 +672,13 @@ if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
     warn "This run changes things that are already live on this machine:"
     for _c in "${CHANGES[@]}"; do echo "       - $_c"; done
     if [ "$DB_TARGET_CHANGED" = "1" ]; then
-        echo "     The old database is left exactly as it is - nothing is copied across. If the new one turns"
-        echo "     out to be empty, the system starts from scratch there (first login admin/admin again)."
+        echo "     The old database is left exactly as it is - nothing is copied across."
+        # สถานะฐานปลายทางมาจากขั้น 1.2 ที่เพิ่งตรวจไปจริง ๆ ไม่ใช่คำเตือนลอย ๆ
+        [ -n "$DB_STATE" ] && echo "     '$DB_NAME' right now: $DB_STATE"
+        case "$DB_STATE" in
+            *empty*|"to be created") echo "     -> the system starts from scratch there (first login admin/admin again)." ;;
+            *"existing data"*)       echo "     -> that existing data is what the system will show after the switch." ;;
+        esac
     fi
     echo "     Nothing has been touched yet."
     if [ -t 0 ]; then
@@ -616,14 +783,9 @@ run_step "Installing requirements.txt (this is the slow one)" \
 log "PostgreSQL: role + database"
 systemctl enable --now postgresql >/dev/null 2>&1 || true
 
-PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
 PG_SUPERUSER_PASSWORD="${PG_SUPERUSER_PASSWORD:-}"
-
-# peer auth (sudo -u postgres) ใช้ได้เฉพาะกับ postgres ที่อยู่บนเครื่องนี้เท่านั้น
-# ตั้ง PG_HOST เป็นเครื่องอื่นแล้วยังใช้ peer = ไปสร้าง role/db ลง postgres ของ "เครื่องนี้"
-# ทั้งที่ .env ชี้ไปอีกเครื่อง — เงียบสนิทจนกว่า service จะ start ไม่ขึ้น
-PG_LOCAL=0
-case "$PG_HOST" in localhost|127.0.0.1|::1|"") PG_LOCAL=1 ;; esac
+# PG_SUPERUSER / PG_LOCAL ตั้งไว้แล้วที่ขั้น 1.2 (ตอนเช็กฐานก่อนลงมือ) — ใช้ค่าเดียวกันทั้งสองที่
+# เพื่อไม่ให้ "ที่ที่ไปตรวจ" กับ "ที่ที่ไปสร้าง role/db" หลุดไปคนละที่กันได้
 
 # helper: รัน psql/createdb ในฐานะ superuser — เลือก peer (local + ไม่มีรหัส) หรือ TCP+password
 pg_su_psql() {
@@ -687,7 +849,7 @@ if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" =
     #
     # "ของเรา" ดูจากชื่อตารางเฉพาะของระบบนี้ ไม่นับ users ที่ชื่อโหลเกินกว่าจะใช้ชี้ขาด
     PUBLIC_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
-    OUR_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('agents','security_alerts','ip_black_list','ip_white_list','detection_rules','detection_signatures','alert_severity','alert_reads','blacklist_ttl','line_recipients','agent_downloads','app_settings')")"
+    OUR_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ($OUR_TABLES_SQL)")"
 
     if [ "${PUBLIC_TABLES:-0}" -eq 0 ]; then
         ok "Database '$DB_NAME' already exists and is empty - tables are created on first start"
@@ -1265,7 +1427,7 @@ echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:6380)"
 if [ "$WEB_BIND_HOST" = "0.0.0.0" ]; then WEB_URL_HOST="$BIND_HOST"; else WEB_URL_HOST="$WEB_BIND_HOST"; fi
 echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$WEB_URL_HOST:8000"
 echo "  LINE webhook  : bind $WEBHOOK_BIND_HOST:8080"
-echo "  database      : $DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT"
+echo "  database      : $DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT${DB_STATE:+  [$DB_STATE]}"
 echo "  firewall      : $FW_SUMMARY"
 echo ""
 if [ "$STARTED" -eq 1 ]; then
