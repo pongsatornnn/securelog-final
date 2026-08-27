@@ -41,6 +41,10 @@
 #   SKIP_FIREWALL=1 ไม่ต้องแตะ firewall เลย (ปกติสคริปต์เปิด port ให้ผ่าน ufw/firewalld)
 #   SKIP_DB_CHECK=1 ข้ามการทดสอบล็อกอิน PostgreSQL ด้วยรหัสที่กรอก (ปกติทดสอบให้ก่อนไปต่อ)
 #   ALLOW_FOREIGN_DB=1 ยอมใช้ฐานข้อมูลเดิมที่ไม่มีตารางของระบบนี้ (ปกติหยุด กันไปสร้างตารางทับฐานของแอปอื่น)
+#   FORCE_DB_PASSWORD=1 ยอมทับรหัสของ PostgreSQL role ที่มีอยู่แล้วด้วยรหัสที่กรอกรอบนี้ (ALTER ROLE)
+#     ปกติสคริปต์แค่ "ตรวจ" ว่ารหัสถูกไหม กรอกผิดจะหยุด ไม่ไปเปลี่ยนรหัสของ role ทิ้งเงียบ ๆ
+#   ALLOW_NEW_CA=1 ยอมออก Root CA ใบใหม่ทั้งที่ฐานยังมี agent ลงทะเบียนอยู่ (ปกติเตือนแล้วถามก่อน —
+#     CA ใหม่ = agent ที่ลงไปแล้วต่อไม่ได้ทุกเครื่องด้วย CERTIFICATE_VERIFY_FAILED)
 #   FORCE_PIP_UPGRADE=1 บังคับ upgrade pip (ปกติทำเฉพาะตอน venv เพิ่งสร้าง/pip เก่ากว่า 23 — ขั้นนี้
 #     ต้องออกไปถาม PyPI ทุกครั้งเสมอ เน็ตช้าเมื่อไหร่คือขั้นที่ดูเหมือนค้าง อ่านคำอธิบายที่ขั้น 4)
 #   PIP_TIMEOUT=15 / PIP_RETRIES=2 เวลารอต่อ PyPI ของทุกคำสั่ง pip (default ของ pip เองคือ 15 x 5 + backoff)
@@ -153,8 +157,9 @@ source "$PROJECT_DIR/systemd/_hosts.sh"
 #  แต่ .env ยังเป็นรหัสเก่า service ตายยกแผงด้วย password authentication failed)
 #
 # ใครชนะเมื่อค่าไม่ตรงกัน:
-#   DB_*                 ค่าที่ preset มาทาง env ชนะ -> เปลี่ยนรหัส DB ด้วย
-#                        `sudo DB_PASSWORD=ใหม่ ./setup-server.sh` (ALTER ROLE + เขียน .env ให้ตรงกัน)
+#   DB_*                 ค่าที่ preset มาทาง env ชนะ · **รหัสของ role ที่มีอยู่แล้วจะไม่ถูกทับ** —
+#                        สคริปต์ลองล็อกอินด้วยรหัสที่กรอก ไม่ผ่าน = หยุดพร้อมบอกว่ารหัสผิด
+#                        ตั้งใจเปลี่ยนรหัสจริง ๆ: `sudo FORCE_DB_PASSWORD=1 DB_PASSWORD=ใหม่ ./setup-server.sh`
 #   REDIS_PASS /         ค่าใน .env ชนะเสมอ — รหัสจริงอยู่ใน users.acl ที่ผูกกับ .env อยู่แล้ว และ
 #   AGENT_REDIS_PASS     เปลี่ยนจากหน้าเว็บได้ (System Settings) สคริปต์จึงห้ามไปทับ
 #   IP ทั้ง 3 ช่อง       ถามใหม่ทุกครั้งโดยใช้ค่าปัจจุบันเป็น default -> ตอบค่าใหม่ = ย้าย IP ทั้งระบบ
@@ -534,6 +539,9 @@ OUR_TABLES_SQL="'agents','security_alerts','ip_black_list','ip_white_list','dete
 
 DB_STATE=""      # ไปโผล่ในบรรทัดสรุปท้ายสคริปต์ด้วย
 DB_ROWS=""
+# จำนวน agent ที่ "ลงทะเบียนไว้ในฐาน" — สัญญาณที่เชื่อได้ว่ามีเครื่อง agent อยู่ข้างนอกจริง
+# เชื่อถือได้กว่าการดูว่ามี .env เดิมไหม (ล้างโฟลเดอร์ทิ้งแต่ฐานยังอยู่ = .env หาย แต่ agent ยังอยู่ครบ)
+EXISTING_AGENTS=""
 
 # ต่อด้วย role ของแอปเองทาง TCP = เส้นทางเดียวกับที่ service ต่อจริง (ล้มเหลวคืนค่าว่าง ไม่ทำสคริปต์ตาย)
 app_psql() {  # app_psql SQL [DATABASE]
@@ -567,6 +575,7 @@ report_db_contents() {  # report_db_contents VIA(app|peer)
         DB_STATE="exists but empty"
     elif [ "${our:-0}" -gt 0 ]; then
         ag="$(db_rows agents "$via")"; al="$(db_rows security_alerts "$via")"; us="$(db_rows users "$via")"
+        EXISTING_AGENTS="$ag"
         DB_ROWS="agents ${ag:-?} · alerts ${al:-?} · users ${us:-?}"
         ok "Database '$DB_NAME' already belongs to this system ($our tables) - the data in it is kept and used as is"
         echo "       rows right now: $DB_ROWS"
@@ -664,6 +673,40 @@ else
         fi
     fi
 fi
+
+# ---------------------------------------------------------------------------
+# 1.3) ฐานมี agent ลงทะเบียนไว้ แต่ Root CA หายไป = กำลังจะตัด agent ทิ้งทั้งหมดโดยไม่รู้ตัว
+#
+# เคสนี้เกิดจาก "ลบ/ย้ายโฟลเดอร์โปรเจกต์ทิ้งแล้วลงใหม่ แต่ฐานข้อมูลยังอยู่" ซึ่งหน้าตาเหมือนติดตั้ง
+# ใหม่สะอาด ๆ ทุกอย่าง แต่จริง ๆ คือ: ออก Root CA ใบใหม่ -> cert ในชุดติดตั้งของ agent ทุกเครื่อง
+# เซ็นด้วย CA เก่า -> ต่อ Redis ไม่ได้ทันทีด้วย CERTIFICATE_VERIFY_FAILED และ retry เงียบ ๆ ตลอดไป
+# โดยที่ฝั่ง central ไม่มีอะไรฟ้องเลยว่าหายไปกี่เครื่อง
+#
+# ถ้ายังเก็บ ca.crt/ca.key ใบเก่าไว้ที่ไหนสักแห่ง เอากลับมาวางแล้วรันใหม่ = agent เดิมใช้ต่อได้เลย
+# ไม่ต้องไล่ลงใหม่ทุกเครื่อง จึงต้องถามตรงนี้ ก่อนที่ขั้น 7 จะออก CA ใหม่ทับ
+# ข้ามได้ด้วย ALLOW_NEW_CA=1 (หรือรันแบบไม่มี tty ซึ่งถามไม่ได้อยู่แล้ว)
+# ---------------------------------------------------------------------------
+case "${EXISTING_AGENTS:-}" in
+    ''|*[!0-9]*) ;;                       # อ่านจำนวน agent ไม่ได้ = ไม่เดา ไม่เตือนมั่ว
+    *)
+        if [ "$EXISTING_AGENTS" -gt 0 ] && [ ! -f "$PROJECT_DIR/cert/central/ca.crt" ]; then
+            echo ""
+            warn "The database has $EXISTING_AGENTS agent(s) registered, but there is no Root CA in cert/central/"
+            warn "  This run would issue a BRAND NEW Root CA - and every agent already installed trusts the old one."
+            warn "  They would all fail with CERTIFICATE_VERIFY_FAILED and keep retrying in silence."
+            echo "     If you still have the old cert/central/ca.crt and ca.key from before, put them back"
+            echo "     into $PROJECT_DIR/cert/central/ and run this again - the agents then keep working."
+            echo "     Otherwise every agent machine has to be installed again from a fresh package."
+            if [ "${ALLOW_NEW_CA:-0}" != "1" ] && [ -t 0 ]; then
+                read -rp "  Issue a new Root CA anyway? [y/N] " _ca
+                case "${_ca:-n}" in
+                    [Yy]*) ;;
+                    *) err "Stopped - nothing has been installed or changed"; exit 1 ;;
+                esac
+            fi
+        fi
+        ;;
+esac
 
 # ก่อนลงมือ: บอกให้เห็นเป็นข้อ ๆ ว่ารอบนี้จะไปแตะอะไรของจริงบ้าง แล้วให้ยืนยันครั้งเดียว
 # (ทำเฉพาะโหมดตั้งค่าใหม่ + มีของเปลี่ยนจริง — รันซ้ำเพื่อซ่อมแบบเดิมจะไม่มีจอนี้มากวน)
@@ -832,12 +875,48 @@ if ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>&1; then
     exit 1
 fi
 
+# ---- role: ยังไม่มี = สร้างพร้อมรหัสที่กรอก · มีอยู่แล้ว = "ตรวจ" ว่ารหัสถูกไหม ไม่ใช่ทับ ----
+#
+# ⚠️ ของเดิม `ALTER ROLE ... PASSWORD` ทับทุกรอบโดยไม่ถาม = กรอกรหัสผิด/พิมพ์ตกก็ไม่มีอะไรฟ้อง
+#    รหัสของ role ถูกเปลี่ยนเป็นค่าที่พิมพ์ผิดนั้นเงียบ ๆ แล้วอะไรก็ตามที่ใช้ role นี้อยู่ก็ล็อกอิน
+#    ไม่ได้ทันทีโดยไม่มีใครรู้ว่าเพราะอะไร
+#    ตอนนี้จึงลองล็อกอินจริงด้วยรหัสที่กรอก (TCP + password เส้นเดียวกับที่ service ใช้) ไม่ผ่าน =
+#    หยุดพร้อมบอกว่า "รหัสผิด" ไม่ไปแตะ role · ตั้งใจเปลี่ยนรหัสจริง ๆ ค่อยสั่ง FORCE_DB_PASSWORD=1
+#    ต่อฐาน postgres ไม่ใช่ $DB_NAME ในการทดสอบ — จะได้แยก "รหัสผิด" ออกจาก "ฐานยังไม่ถูกสร้าง"
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")" = "1" ]; then
-    pg_su_psql -qc "ALTER ROLE \"$DB_USER\" WITH LOGIN PASSWORD $(pg_quote_lit "$DB_PASSWORD")" >/dev/null
-    ok "Role '$DB_USER' already exists (password set to the one used by this run)"
+    PG_ROLE_ERR="$(mktemp)"
+    if [ "${SKIP_DB_CHECK:-0}" = "1" ]; then
+        rm -f "$PG_ROLE_ERR"
+        warn "SKIP_DB_CHECK=1 - role '$DB_USER' left untouched without checking its password"
+    elif PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
+            -tAc "SELECT 1" >/dev/null 2>"$PG_ROLE_ERR"; then
+        ok "Role '$DB_USER' already exists and the password given is correct - left untouched"
+        rm -f "$PG_ROLE_ERR"
+    elif [ "${FORCE_DB_PASSWORD:-0}" = "1" ]; then
+        rm -f "$PG_ROLE_ERR"
+        pg_su_psql -qc "ALTER ROLE \"$DB_USER\" WITH LOGIN PASSWORD $(pg_quote_lit "$DB_PASSWORD")" >/dev/null
+        warn "FORCE_DB_PASSWORD=1 - the password of role '$DB_USER' has been reset to the one typed now"
+        warn "  Anything else that logs in as '$DB_USER' with the old password stops working from here on"
+    elif grep -qi "password authentication failed" "$PG_ROLE_ERR"; then
+        rm -f "$PG_ROLE_ERR"
+        err "Wrong database password: role '$DB_USER' exists, but the password given is not its password"
+        err "  Nothing has been changed - the role still has the password it had before."
+        err "  Either run again and type the right one, or overwrite it on purpose:"
+        err "    sudo FORCE_DB_PASSWORD=1 $PROJECT_DIR/setup-server.sh"
+        err "  (the old password is in the .env of the previous installation, key DB_PASSWORD)"
+        exit 1
+    else
+        err "Role '$DB_USER' exists but cannot be logged into at $DB_HOST:$DB_PORT - this is not a wrong password:"
+        sed 's/^/      /' "$PG_ROLE_ERR" >&2
+        rm -f "$PG_ROLE_ERR"
+        err "  Usually pg_hba.conf: it needs a line like"
+        err "    host $DB_NAME $DB_USER 127.0.0.1/32 scram-sha-256"
+        err "  Nothing has been changed. Fix that and run again, or skip the check with SKIP_DB_CHECK=1"
+        exit 1
+    fi
 else
     pg_su_psql -qc "CREATE ROLE \"$DB_USER\" WITH LOGIN PASSWORD $(pg_quote_lit "$DB_PASSWORD")" >/dev/null
-    ok "Created role '$DB_USER'"
+    ok "Created role '$DB_USER' with the password given"
 fi
 
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" = "1" ]; then
@@ -1227,6 +1306,13 @@ fi
 ACL_WRITTEN=0
 if [ ! -f "$ACL_FILE" ] || grep -q '>123 ' "$ACL_FILE" || [ "${FORCE_ACL:-0}" = "1" ] \
    || [ "$REDIS_ACL_CHANGED" = "1" ]; then
+    # รหัสที่ไฟล์เดิมถืออยู่ = รหัสที่ agent ข้างนอกใช้จริง ณ ตอนนี้ — ต่างจากที่กำลังจะเขียนเมื่อไหร่
+    # แปลว่า agent ทุกเครื่องจะล็อกอินไม่ได้ ต้องไปโผล่ในสรุปท้ายสคริปต์ด้วย
+    PREV_ACL_AGENT_PASS="$(acl_pass_of agent_node "$ACL_FILE")"
+    if [ -n "$PREV_ACL_AGENT_PASS" ] && [ "$PREV_ACL_AGENT_PASS" != "$ACL_AGENT_PASS" ]; then
+        AGENT_PASS_CHANGED=1
+    fi
+
     [ -f "$ACL_FILE" ] && cp -p "$ACL_FILE" "$ACL_FILE.bak.$(date +%Y%m%d%H%M%S)"
     cat > "$ACL_FILE" <<EOF
 user $REDIS_USER on >$REDIS_PASS +@all ~* &*
@@ -1305,9 +1391,29 @@ APP_USER="$APP_USER" APP_GROUP="$APP_GROUP" PROJECT_DIR="$PROJECT_DIR" BIND_HOST
 #     - cert ใหม่: ใบเก่ายังถูกยื่นให้ client อยู่ในหน่วยความจำ และ redis_config.py ต่อแบบ
 #       ssl_check_hostname=True -> ย้าย IP แล้วไม่ restart = ทุก service ต่อ Redis ไม่ผ่านการตรวจชื่อ
 #     - users.acl ใหม่: .env ถือรหัสใหม่แต่ Redis ยังบังคับรหัสเก่า -> ล็อกอินไม่ผ่านทั้งเครื่อง
+# ★ ตัวชี้ขาดที่เชื่อได้คือ "ใบที่ Redis ยื่นออกมาตอนนี้" ไม่ใช่ CERT_ISSUED ของรอบนี้
+#
+# ⚠️ เจอจริงบนเครื่องทดสอบ: รอบก่อนออก cert ใหม่แล้วจบกลางคันก่อนถึงขั้นนี้ -> Redis ยังถือใบเก่าไว้
+#    รอบถัดมาเห็นว่า cert บนดิสก์ครบและ SAN ถูกแล้ว CERT_ISSUED จึงเป็น 0 -> ไม่ restart · แล้ว
+#    install.sh ก็ข้ามให้อีกเพราะ "centralredis รันอยู่แล้ว" -> Redis ค้างใบเก่าถาวร ทุก service
+#    ต่อไม่ติดด้วย CERTIFICATE_VERIFY_FAILED วนไปเรื่อย ๆ ทั้งที่สคริปต์จบด้วยข้อความว่าสำเร็จ
+#    ถาม Redis เองว่าตอนนี้ยื่นใบไหน แล้วเทียบกับไฟล์บนดิสก์ = จับได้ทุกกรณีที่มันหลุดจากกัน
+redis_serving_stale_cert() {
+    local served ondisk
+    [ -f "$CERT_DIR/central.crt" ] || return 1
+    served="$(echo | timeout 5 openssl s_client -connect "$BIND_HOST:6380" 2>/dev/null \
+        | openssl x509 -noout -fingerprint -sha256 2>/dev/null)" || true
+    [ -n "$served" ] || return 1          # ต่อไม่ได้/ยังไม่ start = ไม่มีอะไรให้สรุป
+    ondisk="$(openssl x509 -in "$CERT_DIR/central.crt" -noout -fingerprint -sha256 2>/dev/null)" || true
+    [ -n "$ondisk" ] || return 1
+    [ "$served" != "$ondisk" ]
+}
+
 REDIS_RESTART_REASON=""
 if [ "$CERT_ISSUED" = "1" ]; then
     REDIS_RESTART_REASON="it is still serving the old certificate"
+elif redis_serving_stale_cert; then
+    REDIS_RESTART_REASON="the certificate it is serving is not the one in $CERT_DIR (left over from an earlier run)"
 fi
 if [ "$ACL_WRITTEN" = "1" ]; then
     REDIS_RESTART_REASON="${REDIS_RESTART_REASON:+$REDIS_RESTART_REASON, and }users.acl was rewritten"
@@ -1417,6 +1523,57 @@ case "$FW_KIND" in
 esac
 
 # ---------------------------------------------------------------------------
+# 11) ตรวจว่า "ใช้งานได้จริง" ไม่ใช่แค่ service ขึ้น
+#
+# ⚠️ ของเดิมจบด้วย "Setup complete - services running" โดยดูแค่ว่า systemd ยังไม่ตาย — แต่ service
+#    ของระบบนี้ออกแบบให้ retry ต่อ Redis ไปเรื่อย ๆ ไม่ยอมตาย เครื่องที่ Redis ยื่น cert คนละใบกับ
+#    ที่ .env ชี้ จึงขึ้นเขียวครบทุกตัวทั้งที่ต่อไม่ติดสักตัว และไม่มีใครรู้จนกว่าจะไปเปิด journalctl เอง
+#    (เกิดขึ้นจริงบนเครื่องทดสอบ: ทุก service วน CERTIFICATE_VERIFY_FAILED อยู่เป็นชั่วโมง)
+#    ตรงนี้จึงต่อ Redis ด้วยค่าใน .env จริง ๆ ทางเดียวกับที่ service ต่อ แล้วบอกผลตรง ๆ
+# ---------------------------------------------------------------------------
+REDIS_CHECK="skipped"
+if [ "$STARTED" -eq 1 ] && [ -x "$PROJECT_DIR/venv/bin/python" ] && [ "$CERT_OK" -eq 1 ]; then
+    log "Checking that this machine can actually use its own Redis (mTLS + ACL)"
+    sleep 2      # เผื่อ centralredis ที่เพิ่ง start/restart ไปเมื่อครู่ยังรับ connection ไม่ทัน
+    REDIS_CHECK="$("$PROJECT_DIR/venv/bin/python" - <<PYCHK 2>&1 || true
+import sys
+try:
+    import redis
+except Exception:
+    print("skipped (the redis library is not in the venv)"); sys.exit(0)
+try:
+    c = redis.Redis(
+        host="$BIND_HOST", port=6380, ssl=True,
+        ssl_certfile="$CERT_DIR/central.crt", ssl_keyfile="$CERT_DIR/central.key",
+        ssl_ca_certs="$CERT_DIR/ca.crt", ssl_cert_reqs="required", ssl_check_hostname=True,
+        username="$REDIS_USER", password="$REDIS_PASS",
+        socket_connect_timeout=5, socket_timeout=5,
+    )
+    c.ping()
+    print("ok")
+except Exception as e:
+    print("FAILED: %s" % e)
+PYCHK
+)"
+    case "$REDIS_CHECK" in
+        ok)
+            ok "Logged in to Redis at $BIND_HOST:6380 over mTLS as '$REDIS_USER' - the services connect the same way"
+            ;;
+        skipped*)
+            warn "Redis check $REDIS_CHECK"
+            ;;
+        *)
+            err "This machine CANNOT use its own Redis - every service will sit in a retry loop:"
+            printf '      %s\n' "$REDIS_CHECK" >&2
+            err "  The services are running but nothing works until this is fixed. Usually one of:"
+            err "    - centralredis still serving an older certificate:  sudo systemctl restart centralredis.service"
+            err "    - users.acl and .env holding different passwords:   sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
+            err "  Then check again with:  journalctl -u securelog-agent-monitor -n 20"
+            ;;
+    esac
+fi
+
+# ---------------------------------------------------------------------------
 # สรุป
 # ---------------------------------------------------------------------------
 log "Done - summary"
@@ -1429,6 +1586,11 @@ echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$WEB_URL_HOST:8000
 echo "  LINE webhook  : bind $WEBHOOK_BIND_HOST:8080"
 echo "  database      : $DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT${DB_STATE:+  [$DB_STATE]}"
 echo "  firewall      : $FW_SUMMARY"
+case "$REDIS_CHECK" in
+    ok)       echo "  Redis (mTLS)  : reachable and logged in" ;;
+    skipped*) echo "  Redis (mTLS)  : $REDIS_CHECK" ;;
+    *)        echo "  Redis (mTLS)  : ** NOT USABLE - see the error above **" ;;
+esac
 echo ""
 if [ "$STARTED" -eq 1 ]; then
     ok "First login is admin/admin"
@@ -1447,7 +1609,11 @@ fi
 # cert ของ central/dashboard ที่ออกใหม่ "ไม่" อยู่ในรายการนี้ — เซ็นด้วย CA เดิม agent เก่าจึงยัง
 # เชื่อถือใบใหม่ได้ตามปกติ (เหตุผลเดียวกับที่ขั้น 7 หวง CA เดิมไว้)
 # ---------------------------------------------------------------------------
-if [ "$ENV_EXISTED" = "1" ]; then
+# เงื่อนไขคือ "มี agent อยู่ข้างนอกไหม" ไม่ใช่ "เคยมี .env ไหม" — ล้างโฟลเดอร์ทิ้งแล้วลงใหม่โดยที่
+# ฐานข้อมูลยังอยู่ คือเคสที่ .env หายไปแต่ agent ยังอยู่ครบ และเป็นเคสที่ต้องเตือนที่สุด
+AGENT_COUNT_KNOWN=0
+case "${EXISTING_AGENTS:-}" in ''|*[!0-9]*) ;; *) AGENT_COUNT_KNOWN=1 ;; esac
+if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -gt 0 ]; }; then
     AGENT_REASONS=()
     if [ "$IP_CHANGED" = "1" ]; then
         AGENT_REASONS+=("the central address moved $CURRENT_BIND_HOST -> $BIND_HOST (they still dial $CURRENT_BIND_HOST)")
@@ -1456,12 +1622,16 @@ if [ "$ENV_EXISTED" = "1" ]; then
         AGENT_REASONS+=("the Redis password of the agent accounts changed (they authenticate with the old one)")
     fi
     if [ "$CA_CREATED" = "1" ]; then
-        AGENT_REASONS+=("a new Root CA was issued - the certificate in their package is signed by the old CA")
+        AGENT_REASONS+=("a new Root CA was issued - the certificates in their packages are signed by the old CA,"$'\n'"         so they fail with CERTIFICATE_VERIFY_FAILED and retry forever without saying anything")
     fi
 
     echo ""
     if [ "${#AGENT_REASONS[@]}" -gt 0 ]; then
-        warn "Agent machines (client side) have to be installed again - this run changed what they rely on:"
+        if [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -gt 0 ]; then
+            warn "The $EXISTING_AGENTS agent machine(s) registered in the database have to be installed again:"
+        else
+            warn "Agent machines (client side) have to be installed again - this run changed what they rely on:"
+        fi
         for _r in "${AGENT_REASONS[@]}"; do echo "       - $_r"; done
         echo ""
         echo "     Until that is done they keep retrying quietly and their logs never arrive here."
