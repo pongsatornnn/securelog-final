@@ -179,7 +179,7 @@
     </div>
   </div>
 
-  <!-- 3 สถานะแยกกัน: กำลังโหลด / โหลดไม่สำเร็จ / โหลดได้แต่ไม่มีข้อมูล -->
+  
   <div class="state-box" x-show="loading" style="border-radius: 14px;">
     <div class="state-spinner" aria-hidden="true"></div>
     <div class="state-title">กำลังโหลดรายชื่อผู้ใช้...</div>
@@ -224,8 +224,7 @@
               <div class="user-name" x-text="u.username"></div>
             </td>
             <td data-label="Role">
-              <!-- แก้ role ตรงนี้ได้เลยไม่ต้องเปิด modal — เจ้าของบัญชีตัวเองกับ admin ที่ระบบ
-                   ป้องกันไว้ถูก disable กัน lock ตัวเองออกจากสิทธิ์ admin -->
+              
               <select class="role-select"
                       :value="u.role"
                       :disabled="u.is_protected || u.username === currentUsername"
@@ -244,7 +243,7 @@
             </td>
             <td data-label="สร้างเมื่อ" x-text="formatTime(u.created_at)"></td>
             <td class="stack-full">
-              <!-- ป้ายปุ่มสั้นที่สุดเท่าที่ยังรู้ว่าทำอะไร — รายละเอียดอยู่ในกล่องยืนยันที่เด้งตามมา -->
+              
               <div class="row-actions">
                 <button class="btn-edit" @click="openResetModal(u)">
                   Reset
@@ -266,7 +265,7 @@
     </table>
   </div>
 
-  <!-- Create User Modal -->
+  
   <div class="modal-backdrop" x-show="showCreateModal" style="display: none;" @click.self="closeCreateModal()">
     <div class="modal">
       <div class="modal-header">
@@ -307,7 +306,7 @@
     </div>
   </div>
 
-  <!-- Reset Password Modal -->
+  
   <div class="modal-backdrop" x-show="showResetModal" style="display: none;" @click.self="closeResetModal()">
     <div class="modal">
       <div class="modal-header">
@@ -335,7 +334,7 @@
     </div>
   </div>
 
-  <!-- Delete User Modal -->
+  
   <div class="modal-backdrop" x-show="showDeleteModal" style="display: none;" @click.self="closeDeleteModal()">
     <div class="modal">
       <div class="modal-header">
@@ -343,7 +342,7 @@
         <button class="btn-close" @click="closeDeleteModal()" aria-label="ปิด">×</button>
       </div>
 
-      <!-- ย่อได้แค่นี้ — เป็นการยืนยันงานที่ย้อนกลับไม่ได้ ต้องบอกผลลัพธ์ให้ครบ -->
+      
       <div class="modal-help">
         ยืนยันที่จะลบผู้ใช้งาน <b x-text="deleteTarget ? deleteTarget.username : ''"></b> ถาวร 
       </div>

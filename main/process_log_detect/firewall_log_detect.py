@@ -1,18 +1,4 @@
-"""
-Detector: Firewall behavior/rate-based จาก normalized firewall log (UFW/iptables)
-นับเฉพาะ log ที่ firewall "ปฏิเสธ" (block/reject) ต่อ source_ip — 2 ชนิดต่อ log เดียว:
-1. port_scan          = 1 IP ยิงหา "หลาย destination port" (นับ distinct DPT ใน window)
-2. firewall_deny_rate = 1 IP โดน firewall ปฏิเสธ "ถี่มาก" (นับทุก event deny ใน window)
-
-นโยบาย IPv4-only: ข้าม IPv6 และ SRC ผิดรูป (firewall log เป็นจุดเดียวที่ IPv6 หลุดเข้ามาได้
-— web/auth จับ IPv4 ด้วย regex อยู่แล้ว)
-
-หมายเหตุ: เป็น consumer ตัวเดียวของ normalized_firewall_logs_queue — ถ้าจะเพิ่ม detector
-บน firewall log ต้องรวมใน worker นี้ ห้ามเปิดอีก process blpop คิวเดียวกัน
-
-window/threshold ไม่ hardcode — ดึงจาก DB ผ่าน rule_cache แก้ผ่าน manage_rules.py
-รันด้วย: python -m process_log_detect.firewall_log_detect
-"""
+"""Detector: Firewall behavior/rate-based จาก normalized firewall log (UFW/iptables)"""
 
 import asyncio
 import ipaddress
@@ -59,9 +45,6 @@ ATTACK_LABEL = {
 
 
 # ============================================================
-# Runtime memory
-# ============================================================
-# key = f"{detection_type}:{source_ip}" -> deque ของ event ในหน้าต่างเวลา
 events_by_key: dict[str, deque] = defaultdict(deque)
 
 
@@ -70,8 +53,6 @@ def clear_fw_count(key: str) -> None:
     print(f"[{LOG_PREFIX}] cleared firewall count for [{key}]")
 
 
-# ============================================================
-# Helpers
 # ============================================================
 
 def is_ipv4(ip: str | None) -> bool:
@@ -85,11 +66,7 @@ def is_ipv4(ip: str | None) -> bool:
 
 
 def count_for_type(detection_type: str, window_events: list[dict]) -> int:
-    """
-    แปลง event ในหน้าต่างเวลาเป็น "count" ตามความหมายของแต่ละ detection_type
-    - port_scan          : จำนวน destination port ที่ไม่ซ้ำกัน (distinct DPT)
-    - firewall_deny_rate : จำนวน event deny ทั้งหมด
-    """
+    """แปลง event ในหน้าต่างเวลาเป็น "count" ตามความหมายของแต่ละ detection_type"""
     if detection_type == "port_scan":
         return len({
             e["destination_port"]
@@ -117,8 +94,6 @@ def build_event(log: dict, now_ts: float) -> dict:
     }
 
 
-# ============================================================
-# Print helper
 # ============================================================
 
 def print_counted_fw_log(
@@ -171,8 +146,6 @@ def print_fw_alert(
 
 
 # ============================================================
-# Detection logic
-# ============================================================
 
 def process_firewall_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     if log.get("category") != "firewall":
@@ -193,15 +166,12 @@ def process_firewall_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
 
     if is_non_blockable_ip(source_ip):
         # ทราฟฟิก broadcast ปกติของวง (DHCP DISCOVER ออกจาก SRC=0.0.0.0 ฯลฯ) ที่ firewall
-        # ปฏิเสธทิ้ง — ไม่ใช่การโจมตีของ host ใด ไม่นับ ไม่ alert (ไม่งั้นเครื่องในวงต่อ DHCP
-        # กันหลายเครื่องจะดันยอดจนเข้าเกณฑ์ port scan / deny flood ของ "IP 0.0.0.0")
         return
 
     now_ts = parse_agent_time_to_epoch(log)
     event = build_event(log, now_ts)
 
     # log deny เดียวอาจเข้าเงื่อนไขได้ทั้ง 2 ชนิด (deny-rate + port-scan)
-    # ประเมินแยกกันคนละ key/rule
     for detection_type in DETECTION_TYPES:
         rule = loop.run_until_complete(get_rule(RULE_KEY_BY_TYPE[detection_type]))
 
@@ -244,8 +214,6 @@ def process_firewall_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
             clear_fw_count(key)
 
 
-# ============================================================
-# Main worker
 # ============================================================
 
 def start_firewall_detector() -> None:

@@ -14,8 +14,6 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 # ---------------------------------------------------------------------------
-# config
-# ---------------------------------------------------------------------------
 
 # ค่า default เฉพาะ site — ปกติถูก override ด้วย agent_config.json (สร้างโดย setup.sh)
 _DEFAULT_CONFIG = {
@@ -76,14 +74,12 @@ AGENT_KEY_FILE = _find_cert(_INFO.get("KEY_FILE", f"{AGENT_ID}.key"))
 CA_CERT_FILE = _find_cert(_INFO.get("CA_FILE", "ca.crt"))
 
 # interface ที่ใช้เป็นแหล่งของ IP เครื่องนี้ — เลือกตอนรัน setup.sh (setup.sh เขียนลง
-# agent_config.json ให้) ค่าว่าง = ไม่ระบุ ให้ไปหา interface ที่ใช้ออกเน็ตจริงเอาเอง
 HOST_IFACE = str(_CONFIG.get("host_iface") or "")
 
 METRICS_INTERVAL_SECONDS = 1
 RECONNECT_DELAY_SECONDS = 5
 
 # อ่าน IP ใหม่ทุกกี่วินาที — ไม่อ่านทุกรอบ metrics (ทุก 1 วิ) เพราะ IP เครื่องแทบไม่เปลี่ยน
-# แต่ก็ไม่อ่านครั้งเดียวตอน start เพราะ DHCP ต่ออายุแล้วได้ IP ใหม่ระหว่างที่ service รันอยู่ได้
 HOST_IP_REFRESH_SECONDS = 30
 
 MANAGED_DIR = str(BASE_DIR / "state")
@@ -92,25 +88,19 @@ MANAGED_WHITELIST_FILE = f"{MANAGED_DIR}/central_whitelist.json"
 UFW_COMMENT = "central_blacklist"
 
 # รายการ IP/subnet ที่ agent จะ "ไม่มีวัน block" ไม่ว่า central จะสั่งมาหรือไม่
-# เป็น safety net ฝั่ง agent กันเผลอตัด session ของตัวเอง/central/เครื่องที่ใช้บริหารจัดการ
-# (agent เข้าถึง whitelist ใน DB ของ central ไม่ได้ จึงกันซ้ำอีกชั้นที่นี่)
-# ใส่ได้ทั้ง IP เดี่ยว ("192.168.56.1") และ subnet CIDR ("192.168.56.0/24")
 NEVER_BLOCK_CIDRS = [
-    "127.0.0.0/8",     # loopback
-    CENTRAL_HOST,      # central server
+    "127.0.0.0/8",
+    CENTRAL_HOST,
     # "192.168.56.1",  # <- ใส่ IP เครื่อง admin/gateway ที่ใช้ SSH เข้ามาที่นี่ด้วย
 ]
 
 # address พิเศษของทราฟฟิก broadcast (0.0.0.0 = เครื่องที่ยังไม่ได้ IP เช่นตอนขอ DHCP,
-# 255.255.255.255 = broadcast ทั้งวง) ไม่ใช่ IP ของเครื่องจริงสักเครื่อง block ไปก็ไม่มีผล
-# แยกจาก NEVER_BLOCK_CIDRS ข้างบนที่ให้ผู้ใช้แก้เอง — อันนี้ห้าม block เสมอ ลบออกไม่ได้
 ALWAYS_NEVER_BLOCK_CIDRS = [
     "0.0.0.0/32",
     "255.255.255.255/32",
 ]
 
 # แปลง never-block ทั้งสองลิสต์เป็น ip_network ครั้งเดียวตอน start
-# entry ที่ผิดรูปข้ามพร้อมเตือน ไม่ทำให้ทั้งลิสต์พัง
 _NEVER_BLOCK_NETS = []
 for _entry in ALWAYS_NEVER_BLOCK_CIDRS + NEVER_BLOCK_CIDRS:
     try:
@@ -119,13 +109,6 @@ for _entry in ALWAYS_NEVER_BLOCK_CIDRS + NEVER_BLOCK_CIDRS:
         print(f"[CONFIG] NEVER_BLOCK_CIDRS entry ผิดรูป ข้าม: {_entry}")
 
 
-# ---------------------------------------------------------------------------
-# IP ของเครื่องนี้
-#
-# อ่านจาก interface ตอนรันจริงทุกครั้ง ไม่ใช่อ่านค่าที่ฝังไว้ในไฟล์ — จุดนี้คือหัวใจของการผูก
-# IP กับ Agent ID ฝั่ง central: ถ้ามีคนยกโฟลเดอร์นี้ทั้งชุด (cert + token + config) ไปรันที่
-# เครื่องอื่น ค่าที่ส่งออกไปจะเป็น IP ของเครื่องใหม่เอง ไม่ใช่ค่าที่ติดมากับไฟล์ central จึง
-# เห็นว่าไม่ตรงกับที่ผูกไว้แล้วปฏิเสธ (ถ้าอ่านจากไฟล์ ค่าจะถูกยกตามไปด้วย = ตรวจไม่เจอ)
 # ---------------------------------------------------------------------------
 
 
@@ -146,12 +129,7 @@ def list_interface_ips() -> dict[str, str]:
 
 
 def detect_outbound_ip() -> str | None:
-    """
-    IP ของ interface ที่ใช้ออกไปหา central จริง — ใช้เป็น fallback ตอนไม่ได้ระบุ interface ไว้
-
-    เปิด UDP socket ไปหา central แล้วอ่าน getsockname() — UDP ไม่ได้ส่งอะไรออกไปจริง
-    แค่ให้ kernel เลือก route ให้ จึงไม่ต้องรอ timeout และไม่ต้องให้ปลายทางตอบ
-    """
+    """IP ของ interface ที่ใช้ออกไปหา central จริง — ใช้เป็น fallback ตอนไม่ได้ระบุ interface ไว้"""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
@@ -167,8 +145,6 @@ def get_host_ip() -> str | None:
     """IP ปัจจุบันของเครื่องนี้ตาม interface ที่เลือกไว้ — None ถ้าหาไม่ได้"""
     if HOST_IFACE:
         # ระบุ interface ไว้แล้วต้องใช้ตัวนั้นเท่านั้น — สายหลุด/ยังไม่ได้ IP แล้วเงียบ ๆ ไป
-        # ใช้ interface อื่นแทน จะกลายเป็นรายงาน IP ที่ไม่ตรงกับที่ผูกไว้แล้วโดนปฏิเสธทั้งที่
-        # เครื่องถูกต้อง หาสาเหตุยากกว่าการบอกไปตรง ๆ ว่า interface นี้ยังไม่มี IP
         return list_interface_ips().get(HOST_IFACE)
 
     return detect_outbound_ip()
@@ -202,8 +178,6 @@ def create_redis():
     )
 
 
-# ---------------------------------------------------------------------------
-# ไฟล์ state (blacklist/whitelist ที่ Central sync มา — เก็บไฟล์ให้รอด restart)
 # ---------------------------------------------------------------------------
 
 def ensure_managed_dir():
@@ -243,7 +217,6 @@ def _write_ip_file(path: str, ips: set[str], label: str):
 
 
 # whitelist ที่ sync มาถูกเช็คบ่อยมาก (ทุกครั้งที่จะ block) จึง cache ใน memory
-# ไฟล์เปลี่ยนได้ทางเดียวคือคำสั่ง sync_whitelist (save_synced_whitelist) ซึ่งอัปเดต cache ให้เอง
 _synced_whitelist_cache: set[str] | None = None
 
 
@@ -264,10 +237,7 @@ def save_synced_whitelist(ips: set[str]):
 
 
 def load_managed_ips() -> set[str]:
-    """
-    อ่าน IP ที่ระบบ sync ของ Central เคยจัดการไว้เท่านั้น
-    ไม่อ่าน rule UFW ทั้งระบบ เพื่อไม่กระทบ rule อื่น
-    """
+    """อ่าน IP ที่ระบบ sync ของ Central เคยจัดการไว้เท่านั้น"""
     return _read_ip_file(MANAGED_BLACKLIST_FILE, "SYNC STATE")
 
 
@@ -294,18 +264,9 @@ def remove_managed_ip(ip: str):
 
 
 # ---------------------------------------------------------------------------
-# ตรวจ IP
-# ---------------------------------------------------------------------------
 
 def is_never_block(ip: str) -> bool:
-    """
-    เช็คว่า ip ห้าม block ไหม จาก 3 แหล่ง:
-    1. whitelist ที่ Central sync มา (exact match, cache ใน memory)
-    2. NEVER_BLOCK_CIDRS — ลิสต์ static ในไฟล์นี้ (IP เดี่ยว/CIDR) กันเผลอตัดตัวเอง/central
-    3. ALWAYS_NEVER_BLOCK_CIDRS — address ของทราฟฟิก broadcast ที่ห้าม block เสมอ
-
-    ถ้า ip ผิดรูปหรือ entry เสียจะถือว่าไม่ตรง (ไม่ crash)
-    """
+    """เช็คว่า ip ห้าม block ไหม จาก 3 แหล่ง:"""
     if not ip:
         return False
 
@@ -343,22 +304,9 @@ def normalize_ip_list(items) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# UFW block/unblock
-# block_ip/unblock_ip = จากคำสั่งเดี่ยว (block_ip/unblock_ip command, hello)
-# sync_block_ip/sync_unblock_ip = จากระบบ sync_blacklist (ติด comment ให้รู้ที่มา)
-# ---------------------------------------------------------------------------
 
 def drop_conntrack(ip):
-    """
-    ล้าง connection ที่เปิดค้างอยู่ของ IP นี้ทิ้ง (ทั้งขาที่ IP เป็นต้นทางและปลายทาง)
-
-    ufw deny ตัดแค่ packet/connection ใหม่ แต่ session ที่ established อยู่แล้ว
-    (เช่น browser keep-alive) จะรอดเพราะ conntrack จำ state ไว้ ทำให้ยังเข้าเว็บได้อยู่
-    การล้าง conntrack ตรงนี้ทำให้ session เดิมโดนตัดทันที = block แบบเด็ดขาด
-
-    ต้องมี package `conntrack` บน agent (setup.sh ติดตั้งให้แล้ว)
-    ถ้าไม่มี/ไม่มี entry ให้ลบ จะไม่ error ให้ล้ม (แค่ไม่มีผล)
-    """
+    """ล้าง connection ที่เปิดค้างอยู่ของ IP นี้ทิ้ง (ทั้งขาที่ IP เป็นต้นทางและปลายทาง)"""
     for direction in ("-s", "-d"):
         try:
             subprocess.run(
@@ -437,17 +385,7 @@ def sync_unblock_ip(ip: str) -> bool:
 
 
 def sync_blacklist_desired_state(central_items):
-    """
-    sync แบบไม่กระทบของเดิม
-
-    central_desired_ips = IP ที่ Central บอกว่าตอนนี้ควร block
-    managed_ips = IP ที่ระบบ sync ของ Agent เคยจัดการไว้เอง
-
-    ทำงาน:
-    - IP อยู่ใน Central แต่ยังไม่อยู่ใน managed -> block เพิ่ม
-    - IP อยู่ใน managed แต่ไม่มีใน Central แล้ว -> unblock
-    - rule อื่นที่ไม่ได้อยู่ใน managed file จะไม่ยุ่ง
-    """
+    """sync แบบไม่กระทบของเดิม"""
     central_desired_ips = normalize_ip_list(central_items)
     managed_ips = load_managed_ips()
 
@@ -477,8 +415,6 @@ def sync_blacklist_desired_state(central_items):
 
 
 # ---------------------------------------------------------------------------
-# รับคำสั่งจาก Central (Redis pub/sub)
-# ---------------------------------------------------------------------------
 
 def parse_command_message(message) -> dict | None:
     try:
@@ -506,10 +442,7 @@ def parse_command_message(message) -> dict | None:
 
 
 def handle_hello_command(data: dict):
-    """
-    hello จาก Central ตอน agent กลับมา online
-    ถ้า Central ส่ง ip_blacklist มาด้วยจะ block ให้เลย (ส่ง [] มา = ไม่ block อะไร)
-    """
+    """hello จาก Central ตอน agent กลับมา online"""
     text = data.get("message", "hello")
     ip_blacklist = data.get("ip_blacklist", [])
 
@@ -559,10 +492,7 @@ def handle_sync_blacklist_command(data: dict):
 
 
 def handle_sync_whitelist_command(data: dict):
-    """
-    รับ whitelist ปัจจุบันจาก Central มาเก็บไว้ (desired state)
-    ใช้เป็น safety net ให้ is_never_block เช็คอัตโนมัติ ไม่ต้องแก้ NEVER_BLOCK_CIDRS มือ
-    """
+    """รับ whitelist ปัจจุบันจาก Central มาเก็บไว้ (desired state)"""
     ips = normalize_ip_list(data.get("ips", []))
     save_synced_whitelist(ips)
     print(f"[WHITELIST] ได้รับ whitelist จาก Central {len(ips)} รายการ -> อัปเดต never-block แล้ว")
@@ -587,14 +517,9 @@ def handle_command(data: dict):
 
 
 # ---------------------------------------------------------------------------
-# worker loops (ทุกตัว reconnect เองเมื่อ Redis หลุด)
-# ---------------------------------------------------------------------------
 
 def run_with_reconnect(label: str, worker):
-    """
-    เปิด Redis connection แล้วส่งให้ worker ทำงานยาว ๆ
-    ถ้าหลุด/พัง: ปิด connection รอแล้วต่อใหม่ วนตลอด
-    """
+    """เปิด Redis connection แล้วส่งให้ worker ทำงานยาว ๆ"""
     while True:
         r = None
 
@@ -697,7 +622,6 @@ def _check_config_or_exit():
         sys.exit(1)
 
     # หา IP ไม่ได้ = ยังรันต่อได้ (เดี๋ยว interface อาจได้ IP ทีหลัง) แต่ต้องบอกให้ชัดว่าทำไม
-    # central ถึงจะปฏิเสธ ไม่งั้นจะดูเหมือน agent ส่งข้อมูลปกติแต่ไม่เคยขึ้น online
     host_ip = get_host_ip()
 
     if host_ip:

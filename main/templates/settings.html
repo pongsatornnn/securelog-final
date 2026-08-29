@@ -370,15 +370,9 @@
     </div>
   </div>
 
-  <!-- <div class="scope-note">
-    คีย์ของบริการภายนอกและค่าที่ฝังลงชุดติดตั้ง agent — แก้แล้วมีผล <b>ทันที ไม่ต้องรีสตาร์ต</b><br>
-    <b>DB, ใบรับรอง, JWT/CSRF, IP/พอร์ต</b> ตั้งที่นี่ไม่ได้ — อยู่ในไฟล์ <code>.env</code> และ systemd
-  </div> -->
+  
 
-  <!-- ── ค้างรีสตาร์ต ──
-       ไม่ได้จำสถานะไว้ที่ไหน — ฝั่ง server เทียบเวลาที่แต่ละ service เริ่มทำงานกับ mtime ของ
-       .env ทุกครั้งที่เรียก ตัวไหนเริ่มก่อนไฟล์ถูกแก้ = ยังถือค่าเก่า · หายเองเมื่อรีสตาร์ตจริง
-       (เว็บสั่งรีสตาร์ตให้ไม่ได้โดยตั้งใจ — ต้องเปิดสิทธิ์ sudo ถาวรให้ process ที่รับ request) -->
+  
   <div class="restart-banner" x-show="restart.info && restart.info.pending_count > 0" x-cloak>
     <div class="restart-banner-head">
       <div class="restart-banner-title">
@@ -410,7 +404,7 @@
     </div>
   </div>
 
-  <!-- ตรวจแล้วไม่มีอะไรค้าง: บอกสั้น ๆ ให้รู้ว่า "ตรวจแล้วจริง" ไม่ใช่แค่ยังไม่ได้ตรวจ -->
+  
   <div class="restart-ok" x-show="restart.info && restart.info.ok && restart.info.pending_count === 0" x-cloak>
     ทุก service ใช้ค่าล่าสุดแล้ว
     (ตรวจเมื่อ <span x-text="restart.info ? formatTime(restart.info.checked_at) : ''"></span>)
@@ -445,8 +439,7 @@
         <span class="test-result-text"
               x-text="testResults[group.name] ? testResults[group.name].message : ''"></span>
 
-        <!-- ผลทดสอบ LINE คืน basicId ของ OA มาด้วย — ถ้ายังไม่ได้กรอกช่อง LINE OA ID
-             ให้กดเติมจากค่าที่ยืนยันแล้วได้เลย ไม่ต้องไปหาเองใน LINE Console -->
+        
         <button class="btn-mini" style="margin-left: 8px;"
                 x-show="canFillOaId()" @click="fillOaId()">ใส่ค่านี้ในช่อง LINE OA ID</button>
       </div>
@@ -459,15 +452,13 @@
             <span class="set-tag saved" x-show="item.is_overridden && item.is_set">ตั้งไว้แล้ว</span>
             <span class="set-tag env" x-show="!item.is_overridden && item.is_set && item.from_env"
                   :title="'ยังใช้ค่าจาก ' + item.env_name + ' ใน .env'">จาก .env</span>
-            <!-- ไม่มีทั้งค่าที่ตั้งไว้และตัวแปรใน .env = ค่าตั้งต้นในโค้ด — ป้ายต้องไม่ชี้ไปที่
-                 .env ไม่งั้นเปิดไฟล์ไปหาแล้วไม่เจอคีย์นั้น -->
+            
             <span class="set-tag env" x-show="!item.is_overridden && item.is_set && !item.from_env"
                   title="ยังไม่มีใครตั้งค่านี้ ระบบใช้ค่าตั้งต้นของตัวเองอยู่">ค่าตั้งต้น</span>
             <span class="set-tag empty" x-show="!item.is_set">ยังไม่ได้ตั้ง</span>
           </div>
 
-          <!-- คีย์ที่แก้ผ่าน popup (รหัส Redis ของ Client Server) — ไม่ให้พิมพ์ทับในแถวได้เลย
-               เพราะต้องยืนยันรหัสเดิมและอ่านคำเตือนว่าต้องตามไปทำอะไรต่อ ก่อนจะเปลี่ยน -->
+          
           <template x-if="item.modal_change">
             <div class="set-input-row">
               <div class="set-masked" x-text="item.value || 'ยังไม่ได้ตั้งค่า'"></div>
@@ -476,15 +467,11 @@
             </div>
           </template>
 
-          <!-- ค่าที่มีรายชื่อให้เลือก (Model ของ Gemini) — เลือกเอาไม่ต้องพิมพ์ เพราะชื่อโมเดล
-               พิมพ์ผิดนิดเดียวก็ 404 · รายชื่อจริงมาจากคีย์ที่ตั้งไว้ (ปุ่มโหลดรายชื่อใหม่) -->
+          
           <template x-if="!item.modal_change && item.choices.length">
             <div>
               <div class="set-input-row">
-                <!-- x-effect: Alpine ตั้งค่าให้ <select> ก่อน x-for สร้าง <option> ลูกเสร็จ
-                     ค่าที่ตั้งจึงหลุดแล้วเบราว์เซอร์ตกไปโชว์ตัวแรก (บทเรียนเดียวกับช่อง
-                     "แสดงหน้าละ" ใน alerts.html) — applySelectValue ตั้งค่าซ้ำหลัง render
-                     ทุกครั้งที่รายชื่อหรือค่าที่เลือกเปลี่ยน ช่องจึงตรงกับค่าที่จะบันทึกเสมอ -->
+                
                 <select class="form-input" x-model="selects[item.key]"
                         @change="onSelectChange(item, $event.target.value)"
                         x-effect="applySelectValue(item, $el)">
@@ -501,7 +488,7 @@
                 </button>
               </div>
 
-              <!-- เผื่อโมเดลที่ยังไม่โผล่ในรายชื่อ — จะได้ไม่ตันถ้า Google ออกรุ่นใหม่ -->
+              
               <div class="set-input-row" style="margin-top: 8px;"
                    x-show="selects[item.key] === '__custom__'" x-cloak>
                 <input class="form-input" placeholder="พิมพ์ชื่อโมเดล เช่น gemini-3.5-flash"
@@ -512,10 +499,16 @@
             </div>
           </template>
 
-          <template x-if="!item.modal_change && !item.choices.length">
+          
+          <template x-if="!item.modal_change && !item.choices.length && item.readonly">
             <div class="set-input-row">
-              <!-- ค่า secret: ช่องเริ่มต้นว่างเสมอ + placeholder เป็นค่าที่ mask ไว้
-                   พิมพ์ทับ = ตั้งค่าใหม่ · ไม่แตะ = ไม่ส่งคีย์นั้นไปเลย ของเดิมจึงไม่ถูกเขียนทับ -->
+              <div class="set-masked" x-text="item.value || 'ยังไม่ได้ตั้งค่า'"></div>
+            </div>
+          </template>
+
+          <template x-if="!item.modal_change && !item.choices.length && !item.readonly">
+            <div class="set-input-row">
+              
               <input
                 class="form-input"
                 :type="item.is_secret && !revealed.includes(item.key) ? 'password' : 'text'"
@@ -530,28 +523,22 @@
             </div>
           </template>
 
-          <!-- ใครแก้ค่านี้ล่าสุด — มาจากตาราง app_setting_changes (แถวล่าสุดของคีย์นั้น)
-               ค่าที่ระบบยกมาเองตอน start จะขึ้นเป็น system ไม่ใช่ชื่อคน -->
+          
           <div class="set-hint set-audit" x-show="item.last_changed_by" x-cloak>
             <span x-text="'แก้ล่าสุดโดย ' + item.last_changed_by + ' · ' + formatTime(item.last_changed_at)"></span>
             <button class="btn-mini" @click="openHistory(item)">ดูประวัติ</button>
           </div>
 
-          <!-- ค่าที่ตั้งทับไว้ตั้งแต่ก่อนมีระบบบันทึกประวัติ — บอกให้ชัดว่า "ไม่มีข้อมูล" ไม่ใช่ "ไม่มีใครแก้"
-               (ประวัติเริ่มนับจากการแก้ครั้งถัดไปเป็นต้นไป ย้อนหลังให้ไม่ได้) -->
-          <div class="set-hint set-audit" x-show="item.is_overridden && !item.last_changed_by" x-cloak>
+          
+          <div class="set-hint set-audit" x-show="item.is_overridden && !item.last_changed_by && !item.readonly" x-cloak>
             <span style="opacity: .75;">ตั้งค่าไว้ก่อนมีระบบบันทึกประวัติ — ไม่ทราบผู้แก้</span>
           </div>
 
           <div class="set-hint">
             <span x-text="item.hint"></span>
-            <template x-if="item.is_secret">
-              <span> · ช่องนี้แสดงเฉพาะ 4 ตัวท้ายของค่าที่ตั้งไว้ พิมพ์ทับเพื่อเปลี่ยนเป็นค่าใหม่</span>
-            </template>
           </div>
 
-          <!-- ที่มาของรายชื่อในช่อง Model — อยู่ใต้คำอธิบายปกติ เพราะเป็นสถานะของรายชื่อ
-               ไม่ใช่คำอธิบายว่าค่านี้คืออะไร -->
+          
           <div class="set-hint" x-show="item.key === 'gemini_model' && models.note" x-cloak
                x-text="models.note"></div>
         </div>
@@ -559,9 +546,7 @@
     </div>
   </template>
 
-  <!-- ── รหัส Redis ของ Central (user admin) ──
-       แถวเดียวเหมือนคีย์อื่น แต่กดแล้วเปิด popup — เพราะไม่ใช่ "ค่าที่บันทึกไว้" แต่เป็นการลงมือ
-       แก้ users.acl + .env ของเครื่องนี้จริง จึงไม่รวมกับ save-bar และไม่มีค่าเดิมให้ดู -->
+  
   <div class="set-group redis-group" x-show="!loading && !loadError" x-cloak>
     <div class="set-group-head">
       <div class="set-group-title">Redis ของ Central</div>
@@ -601,9 +586,7 @@
     </button>
   </div>
 
-  <!-- ── popup: เปลี่ยนรหัส Redis ของ Central ──
-       โครงเดียวกับ popup เปลี่ยนรหัสผ่านในหน้า Profile · a11y (focus trap / Escape) ได้จาก
-       ui.js ที่จับจาก DOM (.modal-backdrop > .modal) ไม่ต้องใส่เอง -->
+  
   <div class="modal-backdrop" x-show="redis.open" style="display: none;" @click.self="closeRedisModal()">
     <div class="modal">
       <div class="modal-header">
@@ -611,7 +594,7 @@
         <button class="btn-close" @click="closeRedisModal()" aria-label="ปิด">×</button>
       </div>
 
-      <!-- ก่อนเปลี่ยน -->
+      
       <template x-if="!redis.result">
         <div>
           <div class="modal-warn">
@@ -687,7 +670,7 @@
         </div>
       </template>
 
-      <!-- เปลี่ยนสำเร็จ: รหัสใหม่ไม่เคยถูกส่งกลับมาอีก ปิดหน้านี้แล้วต้องไปอ่านจาก .env เอง -->
+      
       <template x-if="redis.result">
         <div>
           <div class="success-box" style="margin-top: 0;">เปลี่ยนรหัสเรียบร้อยแล้ว</div>
@@ -721,9 +704,7 @@
     </div>
   </div>
 
-  <!-- ── popup: เปลี่ยนค่าที่ตั้ง change_via_modal ไว้ (รหัส Redis ของ Client Server) ──
-       คำเตือน "ต้องทำอะไรต่อ" มาจาก change_warning ของคีย์นั้นใน SETTING_DEFS
-       จะได้อยู่ติดกับนิยามของค่า ไม่ใช่กระจายอยู่ในหน้าเว็บ -->
+  
   <div class="modal-backdrop" x-show="keyModal.open" style="display: none;" @click.self="closeKeyModal()">
     <div class="modal">
       <div class="modal-header">
@@ -773,8 +754,7 @@
     </div>
   </div>
 
-  <!-- ── popup: ประวัติการแก้ค่าตั้งของคีย์เดียว ──
-       ค่าที่เป็น secret ถูก mask ตั้งแต่ตอนบันทึกลง DB แล้ว popup นี้จึงแสดงได้ตรง ๆ -->
+  
   <div class="modal-backdrop" x-show="history.open" style="display: none;" @click.self="closeHistory()">
     <div class="modal" style="--modal-width: 720px;">
       <div class="modal-header">
@@ -1182,7 +1162,8 @@
           }
 
           this.models.list = data.models
-          this.models.note = data.message + ' — รายชื่อจากคีย์ที่ตั้งไว้ตอนนี้'
+          // สำเร็จ = ไม่ต้องมีข้อความบอก (โชว์เฉพาะตอนดึงรายชื่อไม่ได้ ซึ่งเป็นสิ่งที่ต้องรู้)
+          this.models.note = ''
         } catch (err) {
           console.error('ดึงรายชื่อโมเดลไม่สำเร็จ', err)
           this.models.list = []

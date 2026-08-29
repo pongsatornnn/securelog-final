@@ -1,10 +1,7 @@
-"""
-ตัวกลางแปลง SecurityAlert (DB model) ให้เป็น dict ที่ dashboard.html ใช้แสดงผล
-ใช้ร่วมกันทั้งฝั่ง detector (ตอน publish ขึ้น SSE stream) และฝั่ง main.py (ตอนตอบ REST API)
-"""
+"""ตัวกลางแปลง SecurityAlert (DB model) ให้เป็น dict ที่ dashboard.html ใช้แสดงผล"""
 
 from shared import iso_utc
-from severity_cache import get_severity   # re-export: import เดิมจากไฟล์อื่น (`from alerts import get_severity`) ยังใช้ได้ แค่กลายเป็น async
+from severity_cache import get_severity
 
 SECURITY_ALERTS_STREAM_CHANNEL = "security_alerts_stream"
 
@@ -35,12 +32,7 @@ def get_attack_type_label(detection_type: str, mode: str | None) -> str:
 
 
 async def build_alert_summary(alert, agent=None) -> dict:
-    """
-    ใช้กับตารางหลัก (/api/alerts) และ SSE stream (/api/stream/alerts)
-
-    "timestamp" = updated_at (กิจกรรมล่าสุดของเหตุการณ์นี้) ไม่ใช่ created_at เฉยๆ
-    เพราะถ้า attacker ยิงต่อเนื่องแล้ว merge เข้าแถวเดิม อยากให้แถวลอยขึ้นบนสุด/แสดงเวลาล่าสุด
-    """
+    """ใช้กับตารางหลัก (/api/alerts) และ SSE stream (/api/stream/alerts)"""
     updated_at = alert.updated_at or alert.created_at
 
     return {
@@ -50,8 +42,6 @@ async def build_alert_summary(alert, agent=None) -> dict:
         "hostname": (agent.hostname if agent and agent.hostname else alert.agent_id) or "-",
         "host_ip": agent.ip_address if agent else None,
         # ค่าดิบคู่กับป้ายที่อ่านออก — หน้า Alerts ใช้เทียบกับตัวกรองที่เลือกอยู่ ตอนที่ alert
-        # ใหม่วิ่งเข้ามาทาง SSE (ต้องเทียบด้วยค่าเดียวกับที่ส่งไปกรองฝั่ง server ไม่ใช่ป้าย
-        # ที่แปลแล้ว ซึ่งเปลี่ยนได้โดยที่ค่าจริงไม่เปลี่ยน)
         "agent_id": alert.agent_id,
         "detection_type": alert.detection_type,
         "attack_type": get_attack_type_label(alert.detection_type, alert.mode),
@@ -63,9 +53,7 @@ async def build_alert_summary(alert, agent=None) -> dict:
 
 
 async def build_alert_detail(alert, agent=None) -> dict:
-    """
-    ใช้กับหน้ารายละเอียด (/api/alerts/{id}) เพิ่ม window_sec + raw_logs จาก related_logs
-    """
+    """ใช้กับหน้ารายละเอียด (/api/alerts/{id}) เพิ่ม window_sec + raw_logs จาก related_logs"""
     detail = await build_alert_summary(alert, agent)
 
     raw_logs = [

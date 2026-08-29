@@ -1,10 +1,4 @@
-"""
-Cache + DB layer สำหรับ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)
-โครงเดียวกับ rule_cache.py — cache-first, seed default ลง DB ครั้งแรก, เคลียร์ cache เมื่อแก้
-
-ttl_seconds = None หมายถึง "ถาวร" (ไม่หมดอายุ)
-ค่า default เริ่มต้นมาจาก blacklist_policy.BASE_TTL_SECONDS
-"""
+"""Cache + DB layer สำหรับ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)"""
 
 from datetime import datetime, timedelta
 
@@ -25,7 +19,7 @@ ESCALATION_MULTIPLIER_KEY = "escalation_multiplier"
 ESCALATION_MAX_BLOCK_COUNT_KEY = "escalation_max_block_count"
 
 
-TTL_CACHE_TTL_SECONDS = 300  # fallback เผื่อไม่ได้ผ่าน update_ttl() โดยตรง
+TTL_CACHE_TTL_SECONDS = 300
 CACHE_KEY_PREFIX = "blacklist_ttl:"
 
 LOG_PREFIX = "TTL-CACHE"
@@ -36,10 +30,7 @@ def ttl_cache_key(detection_type: str) -> str:
 
 
 async def load_ttl_from_db(detection_type: str) -> dict:
-    """
-    อ่าน TTL จาก DB; ถ้ายังไม่มีแถวนี้ seed ค่า default (จาก blacklist_policy) ลง DB ก่อน
-    คืน {'detection_type', 'ttl_seconds'} โดย ttl_seconds อาจเป็น None (ถาวร)
-    """
+    """อ่าน TTL จาก DB; ถ้ายังไม่มีแถวนี้ seed ค่า default (จาก blacklist_policy) ลง DB ก่อน"""
     async with AsyncSessionLocal() as db:
         row = await get_blacklist_ttl(db, detection_type)
 
@@ -48,10 +39,10 @@ async def load_ttl_from_db(detection_type: str) -> dict:
             snap = snapshot_ttl(detection_type)
 
             if snap is not None:
-                default_ttl = snap.get("ttl_seconds")        # None = ถาวร
+                default_ttl = snap.get("ttl_seconds")
                 description = snap.get("description")
             else:
-                default_ttl = base_ttl_for(detection_type)   # None = ถาวร
+                default_ttl = base_ttl_for(detection_type)
                 description = None
                 if detection_type in BASE_TTL_SECONDS and BASE_TTL_SECONDS[detection_type] is None:
                     description = "ถาวร (default)"
@@ -65,7 +56,7 @@ async def load_ttl_from_db(detection_type: str) -> dict:
 
         data = {
             "detection_type": row.detection_type,
-            "ttl_seconds": row.ttl_seconds,   # None = ถาวร
+            "ttl_seconds": row.ttl_seconds,
         }
 
     cache_set_json(ttl_cache_key(detection_type), data, TTL_CACHE_TTL_SECONDS, log_prefix=LOG_PREFIX)
@@ -73,10 +64,7 @@ async def load_ttl_from_db(detection_type: str) -> dict:
 
 
 async def get_ttl(detection_type: str) -> dict:
-    """
-    Entry point: คืน {'detection_type', 'ttl_seconds'} (ttl_seconds=None -> ถาวร)
-    cache-first แล้ว fallback DB (seed default ถ้ายังไม่มี)
-    """
+    """Entry point: คืน {'detection_type', 'ttl_seconds'} (ttl_seconds=None -> ถาวร)"""
     cached = cache_get_json(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
     if cached is not None:
         return cached
@@ -99,12 +87,7 @@ async def update_ttl(detection_type: str, ttl_seconds: int | None) -> dict:
 
 
 async def get_escalation_policy() -> dict:
-    """
-    นโยบาย escalation ที่ใช้จริงตอนรัน — อ่านจาก app_settings (cache-first เหมือนค่าอื่น)
-    ค่าเสียหาย/ยังไม่เคยตั้ง จะตกกลับไปใช้ค่าตั้งต้นใน blacklist_policy ให้เอง
-
-    multiplier ขั้นต่ำ 1 (= ไม่ทวีคูณ) · max_block_count ขั้นต่ำ 1 (= โดนครั้งที่ 2 ก็ถาวรแล้ว)
-    """
+    """นโยบาย escalation ที่ใช้จริงตอนรัน — อ่านจาก app_settings (cache-first เหมือนค่าอื่น)"""
     return {
         "multiplier": await get_int_setting_async(ESCALATION_MULTIPLIER_KEY, minimum=1),
         "max_block_count": await get_int_setting_async(ESCALATION_MAX_BLOCK_COUNT_KEY, minimum=1),
@@ -112,16 +95,7 @@ async def get_escalation_policy() -> dict:
 
 
 async def compute_expiry(detection_type: str | None, block_count: int) -> datetime | None:
-    """
-    คำนวณ expires_at จาก detection_type + block_count โดยดึง base TTL จาก DB/cache
-    (admin ปรับได้) แล้วคิด escalation ด้วยนโยบายที่ admin ตั้งไว้เช่นกัน
-    คืน datetime หรือ None (ถาวร)
-
-    - manual -> None (ถาวร)
-    - base TTL เป็น None (เช่น sql/cmd injection) -> None
-    - block_count เกิน max_block_count -> None
-    - อื่นๆ -> now + base × multiplier^(count-1)
-    """
+    """คำนวณ expires_at จาก detection_type + block_count โดยดึง base TTL จาก DB/cache"""
     if not detection_type or detection_type == MANUAL_EVENT:
         return None
 

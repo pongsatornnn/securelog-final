@@ -1,8 +1,4 @@
-"""
-เส้นทางจัดการ user (หน้า Manage Users) — เฉพาะ role=admin เข้าได้ (require_admin)
-ต่างจาก /api/change-password (self-service, ต้องรู้รหัสเดิม): นี่คือ admin แก้ให้ user
-คนอื่น (หรือ user ตัวเองก็ได้) โดยไม่ต้องรู้รหัสเดิม เพราะเป็นสิทธิ์ admin ที่ login อยู่แล้ว
-"""
+"""เส้นทางจัดการ user (หน้า Manage Users) — เฉพาะ role=admin เข้าได้ (require_admin)"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +55,6 @@ async def api_create_user(
         raise HTTPException(status_code=409, detail="มี username นี้อยู่แล้ว")
 
     # admin เป็นคนตั้งรหัสแรกให้ (ไม่ใช่รหัสที่เจ้าของบัญชีตั้งเอง) จึงบังคับเปลี่ยนตอน login
-    # ครั้งแรก ให้เจ้าของตั้งรหัสที่รู้คนเดียว (เหมือน reset-password) — รหัสที่ตั้งให้เป็นแค่ชั่วคราว
     created = await create_user(
         db, payload.username, hash_password(payload.password),
         role=payload.role, must_change_password=True,
@@ -79,11 +74,7 @@ async def api_reset_password(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    admin ตั้งรหัสใหม่ให้ user คนไหนก็ได้ (รวมถึงตัวเอง) โดยไม่ต้องรู้รหัสเดิม
-    ตั้ง must_change_password=True เสมอ — เจ้าของบัญชีต้องเปลี่ยนเป็นรหัสที่ตัวเองรู้คนเดียว
-    ก่อนใช้งานหน้าอื่นต่อ (admin ที่ reset ให้ก็รู้รหัสใหม่นี้ชั่วคราวเหมือนกัน)
-    """
+    """admin ตั้งรหัสใหม่ให้ user คนไหนก็ได้ (รวมถึงตัวเอง) โดยไม่ต้องรู้รหัสเดิม"""
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -102,11 +93,7 @@ async def api_delete_user(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    admin ลบ user ออกจากระบบถาวร — กันสองเคสที่ห้ามลบ:
-      1) บัญชี admin เริ่มต้น (id น้อยสุด ที่ seed ตอน DB ว่าง) — กันลบจนไม่เหลือ admin ตั้งต้น
-      2) บัญชีตัวเองที่กำลัง login อยู่ — กันลบทิ้งแล้ว session ค้าง (JWT ยังใช้ได้จนหมดอายุ)
-    """
+    """admin ลบ user ออกจากระบบถาวร — กันสองเคสที่ห้ามลบ:"""
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -133,11 +120,7 @@ async def api_set_user_active(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    admin เปิด/ปิดใช้งาน user — บัญชีที่ถูกปิด (is_active=False) จะ login ไม่ได้ และ session ที่
-    ค้างอยู่ถูกตัดทันทีในรอบ request ถัดไป (require_login เช็ค is_active สดจาก DB) โดยไม่ต้องลบทิ้ง
-    กันปิด: บัญชี admin เริ่มต้น (กันปิดจนไม่เหลือ admin ตั้งต้น) และบัญชีตัวเอง (กันตัดสิทธิ์ตัวเอง)
-    """
+    """admin เปิด/ปิดใช้งาน user — บัญชีที่ถูกปิด (is_active=False) จะ login ไม่ได้ และ session ที่"""
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -164,10 +147,7 @@ async def api_set_user_role(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    admin เปลี่ยน role ของ user (admin <-> user) — มีผลกับ session ที่ค้างอยู่ทันทีรอบ request ถัดไป
-    กันเปลี่ยน: บัญชี admin เริ่มต้น (คงเป็น admin เสมอ) และบัญชีตัวเอง (กัน demote ตัวเองจนหลุดสิทธิ์ admin)
-    """
+    """admin เปลี่ยน role ของ user (admin <-> user) — มีผลกับ session ที่ค้างอยู่ทันทีรอบ request ถัดไป"""
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")

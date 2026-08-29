@@ -201,8 +201,7 @@
       </button>
 
       {% if user.role == 'admin' %}
-      <!-- คืนค่าเฉพาะแท็บ Detection Rules — แท็บความรุนแรง/ระยะเวลา Block เป็นคนละชุดค่า
-           มีปุ่มคืนค่าของตัวเองไม่ได้ในรอบนี้ จึงซ่อนปุ่มไปเลยตอนอยู่แท็บนั้น กันเข้าใจผิด -->
+      
       <button class="btn-secondary" x-show="tab === 'rules'"
               @click="restoreAllRules()" :disabled="isRestoring">
         <span x-show="!isRestoring">↺ คืนค่า default ทั้งหมด</span>
@@ -212,8 +211,7 @@
     </div>
   </div>
 
-  <!-- โหลดทั้ง 2 แท็บตั้งแต่เข้าหน้า แท็บจึงสลับได้ทันทีไม่ต้องรอโหลดใหม่
-       และปุ่ม Refresh รีเฟรชให้ครบทั้ง 2 แท็บ (loadPolicy = severity + TTL) -->
+  
   <div class="tabs" role="tablist">
     <button class="tab" type="button" role="tab" :class="{ 'is-active': tab === 'rules' }"
             :aria-selected="tab === 'rules'" @click="selectTab('rules')">Detection Rules</button>
@@ -222,8 +220,7 @@
             :aria-selected="tab === 'policy'" @click="selectTab('policy')">ความรุนแรง &amp; ระยะเวลา Block</button>
   </div>
 
-  <!-- ทุก panel ใส่ x-cloak ไว้ เพราะ Alpine โหลดแบบ defer — ถ้าไม่ใส่ ทั้ง 2 ชุดจะโผล่
-       ต่อกันลงมาแวบหนึ่งก่อนจะยุบเหลือแท็บเดียวตอน Alpine เริ่มทำงาน -->
+  
   <div role="tabpanel" x-show="tab === 'rules'" x-cloak>
 
   <div class="section-subtitle">เกณฑ์ที่ใช้ตัดสินว่าเป็นการโจมตี</div>
@@ -252,12 +249,10 @@
       </div>
 
       <div class="table-wrap">
-        <!-- ตารางของแต่ละหมวดเป็นคนละ <table> กัน ถ้าปล่อยให้กว้างตามเนื้อหา (ค่าเริ่มต้น)
-             คอลัมน์จะเยื้องกันทุกหมวด เพราะชื่อ rule ยาวไม่เท่ากัน — ตรึงความกว้างด้วย
-             colgroup ชุดเดียวกันทุกตาราง ให้เรียงตรงกันหมดเวลาเลื่อนดูทั้งหน้า -->
+        
         <table class="rule-table stack-table">
           <colgroup>
-            <col>                        <!-- Rule — กินที่ที่เหลือทั้งหมด -->
+            <col>                        
             <col class="col-window">
             <col class="col-threshold">
             <col class="col-status">
@@ -304,13 +299,13 @@
     </div>
   </template>
 
-  </div><!-- /panel rules -->
+  </div>
 
   <div role="tabpanel" x-show="tab === 'policy'" x-cloak>
 
   <div class="section-subtitle">ระดับความรุนแรงและระยะเวลาก่อนปลด block ของแต่ละประเภทการโจมตี</div>
 
-  <!-- นโยบาย escalation — ค่ากลางตัวเดียวที่ใช้กับทุกประเภทการโจมตี จึงอยู่นอกตาราง -->
+  
   <div class="esc-card" x-show="!loadingTtl && !ttlError" x-cloak>
     <div class="esc-title">การยกระดับเมื่อโดนบล็อกซ้ำ (Escalation)</div>
     <div class="esc-desc">
@@ -343,15 +338,7 @@
       {% endif %}
     </div>
 
-    <!-- <div class="esc-preview">
-      ตัวอย่างเมื่อระยะเวลาฐานคือ <b x-text="formatTtl(escSampleBase)"></b>
-      (<span x-text="attackLabel(escSampleKey)"></span>) —
-      <template x-for="step in escPreview()" :key="step.n">
-        <span class="esc-step" :class="{ permanent: step.permanent }">
-          ครั้งที่ <span x-text="step.n"></span> → <b x-text="step.label"></b>
-        </span>
-      </template>
-    </div> -->
+    
   </div>
 
   <div class="state-box" x-show="loadingSeverity || loadingTtl" style="border-radius: 14px;">
@@ -359,8 +346,7 @@
     <div class="state-title">กำลังโหลดค่าความรุนแรงและระยะเวลา Block...</div>
   </div>
 
-  <!-- ตารางนี้รวมค่าจาก 2 endpoint (alert_severity + blacklist_ttl) — ถ้าพลาดฝั่งใดฝั่งหนึ่ง
-       policyError() จะบอกว่าพลาดฝั่งไหน แล้วปุ่มลองใหม่โหลดทั้งคู่พร้อมกัน -->
+  
   <div class="state-box is-error" x-show="!loadingSeverity && !loadingTtl && policyError()" x-cloak style="border-radius: 14px;">
     <div class="state-title">โหลดค่าความรุนแรง / ระยะเวลา Block ไม่สำเร็จ</div>
     <div class="state-detail" x-text="policyError()"></div>
@@ -375,7 +361,7 @@
   <div class="table-wrap" x-show="!loadingSeverity && !loadingTtl && !policyError() && policyItems.length > 0" x-cloak>
     <table class="policy-table stack-table">
       <colgroup>
-        <col>                          <!-- ประเภทการโจมตี — กินที่ที่เหลือทั้งหมด -->
+        <col>                          
         <col class="col-severity">
         <col class="col-ttl">
         <col class="col-updated">
@@ -421,11 +407,11 @@
     </table>
   </div>
 
-  </div><!-- /panel policy -->
+  </div>
 
-  <!-- modal ทั้ง 2 ใบอยู่นอก panel — เป็น overlay เต็มจอที่ไม่ควรถูกซ่อนตามแท็บ -->
+  
 
-  <!-- Edit Policy Modal — แก้ severity กับ TTL ของประเภทการโจมตีเดียวกันในใบเดียว -->
+  
   <div
     class="modal-backdrop"
     x-show="showPolicyEditModal"
@@ -477,7 +463,7 @@
     </div>
   </div>
 
-  <!-- Edit Rule Modal -->
+  
   <div
     class="modal-backdrop"
     x-show="showEditModal"
@@ -510,8 +496,7 @@
       </div>
 
       <div class="modal-actions">
-        <!-- ดันไปชิดซ้าย แยกจากคู่ ยกเลิก/บันทึก — คนละความหมายกัน (อันนี้ลงมือทันที
-             ไม่ได้แก้ค่าในฟอร์มรอกดบันทึก) -->
+        
         <button class="btn-secondary" style="margin-right: auto;"
                 x-show="editing && editing.is_default"
                 @click="restoreOneRule()" :disabled="isSubmitting || isRestoring">

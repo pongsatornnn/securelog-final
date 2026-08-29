@@ -1,8 +1,4 @@
-"""
-เส้นทางดู/เพิ่ม/ปิด/ลบ signature (regex) ของ Signature-based detector
-เขียนผ่าน signature_cache.* ซึ่งเขียน DB แล้วเคลียร์ cache ให้อัตโนมัติ
-detector จะโหลด pattern ใหม่เองในรอบ refresh ถัดไป (ไม่ต้อง restart)
-"""
+"""เส้นทางดู/เพิ่ม/ปิด/ลบ signature (regex) ของ Signature-based detector"""
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -73,12 +69,7 @@ async def api_edit_signature(
     payload: EditSignatureRequest,
     user=Depends(require_admin),
 ):
-    """
-    แก้ pattern/คำอธิบายของ signature เดิม — detection_type เปลี่ยนไม่ได้
-    (ย้ายชนิดให้ลบแล้วเพิ่มใหม่ที่ชนิดปลายทาง)
-
-    detector รับ pattern ใหม่ในรอบ refresh ถัดไปเอง เพราะ update_signature เคลียร์ cache ให้แล้ว
-    """
+    """แก้ pattern/คำอธิบายของ signature เดิม — detection_type เปลี่ยนไม่ได้"""
     pattern = (payload.pattern or "").strip()
 
     if not pattern:
@@ -88,7 +79,6 @@ async def api_edit_signature(
         raise HTTPException(status_code=400, detail="regex ไม่ถูกต้อง compile ไม่ผ่าน")
 
     # ส่งเป็นสตริงเสมอ (ว่างได้) เพื่อให้ "ลบคำอธิบายทิ้ง" ทำได้จริง —
-    # None ในชั้น update_signature แปลว่า "ไม่แตะฟิลด์นี้"
     description = (payload.description or "").strip()
 
     try:
@@ -146,18 +136,12 @@ async def api_delete_signature(
 
 
 # path แบน (ไม่ใช่ /api/signatures/restore-defaults) ด้วยเหตุผลเดียวกับ routes/rules.py
-# — /api/signatures/{signature_id} รับ int จะตอบ 422 ให้ก่อนแทนที่จะตกมาที่ route นี้
 @router.post("/api/signatures_restore_defaults")
 async def api_restore_default_signatures(
     payload: RestoreDefaultSignaturesRequest | None = None,
     user=Depends(require_admin),
 ):
-    """
-    คืนค่า signature ของระบบกลับเป็นชุด default — ไม่ส่ง detection_type = ทำทุกชนิด
-
-    แตะเฉพาะแถวที่ระบบ seed มา (is_default) เท่านั้น: ที่ถูกลบไปกลับมา · ที่ถูกปิดเปิดคืน
-    · ที่ถูกแก้ pattern กลับเป็นของเดิม — **แถวที่แอดมินเพิ่มเองไม่ถูกแตะเลย**
-    """
+    """คืนค่า signature ของระบบกลับเป็นชุด default — ไม่ส่ง detection_type = ทำทุกชนิด"""
     detection_type = payload.detection_type if payload else None
 
     if detection_type and detection_type not in VALID_DETECTION_TYPES:

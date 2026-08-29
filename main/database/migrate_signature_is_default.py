@@ -1,20 +1,4 @@
-"""
-Migration ครั้งเดียว: เพิ่มคอลัมน์ detection_signatures.is_default + backfill ให้แถวเดิม
-
-ใช้กับเครื่องที่เคยรันระบบเวอร์ชันก่อนหน้ามาแล้ว — ตารางเดิมไม่มีคอลัมน์นี้ (Base.metadata
-.create_all สร้างเฉพาะตารางที่ยังไม่มี ไม่ ALTER ตารางเดิมให้) เครื่องที่ติดตั้งใหม่ไม่ต้องรัน
-
-สิ่งที่ทำ:
-  1. ADD COLUMN is_default boolean NOT NULL DEFAULT false (+ index) ถ้ายังไม่มี
-  2. backfill: แถวที่ pattern ตรงกับชุด default ของ detection_type นั้น -> is_default = true
-     ที่เหลือถือว่าแอดมินเพิ่มเอง (คงเป็น false)
-  3. เคลียร์ cache ของทุก detection_type ที่แตะ (กันหน้าเว็บ/detector อ่านค่าเก่าต่ออีก 5 นาที)
-
-ชุด default ที่ใช้เทียบคือชุดเดียวกับที่ seed ใช้จริง (snapshot จาก seed_data.json มาก่อน
-ถ้าไม่มีค่อยใช้ DEFAULT_SIGNATURES ในโค้ด) — ดู signature_cache.default_signature_patterns()
-
-รันด้วย (จากโฟลเดอร์ main/): python -m database.migrate_signature_is_default
-"""
+"""Migration ครั้งเดียว: เพิ่มคอลัมน์ detection_signatures.is_default + backfill ให้แถวเดิม"""
 
 import asyncio
 
@@ -58,7 +42,6 @@ async def migrate() -> None:
             print(f"[{LOG_PREFIX}] เพิ่มคอลัมน์ {TABLE}.{COLUMN} แล้ว")
 
         # ── backfill ──────────────────────────────────────────────────────
-        # ทำทุกครั้งที่รัน (idempotent) — เผื่อเคยรันตอนที่ยังไม่มีข้อมูลครบ
         touched = {}
 
         for detection_type in DEFAULT_SIGNATURES:

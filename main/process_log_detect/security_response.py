@@ -1,10 +1,4 @@
-"""
-การตอบสนองอัตโนมัติเมื่อ detector เจอการโจมตี — ใช้ร่วมกันทุก detector (auth/web/firewall)
-- handle_attack_ip: ตัดสินใจ block/blacklist ตาม whitelist/blacklist/expiry
-- publish_*: broadcast คำสั่งไปทุก Agent ผ่าน Redis channel `global_commands`
-  (payload รูปแบบเดียวกับ publish_agent_command ใน routes/blacklist.py
-   เพื่อให้ agent_core.py ฝั่ง agent ใช้ handler เดิมได้ทุกทาง)
-"""
+"""การตอบสนองอัตโนมัติเมื่อ detector เจอการโจมตี — ใช้ร่วมกันทุก detector (auth/web/firewall)"""
 
 import ipaddress
 import time
@@ -28,26 +22,14 @@ GLOBAL_COMMAND_CHANNEL = "global_commands"
 
 
 # IP ที่ห้าม block เด็ดขาด — ไม่ใช่ address ของเครื่องจริงสักเครื่อง แต่โผล่ในทราฟฟิก
-# broadcast ปกติของวง (เช่น DHCP DISCOVER ที่ส่งจาก SRC=0.0.0.0 ไป DST=255.255.255.255
-# ตอนเครื่องยังไม่ได้ IP) ถ้า firewall ปฏิเสธแพ็กเก็ตพวกนี้ถี่ ๆ detector จะนับเป็น
-# port scan / deny flood แล้วสั่ง block ทั้งที่ไม่มีผู้โจมตีจริง
-#
-# และต่อให้ block ไปก็ไม่ได้ประโยชน์: rule `ufw deny from 0.0.0.0` ไม่ตรงกับ IP ของใครเลย
-# ได้แต่ขยะใน blacklist + rule ค้างในไฟร์วอลล์ของทุก agent
 NON_BLOCKABLE_IPS = frozenset({
-    "0.0.0.0",          # unspecified — ต้นทางของเครื่องที่ยังไม่ได้รับ IP (DHCP/บูตใหม่)
-    "255.255.255.255",  # limited broadcast — ปลายทางของ broadcast ทั้งวง
+    "0.0.0.0",
+    "255.255.255.255",
 })
 
 
 def is_non_blockable_ip(ip: str | None) -> bool:
-    """
-    True ถ้า ip เป็น address พิเศษที่ห้าม block (unspecified/broadcast)
-
-    เทียบหลังแปลงผ่าน ipaddress แล้ว เพื่อให้รูปเขียนที่ต่างกันแต่หมายถึง address
-    เดียวกัน (เช่น "0.0.0.0 " มีช่องว่างติดมา) ถูกจับได้ด้วย
-    ip ผิดรูปถือว่าไม่ตรง (ปล่อยให้ตัวตรวจรูปแบบ IP ของแต่ละจุดจัดการเอง)
-    """
+    """True ถ้า ip เป็น address พิเศษที่ห้าม block (unspecified/broadcast)"""
     if not ip:
         return False
 
@@ -58,11 +40,7 @@ def is_non_blockable_ip(ip: str | None) -> bool:
 
 
 def _severity_rank(ttl_seconds: int | None) -> float:
-    """
-    อันดับความรุนแรงของการ block จาก TTL: None (ถาวร) = รุนแรงสุด (∞),
-    ไม่งั้นยิ่ง TTL (วินาที) มาก = block นานกว่า = รุนแรงกว่า
-    ใช้ตัดสินว่า detection ชนิดใหม่ 'รุนแรงกว่า' block เดิมของ IP ที่ยังโดนอยู่ไหม
-    """
+    """อันดับความรุนแรงของการ block จาก TTL: None (ถาวร) = รุนแรงสุด (∞),"""
     return float("inf") if ttl_seconds is None else float(ttl_seconds)
 
 
@@ -80,9 +58,7 @@ def base_command_payload(command: str, ip_address: str, event: str | None, sourc
 
 
 def publish_alert_event(alert_summary: dict) -> None:
-    """
-    ส่ง alert ที่เพิ่งบันทึกลง DB ขึ้น Redis pub/sub เพื่อให้ dashboard (SSE) เห็นแบบ real-time
-    """
+    """ส่ง alert ที่เพิ่งบันทึกลง DB ขึ้น Redis pub/sub เพื่อให้ dashboard (SSE) เห็นแบบ real-time"""
     publish_json(SECURITY_ALERTS_STREAM_CHANNEL, alert_summary, log_prefix="ALERT-STREAM")
 
 
@@ -113,10 +89,7 @@ def publish_unblock_ip_command(ip_address: str, event: str = "expired") -> dict:
 
 
 def publish_sync_whitelist_command(ip_addresses: list[str]) -> dict:
-    """
-    Broadcast whitelist ปัจจุบันไปทุก Agent ให้ใช้เป็น never-block list
-    (ตอน agent reconnect ได้ผ่าน process_agent อยู่แล้ว อันนี้เสริมให้ real-time ตอน admin แก้)
-    """
+    """Broadcast whitelist ปัจจุบันไปทุก Agent ให้ใช้เป็น never-block list"""
     payload = {
         "command": "sync_whitelist",
         "ips": ip_addresses,
@@ -148,20 +121,7 @@ async def broadcast_whitelist_from_db() -> None:
 
 
 async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
-    """
-    ตัดสินใจว่า source_ip ที่ detector ตรวจจับได้ควรถูก block หรือไม่
-    ใช้ร่วมกันได้ทั้ง auth / web / firewall detector
-
-    ลำดับการเช็ค:
-    1. ไม่มี source_ip (เช่น sudo failed ไม่มี IP) -> ข้าม ไม่ block
-    2. เป็น address พิเศษ (0.0.0.0 / broadcast) -> ห้าม block เด็ดขาด เก็บแค่ alert
-    3. อยู่ใน Whitelist -> ไม่ block แค่ปล่อยให้ alert เตือนอย่างเดียว
-    4. อยู่ใน Blacklist และยัง active -> ไม่ block ซ้ำ
-    5. เคยอยู่ใน Blacklist แต่หมดอายุไปแล้ว -> re-block + escalate (ban นานขึ้น)
-    6. ที่เหลือ (ไม่เคยมี) -> เพิ่มเข้า Blacklist + broadcast block_ip ไปทุก Agent
-
-    return: "no_ip" | "not_blockable" | "whitelisted" | "already_blacklisted" | "blocked"
-    """
+    """ตัดสินใจว่า source_ip ที่ detector ตรวจจับได้ควรถูก block หรือไม่"""
     if not source_ip:
         return "no_ip"
 
@@ -185,8 +145,6 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
                 return "already_blacklisted"
 
             # ยัง block อยู่แต่ไม่ถาวร -> เทียบความรุนแรง (base TTL) ของชนิดใหม่กับของเดิม
-            # ใหม่รุนแรงกว่า (นานกว่า/ถาวร) -> upgrade event+expiry ให้ block นานขึ้นตามชนิดที่รุนแรงสุด
-            # (ไม่สั่ง block ซ้ำที่ agent เพราะ IP ถูก block อยู่แล้ว — แค่ยืด expiry ให้ sweeper ปลดช้าลง)
             current_ttl = (await get_ttl(blacklist_ip.event)).get("ttl_seconds")
             new_ttl = (await get_ttl(detection_type)).get("ttl_seconds")
 

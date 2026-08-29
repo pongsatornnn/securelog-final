@@ -620,13 +620,10 @@
 
 {% block content %}
 
-<!-- ไม่ต้องมี x-init: Alpine เรียก init() ของ x-data ให้เองอยู่แล้ว (ใส่ด้วยจะรันสองรอบ) -->
+
 <div x-data="alertsApp()">
 
-  <!-- ไอคอนที่ใช้เฉพาะหน้านี้ (ปฏิทินของช่องวันที่ + ลูกศรเปลี่ยนหน้า) — นิยามครั้งเดียวแล้ว
-       อ้างด้วย <use> เหมือนชุดไอคอนเมนูใน base.html แต่ไม่ต้องไปเพิ่มใน sprite รวม
-       เพราะไม่มีหน้าอื่นใช้ · เป็น SVG ไม่ใช่ตัวอักษร ‹ › เพราะ glyph พวกนั้นเล็กและ
-       ขนาด/ตำแหน่งเปลี่ยนไปตามฟอนต์ที่เครื่องนั้นมี คุมให้เท่ากันทุกเครื่องไม่ได้ -->
+  
   <svg style="display:none" aria-hidden="true" focusable="false">
     <symbol id="ico-calendar" viewBox="0 0 16 16">
       <rect x="2" y="3.2" width="12" height="10.3" rx="1.3"/>
@@ -643,8 +640,7 @@
   <div class="page-title">Alerts</div>
   <div class="page-subtitle">เหตุการณ์โจมตีที่ระบบตรวจพบ</div>
 
-  <!-- ตัด section-title "การโจมตีที่ตรวจพบ" ออก — ซ้ำกับ subtitle ของหน้าที่บอกไปแล้ว
-       เหลือไว้เฉพาะสถานะการเชื่อมต่อกับจำนวนรายการซึ่งเป็นข้อมูลที่หัวข้อบอกแทนไม่ได้ -->
+  
   <div class="header-row">
     <div class="title-status-group">
       <div class="status">
@@ -655,15 +651,13 @@
     </div>
   </div>
 
-  <!-- ตัวกรองทั้งหมดยิงไปกรองที่ server (ไม่ใช่ซ่อนแถวที่โหลดมาแล้ว) เพราะตารางเอามาแค่
-       200 แถวล่าสุด — กรองทีหลังจะหาของย้อนหลังไม่เจอ -->
+  
   <div class="filter-bar">
     <div class="filter-field">
       <label class="filter-label" for="filter-start">ตั้งแต่วันที่</label>
 
       <div class="date-field">
-        <!-- ไม่ใช้ x-model เพราะต้องจัดรูปแบบข้อความระหว่างพิมพ์เอง (ลำดับการทำงานระหว่าง
-             listener ของ x-model กับของเราไม่ได้การันตี) — bind :value แล้วเขียนกลับเองแทน -->
+        
         <input class="form-input" type="text" id="filter-start"
                :value="dateText.start" :class="{ 'is-invalid': dateInvalid.start }"
                @input="maskDate('start', $event.target)"
@@ -739,20 +733,18 @@
               :disabled="!hasFilter" @click="clearFilters()">ล้างตัวกรอง</button>
     </div>
 
-    <!-- พิมพ์วันที่ที่ไม่มีจริง (31/02/26) หรือรูปแบบผิด — ถ้าเงียบไว้ผู้ใช้จะเข้าใจว่ากรองไปแล้ว
-         ทั้งที่ตารางยังเป็นผลของตัวกรองชุดเดิมอยู่ -->
+    
     <div class="date-hint" x-show="dateInvalid.start || dateInvalid.end" x-cloak>
       วันที่ที่พิมพ์ไม่ถูกต้อง — ใช้รูปแบบ dd/mm/yy (เช่น 31/07/26) หรือกดไอคอนปฏิทินเลือกแทน
     </div>
 
-    <!-- ช่วงวันกลับหัวได้ผลลัพธ์ว่างเสมอ ซึ่งหน้าตาเหมือน "ไม่มีการโจมตี" เป๊ะ ๆ — บอกไปตรง ๆ
-         ว่าเป็นเพราะตัวกรอง (ปฏิทินมี min/max กันไว้แล้ว แต่พิมพ์เองยังเลี่ยงได้) -->
+    
     <div class="filter-note" x-show="filters.start && filters.end && filters.start > filters.end" x-cloak>
       วันที่เริ่มต้นอยู่หลังวันที่สิ้นสุด — ช่วงเวลานี้ไม่มีทางมีข้อมูล
     </div>
   </div>
 
-  <!-- อยู่หน้า 2 ขึ้นไปแล้วมีของใหม่เข้ามา — ไม่แทรกให้เอง ให้กดกลับหน้า 1 เอง -->
+  
   <div class="new-banner" x-show="newWhileAway > 0" x-cloak>
     <div class="dot" aria-hidden="true"></div>
     <span x-text="'มี ' + newWhileAway + ' เหตุการณ์ใหม่เข้ามาระหว่างที่ดูหน้าอื่นอยู่'"></span>
@@ -760,11 +752,7 @@
   </div>
 
   <div class="table-wrap" :class="{ 'is-busy': loading && alerts.length > 0 }">
-    <!-- 4 สถานะแยกกัน — "ยังไม่พบการโจมตี" ต้องหมายความว่า "ถามระบบแล้วและไม่มีจริง"
-         เท่านั้น ห้ามใช้ซ้ำกับตอนที่ยังโหลดไม่เสร็จ ถาม API ไม่ได้ หรือถูกตัวกรองกรองออกหมด
-
-         สปินเนอร์เต็มกล่องเฉพาะตอนที่ยังไม่มีแถวให้ดู — ระหว่างเปลี่ยนหน้าใช้การหรี่ตาราง
-         เดิมแทน (.is-busy) หน้าจะได้ไม่กระโดด -->
+    
     <div class="state-box" x-show="loading && alerts.length === 0">
       <div class="state-spinner" aria-hidden="true"></div>
       <div class="state-title">กำลังโหลดประวัติการโจมตี...</div>
@@ -778,7 +766,7 @@
       <button class="btn-retry" type="button" @click="loadHistory()">ลองใหม่อีกครั้ง</button>
     </div>
 
-    <!-- ว่างเพราะตัวกรอง กับ ว่างเพราะไม่มีการโจมตีจริง ๆ ต้องอ่านออกว่าเป็นคนละเรื่อง -->
+    
     <div class="state-box" x-show="!loading && !loadError && alerts.length === 0 && hasFilter" x-cloak>
       <div class="state-title">ไม่มีเหตุการณ์ที่ตรงกับตัวกรอง</div>
       <div class="state-detail">
@@ -809,8 +797,7 @@
         <template x-for="(alert, index) in alerts" :key="alert.id || index">
           <tr :class="{ 'new-row': alert.isNew, 'unread': !$store.alerts.isOpened(alert.id) }">
             <td>
-              <!-- ครอบด้วย .unread-slot ที่กว้างคงที่ เพื่อให้เวลาของทุกแถวตรงกัน
-                   ไม่ว่าจุดจะโชว์อยู่หรือไม่ -->
+              
               <span class="unread-slot">
                 <span class="unread-dot"
                       x-show="!$store.alerts.isOpened(alert.id)"
@@ -848,8 +835,7 @@
     </table>
   </div>
 
-  <!-- ซ่อนทั้งแถบเมื่อไม่มีอะไรให้แบ่งหน้า (ผลลัพธ์ว่าง) — ปุ่มที่กดไม่ได้เรียงอยู่เฉย ๆ
-       ใต้ข้อความ "ไม่พบการโจมตี" ไม่ได้ให้ข้อมูลอะไรเพิ่ม -->
+  
   <div class="pager" x-show="total > 0" x-cloak>
     <div class="pager-summary">
       <span class="pager-page" x-text="pageText"></span>
@@ -863,7 +849,7 @@
       </button>
 
       <template x-for="(item, index) in pageList" :key="index">
-        <!-- '…' ไม่ใช่ปุ่ม: ต้องไม่โฟกัสได้และไม่ประกาศเป็นปุ่มกับ screen reader -->
+        
         <template x-if="item === '…'">
           <span class="pager-gap" aria-hidden="true">…</span>
         </template>
@@ -886,10 +872,7 @@
 
     <div class="pager-size">
       <label for="pager-per-page">แสดงหน้าละ</label>
-      <!-- $nextTick จำเป็น ไม่ใช่ของเกิน: Alpine ผูก x-model กับ <select> ตัวนี้ "ก่อน" ที่
-           x-for จะสร้าง <option> ลูก ตอนนั้น select ยังไม่มีตัวเลือกให้จับคู่ ค่าที่ตั้งจึงหลุด
-           แล้วเบราว์เซอร์ตกไปโชว์ตัวแรก (25) ทั้งที่ตารางแสดงตามค่าจริง — เลื่อนไปตั้งค่า
-           หลัง render ลูกเสร็จ ตัวเลขในช่องจึงตรงกับจำนวนแถวที่เห็นเสมอตั้งแต่โหลดหน้า -->
+      
       <select class="form-input" id="pager-per-page"
               x-model.number="perPage" @change="changePerPage()"
               x-init="$nextTick(() => $el.value = perPage)">
@@ -902,8 +885,7 @@
 
   <div class="modal-backdrop" x-show="showModal" style="display: none;" @click.self="showModal = false">
     <div class="modal">
-      <!-- หัวเรื่องเป็นชื่อการโจมตีจริง ๆ พร้อมป้ายความรุนแรง — เดิมเป็นคำว่า
-           "รายละเอียดการโจมตี" เฉย ๆ ซึ่งไม่ได้บอกอะไรเลยว่ากำลังดูเคสอะไรอยู่ -->
+      
       <div class="modal-header">
         <div class="detail-head">
           <div class="modal-title"
@@ -931,7 +913,7 @@
       <template x-if="detail">
         <div>
 
-          <!-- สรุปเหตุการณ์ใน 1 บรรทัด: ใครยิง -> เข้าเครื่องไหน -> กี่ครั้ง -->
+          
           <div class="detail-sub">
             <span class="strong mono" x-text="detail.source_ip || 'ไม่ทราบ IP'"></span>
             <span class="detail-sep" aria-hidden="true">→</span>
@@ -996,7 +978,7 @@
               {% endif %}
             </div>
 
-            <!-- ยังไม่เคยกดวิเคราะห์: ไม่แสดงอะไรเลยจนกว่าผู้ใช้จะกดเอง (ไม่วิเคราะห์อัตโนมัติ) -->
+            
             {% if user.role == 'admin' or user.role == 'user' %}
             <div class="ai-empty" x-show="!detail.ai_summary && !aiLoading && !aiError">
               กดวิเคราะห์เพื่อใช้ AI สรุปเหตุการณ์จาก Log ที่เกิดขึ้น
@@ -1011,8 +993,7 @@
 
             <template x-if="detail.ai_summary">
               <div>
-                <!-- x-text (ไม่ใช่ x-html) + pre-wrap: ข้อความจาก AI ที่มี log ปนอยู่
-                     ต้องไม่ถูก render เป็น HTML -->
+                
                 <div class="ai-result" x-text="detail.ai_summary"></div>
 
                 <div class="ai-meta">

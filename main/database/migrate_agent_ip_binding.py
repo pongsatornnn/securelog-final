@@ -1,22 +1,4 @@
-"""
-Migration ครั้งเดียว: เพิ่มคอลัมน์สำหรับผูก IP เข้ากับ Agent
-
-ใช้กับเครื่องที่เคยรันระบบเวอร์ชันก่อนหน้ามาแล้ว — `Base.metadata.create_all()` สร้างได้แค่
-"ตารางที่ยังไม่มี" ไม่แก้ตารางที่มีอยู่แล้ว คอลัมน์ใหม่ใน models.py จึงไม่ขึ้นเองบน DB เก่า
-(เครื่องที่ติดตั้งใหม่ไม่ต้องรัน — create_all สร้างครบตั้งแต่แรก)
-
-สิ่งที่เพิ่มในตาราง agents:
-  - ip_interface   : ชื่อ interface ที่ agent ใช้เป็นแหล่งของ IP (เลือกตอน setup.sh)
-  - pending_ip     : IP ล่าสุดที่ถูกปฏิเสธเพราะไม่ตรงกับ ip_address
-  - pending_ip_at  : เวลาที่ถูกปฏิเสธครั้งล่าสุด
-
-ไม่แตะ `ip_address` ของ agent เดิม — ค่าที่แอดมินกรอกไว้จะกลายเป็น "IP ที่ผูกไว้" ทันที
-agent ตัวไหนที่ ip_address ยังว่างจะถูกผูกอัตโนมัติจาก IP ที่รายงานมาครั้งแรก (TOFU)
-
-ใช้ IF NOT EXISTS ทุกคำสั่ง จึงรันซ้ำได้โดยไม่พัง (idempotent)
-
-รันด้วย (จากโฟลเดอร์ main/): python -m database.migrate_agent_ip_binding
-"""
+"""Migration ครั้งเดียว: เพิ่มคอลัมน์สำหรับผูก IP เข้ากับ Agent"""
 
 import asyncio
 
@@ -60,7 +42,6 @@ async def migrate() -> None:
         await db.commit()
 
         # สรุปสถานะการผูก IP ของ agent ที่มีอยู่ ให้เห็นว่าหลัง migration ตัวไหนล็อกแล้ว
-        # ตัวไหนยังรอผูกอัตโนมัติรอบแรก
         rows = (
             await db.execute(
                 text("SELECT agent_id, ip_address FROM agents ORDER BY agent_id")

@@ -1,13 +1,4 @@
-"""
-Detector: SSH brute force + Sudo failed จาก normalized auth log
-- SSH Failed password -> นับ brute force ตาม source_ip
-- Sudo failed         -> นับ failed sudo ตาม agent_id + username (sudo ไม่มี IP)
-
-window/threshold ไม่ hardcode — ดึงจาก DB ผ่าน rule_cache (rule_key:
-ssh_brute_force / sudo_failed) แก้ผ่าน manage_rules.py
-
-รันด้วย: python -m process_log_detect.auth_log_detect
-"""
+"""Detector: SSH brute force + Sudo failed จาก normalized auth log"""
 
 import json
 import asyncio
@@ -32,8 +23,6 @@ MAX_EVENTS_PER_KEY = 200
 
 
 # ============================================================
-# Runtime memory
-# ============================================================
 
 # SSH failed by source IP
 failed_attempts_by_ip: dict[str, deque] = defaultdict(deque)
@@ -43,18 +32,9 @@ sudo_failed_by_user: dict[str, deque] = defaultdict(deque)
 
 
 # ============================================================
-# SSH failed password helper
-# ============================================================
 
 def is_failed_password_log(log: dict) -> bool:
-    """
-    นับเฉพาะ SSH Failed password เท่านั้น
-
-    เหตุผล:
-    - ไม่เอา Invalid user แยกมานับ เพราะ normalizer ควรตัดออกแล้ว
-    - ไม่เอา sudo failed / auth failed แบบอื่นมานับรวมกับ SSH brute force
-    - ใช้ field ที่ normalize แล้วเป็นหลัก และใช้ raw_message เป็นตัว confirm
-    """
+    """นับเฉพาะ SSH Failed password เท่านั้น"""
     raw_message = str(log.get("raw_message", ""))
 
     if log.get("category") != "auth":
@@ -81,7 +61,6 @@ def get_source_ip(log: dict) -> str | None:
         return str(source_ip)
 
     # ปกติ normalize ควรมี source_ip แล้ว
-    # fallback นี้กันกรณี raw message มาแต่ field source_ip หาย
     raw_message = str(log.get("raw_message", ""))
     marker = " from "
 
@@ -96,21 +75,9 @@ def get_source_ip(log: dict) -> str | None:
 
 
 # ============================================================
-# Sudo helper
-# ============================================================
 
 def is_sudo_failed_log(log: dict) -> bool:
-    """
-    ตรวจ sudo failed แยกจาก SSH brute force
-
-    ตัวอย่างที่นับ:
-    - sudo: pam_unix(sudo:auth): authentication failure ...
-    - sudo: jj : 3 incorrect password attempts ...
-
-    ตัวอย่างที่ไม่นับ:
-    - sudo command สำเร็จ เช่น COMMAND=/bin/bash
-    - SSH Failed password
-    """
+    """ตรวจ sudo failed แยกจาก SSH brute force"""
     if log.get("category") != "auth":
         return False
 
@@ -134,10 +101,7 @@ def get_sudo_key(log: dict) -> str | None:
 
 
 def get_sudo_attempts(log: dict) -> int:
-    """
-    ถ้า normalizer เจอ "3 incorrect password attempts" จะมี attempts=3
-    ถ้าไม่มี ให้ถือว่าเป็น 1 event
-    """
+    """ถ้า normalizer เจอ "3 incorrect password attempts" จะมี attempts=3"""
     try:
         attempts = int(log.get("attempts") or 1)
     except Exception:
@@ -160,14 +124,9 @@ def clear_sudo_count(key: str) -> None:
 
 
 # ============================================================
-# Print helper
-# ============================================================
 
 def print_counted_ssh_log(ip: str, count: int, log: dict) -> None:
-    """
-    แสดงทุก SSH Failed password ที่เอามานับ
-    format หลัก: IP [x.x.x.x] bruteforce count 1
-    """
+    """แสดงทุก SSH Failed password ที่เอามานับ"""
     print(
         f"IP [{ip}] bruteforce count {count} | "
         f"agent={log.get('agent_id')} | "
@@ -247,12 +206,9 @@ def print_sudo_alert(
 
 
 # ============================================================
-# Detection logic: SSH
-# ============================================================
 
 def process_ssh_failed_password(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     # เอาเฉพาะ SSH Failed password เท่านั้น
-    # sudo failed / invalid user เดี่ยว ๆ / session opened จะไม่ถูกนับ
     if not is_failed_password_log(log):
         return
 
@@ -315,8 +271,6 @@ def process_ssh_failed_password(log: dict, loop: asyncio.AbstractEventLoop) -> N
 
 
 # ============================================================
-# Detection logic: Sudo
-# ============================================================
 
 def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     if not is_sudo_failed_log(log):
@@ -336,7 +290,6 @@ def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     sudo_threshold = sudo_rule["threshold"]
 
     # ถ้า log บอกว่า 3 incorrect password attempts
-    # ให้แตกเป็น 3 event เพื่อให้ count ตรงกับจำนวน attempt จริง
     for attempt_no in range(1, attempts + 1):
         event = {
             "ts": now_ts,
@@ -381,19 +334,11 @@ def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
 
 
 def process_auth_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
-    """
-    Main auth router
-
-    แยก rule ชัดเจน:
-    - SSH Failed password -> นับ brute force ตาม source_ip
-    - Sudo failed         -> นับ failed sudo ตาม agent_id + username
-    """
+    """Main auth router"""
     process_ssh_failed_password(log, loop)
     process_sudo_failed(log, loop)
 
 
-# ============================================================
-# Main worker
 # ============================================================
 
 def start_auth_detector() -> None:

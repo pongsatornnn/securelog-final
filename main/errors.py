@@ -1,15 +1,4 @@
-"""
-หน้า error ของระบบ — แปลง HTTPException/exception ที่หลุดออกมา ให้เป็น
-
-  * หน้า HTML (templates/error.html) เมื่อผู้ใช้เปิดผ่าน browser เช่น พิมพ์ URL ผิด
-    หรือกดลิงก์ดาวน์โหลด agent ที่หมดอายุ — เดิมเจอ JSON ดิบ {"detail": "..."} เต็มจอ
-    หน้านี้แสดงแค่หมายเลข status ไม่บอกสาเหตุ/คำแนะนำใด ๆ
-  * JSON เหมือนเดิม เมื่อเป็น endpoint /api/* ที่ frontend เรียกด้วย fetch
-
-สำคัญ: redirect ของระบบ auth (dependencies.py ใช้ HTTPException 303 + header Location)
-ต้องผ่าน handler นี้ไปเป็น RedirectResponse เหมือนเดิม ไม่งั้นทุกหน้าที่ยังไม่ล็อกอิน
-จะกลายเป็นหน้า error แทนที่จะเด้งไป /login
-"""
+"""หน้า error ของระบบ — แปลง HTTPException/exception ที่หลุดออกมา ให้เป็น"""
 
 import logging
 
@@ -28,12 +17,7 @@ INTERNAL_ERROR_DETAIL = "ระบบทำงานผิดพลาดระ�
 
 
 def _wants_html(request: Request) -> bool:
-    """
-    หน้าเว็บ (browser navigation) รับ HTML ส่วน fetch ของ frontend เรียกแต่ /api/* และรับ JSON
-
-    เช็ค path ก่อน Accept เพราะ browser บาง context ส่ง Accept แบบ */* มา — endpoint /api/*
-    ต้องเป็น JSON เสมอไม่ว่ายังไง ไม่งั้น error handling ฝั่ง JS (res.json()) จะพังทั้งหมด
-    """
+    """หน้าเว็บ (browser navigation) รับ HTML ส่วน fetch ของ frontend เรียกแต่ /api/* และรับ JSON"""
     path = request.url.path
 
     if path.startswith("/api/") or path.startswith("/line/webhook"):
@@ -69,10 +53,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """
-    บั๊กที่หลุดออกมาถึงตรงนี้ = 500 — เขียน traceback ลง log ฝั่งเซิร์ฟเวอร์ให้ครบ
-    แต่ไม่ส่งรายละเอียดออกไปหน้าเว็บ (traceback บอกโครงสร้างภายในให้ผู้โจมตี)
-    """
+    """บั๊กที่หลุดออกมาถึงตรงนี้ = 500 — เขียน traceback ลง log ฝั่งเซิร์ฟเวอร์ให้ครบ"""
     logger.exception("unhandled error ที่ %s %s", request.method, request.url.path)
 
     if _wants_html(request):

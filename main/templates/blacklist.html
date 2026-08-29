@@ -153,7 +153,7 @@
   </div>
 
   <div class="table-wrap">
-    <!-- 3 สถานะแยกกัน — เดิมโชว์ "ยังไม่มี IP ใน Blacklist" ตั้งแต่วินาทีแรกและตอน API พังด้วย -->
+    
     <div class="state-box" x-show="loading">
       <div class="state-spinner" aria-hidden="true"></div>
       <div class="state-title">กำลังโหลด Blacklist...</div>
@@ -167,7 +167,7 @@
 
     <div class="state-box" x-show="!loading && !loadError && blacklist.length === 0" x-cloak>
       <div class="state-title">ยังไม่มี IP ใน Blacklist</div>
-      <!-- <div class="state-detail">ระบบจะเพิ่มให้เองเมื่อตรวจพบการโจมตี หรือกด “เพิ่ม Blacklist” เพื่อบล็อกเอง</div> -->
+      
     </div>
 
     <table x-show="!loading && !loadError && blacklist.length > 0" x-cloak>
@@ -192,7 +192,7 @@
                     x-text="formatBlockCount(item.block_count)"></span>
             </td>
             <td x-text="formatExpiry(item)"></td>
-            <!-- detector:<ชนิด> = ระบบบล็อกเอง (แสดงว่า system) · ชื่อผู้ใช้ = แอดมินกดเพิ่ม · ว่าง = แถวเก่า -->
+            
             <td data-label="เพิ่มโดย" :title="item.created_by || ''"
                 x-text="formatAddedBy(item.created_by)"></td>
             <td style="text-align: center;">
@@ -218,7 +218,7 @@
     </table>
   </div>
 
-  <!-- Add Blacklist Modal -->
+  
   <div
     class="modal-backdrop"
     x-show="showAddModal"
@@ -246,8 +246,7 @@
         <template x-for="(item, index) in form.items" :key="index">
           <div class="bulk-row">
             <div class="bulk-field">
-              <!-- ป้ายของช่องนี้เป็นหัวคอลัมน์ที่ใช้ร่วมกันทุกแถว ผูกด้วย for= ไม่ได้
-                   (หนึ่งป้ายต่อหลายช่อง) จึงบอกชื่อช่องให้ screen reader ตรงนี้แทน -->
+              
               <input
                 class="form-input"
                 :class="{ 'is-invalid': item.ip_address && !isBlockableIPv4(item.ip_address) }"

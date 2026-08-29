@@ -1,19 +1,4 @@
-"""
-Backfill รูปโปรไฟล์ LINE ของผู้รับแจ้งเตือนที่ลงทะเบียนไว้ก่อนมีคอลัมน์ picture_url
-
-ทำไมต้องมี: webhook เติมรูปให้เองอยู่แล้ว แต่เติมได้เฉพาะตอนคนนั้น "มี event เข้ามา"
-(follow ใหม่ / ส่งข้อความ) — คนที่แอด OA และถูกอนุมัติไปนานแล้วอาจไม่ส่งอะไรมาอีกเลย
-รูปก็จะไม่ขึ้นสักที สคริปต์นี้ยิง get profile ให้ทีเดียวจบ
-
-รันครั้งเดียวหลัง deploy เวอร์ชันที่มี picture_url (จากโฟลเดอร์ main/):
-    ../venv/bin/python -m database.backfill_line_pictures
-
-ปลอดภัยกับการรันซ้ำ — ข้ามคนที่ดึง profile ไปแล้ว (picture_url ไม่ใช่ NULL)
-ยกเว้นสั่ง --all ให้ดึงใหม่ทุกคน (ใช้ตอนอยากอัปเดตรูป/ชื่อที่เจ้าตัวเปลี่ยนไปแล้ว)
-
-ค่าที่เขียนลง picture_url: URL ของรูป หรือ '' ถ้าเจ้าตัวไม่ได้ตั้งรูป
-(ดูความหมายของ NULL / '' / URL ใน database.models.LineRecipient.picture_url)
-"""
+"""Backfill รูปโปรไฟล์ LINE ของผู้รับแจ้งเตือนที่ลงทะเบียนไว้ก่อนมีคอลัมน์ picture_url"""
 
 import asyncio
 import sys
@@ -57,7 +42,6 @@ async def backfill(refresh_all: bool = False) -> None:
 
             if profile is None:
                 # ปกติเกิดตอนเจ้าตัวบล็อก OA ไปแล้ว (LINE ตอบ 404) — ปล่อย NULL ไว้เหมือนเดิม
-                # ให้ webhook ลองใหม่เองถ้าวันหลังเขากลับมา follow
                 print(f"[{LOG_PREFIX}] ดึง profile ไม่สำเร็จ: id={r.id} {r.display_name or r.line_user_id}")
                 failed += 1
                 continue

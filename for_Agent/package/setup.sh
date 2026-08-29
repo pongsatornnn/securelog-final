@@ -1,22 +1,5 @@
 #!/usr/bin/env bash
 #
-# SecureLog Agent — สคริปต์ติดตั้ง/อัปเดตบนเครื่อง agent (Debian/Ubuntu)
-#
-# ครั้งแรกที่ตั้ง repo นี้ (ทำที่เครื่อง central ครั้งเดียว ก่อนสร้าง agent package แรก):
-#   cp site.conf.example site.conf   แล้วใส่ค่าจริง (site.conf ถูก .gitignore ไว้ ไม่ขึ้น git)
-#   จากนั้น zip ที่โหลดจากหน้า Agents บน dashboard จะมี site.conf ติดไปด้วยอัตโนมัติทุกครั้ง
-#
-# วิธีใช้ (ฝั่งเครื่อง agent):
-#   1. วางโฟลเดอร์นี้ไว้ที่ /opt/securelog-agent (แนะนำ)
-#   2. แตกไฟล์ zip ของ agent (โหลดจากหน้า Agents บน dashboard) ลงโฟลเดอร์เดียวกัน
-#      ให้มี agent_info.txt + <Agent_ID>.crt + <Agent_ID>.key + ca.crt + site.conf อยู่ข้างสคริปต์นี้
-#   3. (ถ้าเครื่องไม่มีเน็ต/ยังไม่มี filebeat) วางไฟล์ filebeat-<version>-amd64.deb ไว้ข้างสคริปต์ด้วย
-#   4. sudo ./setup.sh
-#
-# รันซ้ำได้ (idempotent) — ใช้ตอนอัปเดตโค้ด/config ก็รันตัวเดิมซ้ำ
-#
-# firewall: เปิดทางออกไปหา central Redis ให้ผ่าน ufw + เปิด ufw logging ที่ตัวตรวจจับต้องใช้
-#           (ไม่ enable ufw ให้เอง — จะตัด ssh ตัวเองขาด) · ข้ามทั้งขั้น: SKIP_FIREWALL=1 sudo ./setup.sh
 set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,15 +10,6 @@ log()  { echo -e "\e[32m[SETUP]\e[0m $*"; }
 warn() { echo -e "\e[33m[WARN]\e[0m  $*"; }
 die()  { echo -e "\e[31m[ERROR]\e[0m $*" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
-# run_step — รันขั้นที่กินเวลานาน (apt/dpkg/venv/pip) พร้อมตัวหมุน + เวลาที่ใช้ไป
-#
-# ของเดิมสั่ง apt/pip แบบ -q แล้วจอเงียบไปเป็นนาที คนติดตั้งแยกไม่ออกว่ากำลังโหลดอยู่หรือค้าง
-# ที่นี่เก็บเอาต์พุตจริงลง log แล้วโชว์ตัวหมุนแทน — พังเมื่อไหร่ค่อยพ่น 20 บรรทัดท้ายให้เห็นสาเหตุ
-# แล้วคืน exit code เดิม (set -e หยุดสคริปต์ให้เหมือนเดิม ไม่มีอะไรถูกกลืนหาย)
-#
-# stdin ต่อ /dev/null: มีอะไรแอบถามขึ้นมาจะได้ตายพร้อมข้อความ ไม่ใช่หมุนค้างโดยไม่มีใครรู้ว่ามันรอ input
-# ไม่มี tty (รันผ่าน pipe/cron) ก็ปล่อยเอาต์พุตไหลตามปกติ ไม่ต้องหมุน
 # ---------------------------------------------------------------------------
 STEP_LOG=""
 run_step() {  # run_step "คำอธิบาย" cmd [args...]
@@ -66,8 +40,6 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
     while kill -0 "$pid" 2>/dev/null; do
         spent=$((SECONDS - start))
         # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
-        # ตอนนี้มันติดอยู่กับอะไร — ของเดิมซ่อนเอาต์พุตไว้หมด ขั้นที่ค้าง (เช่น apt/pip ที่ต่อเน็ต
-        # ไม่ติดแล้ว retry เงียบ ๆ) จึงหน้าตาเหมือนขั้นที่กำลังทำงานปกติเป๊ะ ๆ
         if [ "$spent" -ge 15 ]; then
             tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-52)"
             if [ -n "$tail_line" ]; then hint="  "$'\033[2m'"| $tail_line"$'\033[0m'; fi
@@ -106,7 +78,6 @@ INFO_FILE="$INSTALL_DIR/agent_info.txt"
 [ -f "$INFO_FILE" ] || die "$INFO_FILE not found - extract the agent zip into this folder first"
 
 # key ที่ไม่มีในไฟล์ (เช่น zip เก่าก่อนมี HOST_IP) ต้องคืนค่าว่างเฉย ๆ ไม่ใช่ทำให้สคริปต์ตายเงียบ —
-# grep ไม่เจอ match คืน exit 1, pipefail ลากค่านั้นทะลุมาถึง set -e ตาย ก่อนแม้แต่จะได้ die() message
 get_info() { grep -E "^$1=" "$INFO_FILE" | head -1 | cut -d= -f2- | tr -d '\r' || true; }
 AGENT_ID="$(get_info AGENT_ID)"
 SECRET_TOKEN="$(get_info SECRET_TOKEN)"
@@ -119,14 +90,6 @@ HOST_IP="$(get_info HOST_IP)"
 log "Installing agent: $AGENT_ID into $INSTALL_DIR"
 
 # ---------- 1.5) เลือก interface ที่จะใช้เป็น IP ของเครื่องนี้ ----------
-#
-# IP นี้ถูกผูกกับ Agent ID ที่ฝั่ง central — ข้อมูลที่ส่งไปต้องมาจาก IP นี้เท่านั้น ไม่งั้นถูกปฏิเสธ
-# จึงต้องให้เลือกเองว่าจะเอาจาก interface ไหน (เครื่องที่มีหลายใบ เช่น NAT + host-only
-# การเดาให้เองมีโอกาสได้ขาที่คุยกับ central ไม่ได้ แล้วไปตายตอน central ปฏิเสธทีหลัง)
-#
-# เก็บ "ชื่อ interface" ไม่ใช่ตัวเลข IP — agent_core.py อ่าน IP จาก interface นี้ใหม่ทุกครั้ง
-# ตอนรัน ค่าจึงตามทันเองเมื่อ DHCP เปลี่ยน IP และการยกไฟล์ไปรันเครื่องอื่นจะได้ IP ของเครื่อง
-# นั้นออกมาเอง (ถ้าเก็บเป็นตัวเลข ค่าจะถูกยกตามไปด้วย = ตรวจไม่เจอ)
 
 # ชื่อ interface + IPv4 ของแต่ละใบ (ข้าม loopback) — ip -o เอาต์พุตบรรทัดละใบ ตัดคำที่ 2 กับ 4
 mapfile -t IFACE_LINES < <(ip -o -4 addr show scope global 2>/dev/null | awk '{print $2" "$4}' | cut -d/ -f1 | sort -u)
@@ -182,7 +145,6 @@ done
 log "All cert files present: $CERT_FILE / $KEY_FILE / $CA_FILE"
 
 # ---------- 3) เขียน agent_config.json ให้ agent_core.py ----------
-# host_iface เก็บ "ชื่อ" ไม่ใช่ IP — agent_core.py อ่าน IP จาก interface นี้ใหม่ทุกครั้งตอนรัน
 cat > "$INSTALL_DIR/agent_config.json" <<EOF
 {
   "central_host": "$CENTRAL_HOST",
@@ -210,7 +172,6 @@ else
 fi
 
 # ---------- 5) ลง Filebeat ----------
-# ลำดับ: มีอยู่แล้ว > ไฟล์ .deb ข้างสคริปต์ (ไม่พึ่งเน็ต) > Elastic APT repo (ต้องมีเน็ตออก)
 ELASTIC_LIST="/etc/apt/sources.list.d/elastic-8.x.list"
 ELASTIC_KEYRING="/usr/share/keyrings/elastic.gpg"
 
@@ -250,18 +211,12 @@ else
     log "venv already exists"
 fi
 # --no-input: มีอะไรจะถามให้ตายไปเลย ไม่ใช่ค้างรอ input อยู่หลังตัวหมุนที่คนดูไม่เห็น
-# --timeout/--retries: default ของ pip คือ 15 วิ x 5 รอบ + backoff = เน็ตตันแล้วค้างเงียบได้หลายนาที
-# (requirements.txt ที่นี่ pin `==` ไว้ทุกตัว ลงครบแล้ว pip ตอบจากในเครื่อง ไม่ออกเน็ตอยู่แล้ว)
 run_step "Installing python dependencies (redis, psutil) into the venv" \
     "$INSTALL_DIR/venv/bin/pip" install -q --disable-pip-version-check --no-input \
     --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}" \
     -r "$INSTALL_DIR/requirements.txt"
 
 # ---------- 7) generate /etc/filebeat/filebeat.yml จาก template ----------
-#
-# ไม่มีการแทน __REDIS_USERNAME__ ที่นี่แล้ว — output.redis ของ Beats ไม่รองรับ ACL username
-# (ส่ง AUTH ได้แต่ password → Redis ตีเป็นบัญชี `default` เสมอ) ดูคำอธิบายเต็มใน template
-# ค่า REDIS_USERNAME ยังต้องมีใน site.conf อยู่ เพราะ agent_core ใช้ต่อเป็นบัญชี agent_node
 TEMPLATE="$INSTALL_DIR/filebeat.yml.template"
 [ -f "$TEMPLATE" ] || die "$TEMPLATE not found"
 
@@ -292,7 +247,6 @@ filebeat test config -c /etc/filebeat/filebeat.yml >/dev/null || die "filebeat c
 log "filebeat config passed validation"
 
 # ครั้งแรกเท่านั้น: ลบ registry ให้ tail_files เริ่มอ่านจากท้ายไฟล์ (ไม่ลาก log เก่าทั้งไฟล์)
-# รอบถัดไปห้ามลบ — registry คือตัวจำตำแหน่งที่อ่านถึง ทำให้ agent หลุดแล้วกลับมาอ่านต่อได้ไม่ขาด
 if [ ! -f "$MARKER" ]; then
     systemctl stop filebeat 2>/dev/null || true
     rm -rf /var/lib/filebeat/registry
@@ -305,14 +259,6 @@ chmod 600 "$INSTALL_DIR/cert/$KEY_FILE" "$INFO_FILE" "$INSTALL_DIR/agent_config.
 log "Setting file permissions (key/token = 600, owned by root)"
 
 # ---------- 9) UFW: log ที่ตัวตรวจจับต้องใช้ + ทางออกไปหา central ----------
-#
-# เครื่อง agent ไม่ได้เปิด port รับเข้าเลย (agent_core ต่อออกไปหา central อย่างเดียว รวมทั้ง
-# ช่อง pubsub ที่รับคำสั่งบล็อก IP ก็วิ่งบน connection ขาออกเส้นเดิม) — ที่ต้องเปิดจึงมีแต่ขาออก
-# ไปหา central Redis  เครื่องที่ตั้ง `ufw default deny outgoing` ไว้ถ้าไม่เปิดให้ agent จะต่อไม่ติด
-# แบบไม่มีอะไรฟ้องชัด ๆ (เห็นแค่ timeout) เลยเปิดให้ตั้งแต่ตอนติดตั้ง
-#
-# ไม่สั่ง `ufw enable` ให้เอง — คนติดตั้งมัก ssh เข้ามาทำ พอ ufw ขึ้นพร้อม default deny incoming
-# มันจะตัด ssh ของตัวเองทิ้งกลางคัน  rule ที่เพิ่มไว้ตอน ufw ยัง inactive ไม่หาย enable ทีหลังมีผลเลย
 if [ "${SKIP_FIREWALL:-0}" = "1" ]; then
     warn "SKIP_FIREWALL=1 - not touching ufw (the firewall detector needs 'ufw logging low' to be on)"
 elif ! command -v ufw >/dev/null 2>&1; then

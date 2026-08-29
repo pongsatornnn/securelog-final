@@ -1,7 +1,4 @@
-"""
-เส้นทางดู/แก้ detection rule (threshold, window) ของ detector ต่างๆ
-แก้ผ่าน rule_cache.update_rule() ซึ่งเขียน DB แล้วเคลียร์ cache ให้อัตโนมัติ
-"""
+"""เส้นทางดู/แก้ detection rule (threshold, window) ของ detector ต่างๆ"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,20 +75,13 @@ async def api_update_rule(
 
 
 # path แบนแบบเดียวกับ /api/alerts_unread_count — ถ้าตั้งเป็น /api/rules/restore-defaults
-# จะถูก route /api/rules/{rule_key} ข้างบนดักไปก่อน แล้วกลายเป็นการแก้ rule ชื่อ
-# "restore-defaults" (ตอบ 404 ไม่พบ rule_key) แทนที่จะเข้ามาที่นี่
 @router.post("/api/rules_restore_defaults")
 async def api_restore_default_rules(
     payload: RestoreDefaultRulesRequest | None = None,
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    คืนค่า default ของ detection rule — ไม่ส่ง body / ไม่ส่ง rule_key = คืนทั้งหมด
-
-    ทุก rule ในระบบมาจาก DEFAULT_RULES (ไม่มี endpoint ให้สร้าง rule เอง) ปุ่มนี้จึงครอบ
-    ได้ทุกตัว · rule ที่ถูกลบแถวทิ้งไปจะถูกสร้างกลับมาด้วย (update_rule ใช้ upsert)
-    """
+    """คืนค่า default ของ detection rule — ไม่ส่ง body / ไม่ส่ง rule_key = คืนทั้งหมด"""
     rule_key = payload.rule_key if payload else None
 
     if rule_key:

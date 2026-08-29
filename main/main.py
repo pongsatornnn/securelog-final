@@ -1,7 +1,4 @@
-"""
-FastAPI entrypoint — สร้าง app, mount static, ผูก rate-limit handler,
-และรวม router ทั้งหมดจาก routes/*.py (logic จริงของแต่ละ endpoint อยู่ในนั้น)
-"""
+"""FastAPI entrypoint — สร้าง app, mount static, ผูก rate-limit handler,"""
 
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -40,8 +37,6 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
 
         # migration เล็กๆ: create_all() สร้างเฉพาะตารางที่ยังไม่มี ไม่แก้ตารางที่มีอยู่แล้ว
-        # ตาราง users มีมาก่อน must_change_password จะถูกเพิ่มเข้าโมเดล ต้องเติมคอลัมน์เอง
-        # (IF NOT EXISTS กันพังตอนรันซ้ำ/เครื่องที่สร้างตารางใหม่อยู่แล้วมีคอลัมน์นี้ครบ)
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "must_change_password BOOLEAN NOT NULL DEFAULT false"
@@ -51,27 +46,15 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(100)"
         ))
         # เพิ่มทีหลัง: จุดที่ผู้ใช้คนนี้เห็นรายการ alert ถึงแล้ว (คุม badge ที่เมนู Alerts)
-        # ย้ายมาจาก localStorage เพื่อให้ซิงค์ตามบัญชีทุกเครื่อง — ปล่อยเป็น NULL ไว้ ให้
-        # request แรกของแต่ละบัญชีตั้งค่าเอง (ดู /api/alerts_unread_count) badge จะได้ไม่
-        # เด้งเป็นจำนวน alert ทั้งตารางตอน deploy เวอร์ชันนี้ครั้งแรก
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_alert_id INTEGER"
         ))
         # ตาราง app_settings (ค่าตั้งจากหน้า System Settings) create_all สร้างให้เองตอนยังไม่มี
-        # — ไม่ต้อง ALTER อะไรเพิ่ม เพราะเป็นตารางใหม่ทั้งใบ
-        #
-        # เพิ่มทีหลัง: รูปโปรไฟล์ LINE ของผู้รับแจ้งเตือน (โชว์ในหน้า LINE Recipients)
-        # ปล่อยเป็น NULL ไว้ = "ยังไม่เคยดึง profile" — webhook จะเติมให้เองตอนคนนั้นมี
-        # event เข้ามาครั้งถัดไป (ดู LineRecipient.picture_url) ไม่ต้อง backfill ตอน deploy
         await conn.execute(text(
             "ALTER TABLE line_recipients ADD COLUMN IF NOT EXISTS picture_url VARCHAR(512)"
         ))
 
         # เพิ่มทีหลัง: "ใครเป็นคนเพิ่ม IP นี้" — ชื่อผู้ใช้ที่กดเพิ่มเอง หรือ detector:<ชนิด> เมื่อระบบบล็อกเอง
-        # ปล่อยเป็น NULL สำหรับแถวเก่า (ไม่มีข้อมูลย้อนหลังให้ backfill — หน้าเว็บแสดงเป็น "ไม่ทราบ")
-        #
-        # เก็บสองช่องคู่กันโดยตั้งใจ: ชื่อ (ค่าคงที่ของประวัติ) + user id (FK ไว้ join กับตาราง users)
-        # FK เป็น ON DELETE SET NULL ไม่ใช่ CASCADE — ลบผู้ใช้แล้วต้องไม่ลบ "ของที่เขาเคยทำ" ทิ้งไปด้วย
         for table in ("ip_black_list", "ip_white_list"):
             await conn.execute(text(
                 f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS created_by VARCHAR(50)"
@@ -81,13 +64,11 @@ async def lifespan(app: FastAPI):
             ))
 
         # ตาราง app_setting_changes (ประวัติการแก้ค่าตั้ง) create_all สร้างให้เองตอนยังไม่มี
-        # — ยกเว้นตอนอัปเกรดจากเวอร์ชันที่มีตารางนี้แล้วแต่ยังไม่มีคอลัมน์ id ของผู้ใช้
         await conn.execute(text(
             "ALTER TABLE app_setting_changes ADD COLUMN IF NOT EXISTS changed_by_user_id INTEGER"
         ))
 
         # FK ของสามคอลัมน์ข้างบน — Postgres ไม่มี ADD CONSTRAINT IF NOT EXISTS จึงเช็ค pg_constraint เอง
-        # (lifespan รันทุกครั้งที่ start ต้อง idempotent) · แถวเก่าเป็น NULL อยู่แล้วจึงไม่มีปัญหากำพร้า
         for table, column in (
             ("ip_black_list", "created_by_user_id"),
             ("ip_white_list", "created_by_user_id"),
@@ -116,14 +97,6 @@ async def lifespan(app: FastAPI):
             """))
 
         # เพิ่มทีหลัง: FK agent_downloads.agent_id -> agents.agent_id (ON DELETE CASCADE)
-        # DB ที่สร้างก่อนหน้านี้ไม่มี constraint นี้ (create_all ไม่แก้ตารางที่มีอยู่แล้ว)
-        # Postgres ไม่มี ADD CONSTRAINT IF NOT EXISTS จึงต้องเช็ค pg_constraint เองใน DO block
-        # (lifespan รันทุกครั้งที่ start — ต้อง idempotent ไม่งั้น restart รอบสองพัง)
-        #
-        # ถ้ามีแถวกำพร้าค้างอยู่ (agent ถูกลบไปแล้วแต่แถว download ยังอยู่) จะไม่ยอมลบข้อมูล
-        # ให้เอง แต่ใส่ constraint แบบ NOT VALID ไว้ก่อน — ของเก่าไม่ถูกตรวจ แต่ INSERT ใหม่
-        # และ ON DELETE CASCADE มีผลทันที แล้วเตือนใน log ให้แอดมินมาเคลียร์เอง
-        # (ถ้า ALTER ล้มกลางคัน transaction ของ lifespan จะ abort ทั้งก้อน = app start ไม่ขึ้น)
         await conn.execute(text("""
             DO $$
             DECLARE
@@ -164,14 +137,6 @@ async def lifespan(app: FastAPI):
         """))
 
         # เพิ่มทีหลัง: index ที่โมเดลประกาศไว้แต่ DB เก่ายังไม่มี (create_all ไม่แก้ตารางเดิม)
-        # 2 ตัวแรกเป็น UNIQUE บน ip_address — สำคัญกว่าเรื่องความเร็ว เพราะ get_blacklist_by_ip/
-        # get_whitelist_by_ip ใช้ scalar_one_or_none() ถ้ามีแถวซ้ำจะโยน MultipleResultsFound
-        # ทำให้เส้นทางตอบสนองของ detector พังทั้งเส้น — unique index ทำให้ "ซ้ำไม่ได้ตั้งแต่ต้น"
-        # ชื่อ index ตั้งให้ตรงกับที่ create_all จะสร้างบนเครื่องใหม่ (ix_<table>_<column>)
-        # ไม่งั้นเครื่องใหม่กับเครื่องเก่าจะมี index คนละชื่อทั้งที่ทำหน้าที่เดียวกัน
-        #
-        # ถ้ามีข้อมูลซ้ำค้างอยู่ จะไม่ลบให้เอง แต่ข้ามการสร้างแล้วเตือนใน log
-        # (ถ้าปล่อยให้ CREATE ล้ม transaction ของ lifespan จะ abort ทั้งก้อน = app start ไม่ขึ้น)
         await conn.execute(text("""
             DO $$
             DECLARE
@@ -210,7 +175,6 @@ async def lifespan(app: FastAPI):
         """))
 
         # index ธรรมดา (ไม่มีเรื่องข้อมูลซ้ำ จึงใช้ IF NOT EXISTS ตรงๆ ได้)
-        # คอลัมน์ 2 ตัวนี้ถูกเพิ่มเข้าตาราง security_alerts ทีหลัง index จึงไม่เคยถูกสร้าง
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_security_alerts_response_action "
             "ON security_alerts (response_action)"
@@ -221,16 +185,10 @@ async def lifespan(app: FastAPI):
         ))
 
     # เติมค่าเริ่มต้นลง DB (detection rule / blacklist TTL / severity / signature / บัญชี admin)
-    # เดิมค่าพวกนี้ถูก seed แบบ lazy ตอน detector เจอ log ตัวแรกของชนิดนั้น เครื่องที่เพิ่ง
-    # deploy ใหม่จึงเห็นหน้า /rules /signatures ว่างจนกว่าจะมีการโจมตีจริงเข้ามา — ย้ายมาทำ
-    # ตอน startup ทีเดียว และดึงค่าจาก snapshot (database/seed_data.json) ถ้ามี
-    # "เติมเฉพาะที่ยังไม่มี" เสมอ ไม่เขียนทับค่าที่แอดมินปรับไว้เอง (ดู database/seed.py)
     from database.seed import seed_defaults
     await seed_defaults()
 
     # เติมค่าจากตาราง app_settings เข้า Redis cache ตั้งแต่ตอน start — โค้ด sync ที่อ่านค่า
-    # (line_client / gemini_client) อ่านจาก cache อย่างเดียว ถ้าไม่อุ่นไว้ก่อน request แรก
-    # จะได้ค่าจาก .env แทนค่าที่แอดมินตั้งไว้ (ดูหมายเหตุใน settings_cache.py)
     from settings_cache import (
         encrypt_existing_secrets,
         load_all_into_cache,
@@ -238,7 +196,6 @@ async def lifespan(app: FastAPI):
     )
     await seed_agent_settings_from_site_conf()
     # ค่า secret ในตารางถูกเข้ารหัสไว้ (secret_box) — แถวที่ตั้งไว้ก่อนมีการเข้ารหัสจะถูก
-    # แปลงให้ตอน start ครั้งแรกหลังอัปเกรด รันซ้ำได้ ไม่แตะแถวที่เข้ารหัสแล้ว
     await encrypt_existing_secrets()
     await load_all_into_cache()
 

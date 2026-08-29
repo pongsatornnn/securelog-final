@@ -1,12 +1,4 @@
-"""
-เก็บ signature (regex) ของ Signature-based detector ใน DB (ตาราง detection_signatures)
-พร้อม Redis cache แทนการ hardcode ในโค้ด detector
-
-- detector เรียก `get_signatures(detection_type)` เพื่อดึง list ของ pattern ที่ active
-  (cache-first, miss แล้ว fallback ไป DB + seed default ถ้ายังไม่มีแถวของชนิดนั้น)
-- เพิ่ม/ปิด/ลบ pattern ผ่าน `add_signature/set_signature_active/remove_signature`
-  ซึ่งเขียน DB แล้วเคลียร์ cache ทันที ให้ detector โหลด pattern ใหม่ในรอบถัดไป
-"""
+"""เก็บ signature (regex) ของ Signature-based detector ใน DB (ตาราง detection_signatures)"""
 
 import re
 
@@ -24,7 +16,7 @@ from database.crud import (
 from redis_client import cache_get_json, cache_set_json, cache_delete
 
 
-SIGNATURE_CACHE_TTL_SECONDS = 300  # fallback เผื่อไม่ได้ผ่านฟังก์ชัน update โดยตรง
+SIGNATURE_CACHE_TTL_SECONDS = 300
 
 CACHE_KEY_PREFIX = "detection_signatures:"
 
@@ -32,18 +24,17 @@ LOG_PREFIX = "SIG-CACHE"
 
 
 # ค่า default ของแต่ละ detection_type (ใช้ seed ครั้งแรกที่ยังไม่มีแถวใน DB)
-# ย้ายมาจาก hardcode เดิมใน web_log_detect.py — เพิ่ม pattern ใหม่ควรเพิ่มผ่าน DB
 DEFAULT_SIGNATURES = {
     "sql_injection": [
-        r"union\s+(all\s+)?select",   # จับทั้ง UNION SELECT และ UNION ALL SELECT (sqlmap ใช้บ่อย)
+        r"union\s+(all\s+)?select",
         r"select\s.{1,120}?\sfrom\s",
         r"insert\s+into\s",
         r"delete\s+from\s",
         r"update\s.{1,80}?\sset\s",
         r"drop\s+table",
-        r"'\s*or\s*'?[^']{0,20}'?\s*=\s*'?[^']{0,20}",   # ' or '1'='1
-        r"\bor\b\s+\d+\s*=\s*\d+",                          # or 1=1
-        r"\band\b\s+\d+\s*=\s*\d+",                         # and 1=1
+        r"'\s*or\s*'?[^']{0,20}'?\s*=\s*'?[^']{0,20}",
+        r"\bor\b\s+\d+\s*=\s*\d+",
+        r"\band\b\s+\d+\s*=\s*\d+",
         r"'\s*;\s*--",
         r"'\s*--",
         r"sleep\s*\(\s*\d+",
@@ -75,7 +66,7 @@ DEFAULT_SIGNATURES = {
         r"char\s*\(\s*\d{1,3}\s*,\s*\d{1,3}",
         r"concat(_ws)?\s*\(\s*(0x|')",
         r"'\s*\|\|\s*'",
-        r"/\*!\d{5}",                  # MySQL versioned comment — tamper script ของ sqlmap
+        r"/\*!\d{5}",
         # stacked query: ต่อคำสั่งที่สองหลัง ;
         r";\s*(drop|truncate|alter|create)\s+(table|database|user)\b",
         r"sp_executesql",
@@ -107,10 +98,10 @@ DEFAULT_SIGNATURES = {
         r"\bformaction\s*=",
         r"\bxlink:href\s*=",
         # scheme / encoding ที่ใช้เลี่ยง filter
-        r"java\s*script\s*:",          # แทรกช่องว่างคั่น javascript:
+        r"java\s*script\s*:",
         r"vbscript\s*:",
         r"data:\s*text/html",
-        r"(&#x?[0-9a-f]{2,6};){3,}",   # HTML entity ติดกันหลายตัว = จงใจ obfuscate
+        r"(&#x?[0-9a-f]{2,6};){3,}",
         # JS sink ที่โผล่ใน payload บ่อย
         r"document\s*\.\s*(write|domain|referrer|createElement)",
         r"document\s*\[\s*[\"']cookie",
@@ -129,8 +120,8 @@ DEFAULT_SIGNATURES = {
         r"%2e%2e/",
         r"\.\.%5c",
         r"\.\.%c0%af",
-        r"%252e%252e",       # double-encoded
-        r"\.\.\.\./+",       # ....// filter bypass
+        r"%252e%252e",
+        r"\.\.\.\./+",
         r"/etc/passwd",
         r"/etc/shadow",
         r"/proc/self/environ",
@@ -140,9 +131,9 @@ DEFAULT_SIGNATURES = {
         r"\.\.%252f",
         r"%2e%2e%5c",
         r"\.%2e/",
-        r"%c0%ae%c0%ae",               # overlong UTF-8 ของจุด
-        r"\.\.%00",                    # null byte ตัดนามสกุล
-        r"\.\.;/",                     # path parameter bypass (เจอกับ Tomcat)
+        r"%c0%ae%c0%ae",
+        r"\.\.%00",
+        r"\.\.;/",
         # ไฟล์ระบบที่เป็นเป้าหมายประจำ
         r"/etc/(group|hosts|hostname|issue|motd|crontab|resolv\.conf)\b",
         r"/etc/ssh/ssh_host_\w+_key",
@@ -151,7 +142,7 @@ DEFAULT_SIGNATURES = {
         r"/proc/self/(cmdline|fd|maps|status)\b",
         r"/var/log/(auth\.log|syslog|nginx|apache2)\b",
         r"\\windows\\system32",
-        r"WEB-INF/(web\.xml|classes)",  # Tomcat
+        r"WEB-INF/(web\.xml|classes)",
         # ไฟล์ลับที่ scanner ชอบเดา (nikto/dirb ยิงชุดนี้ประจำ)
         r"/\.git/(config|HEAD|index)\b",
         r"/\.(env|htpasswd|htaccess)\b",
@@ -164,24 +155,24 @@ DEFAULT_SIGNATURES = {
         r"\|\s*(cat|ls|id|whoami|uname|nc|bash|sh|wget|curl|grep|awk)\b",
         r"&&\s*(cat|ls|id|whoami|wget|curl|bash|sh|nc|ping)\b",
         r"\|\|\s*(cat|ls|id|whoami|wget|curl)\b",
-        r"`[^`]{1,80}`",                 # `...` command substitution
-        r"\$\([^)]{1,80}\)",             # $(...) command substitution
+        r"`[^`]{1,80}`",
+        r"\$\([^)]{1,80}\)",
         r"/bin/(ba)?sh\b",
         r"\bnc\s+-e\b",
         r"\b(wget|curl)\s+https?://",
         r"\bchmod\s+[0-7]{3,4}\b",
         r"\bbash\s+-i\b",
-        r"%0a\s*(cat|ls|id|whoami|wget|curl)",   # newline command injection (raw)
+        r"%0a\s*(cat|ls|id|whoami|wget|curl)",
         # metachar + คำสั่งเพิ่มเติมที่ของเดิมไม่ครอบ
         r";\s*(ncat|socat|python3?|perl|ruby|php|busybox|env|export|crontab|useradd|passwd|systemctl|service)\b",
         r"\|\s*(ncat|socat|python3?|perl|ruby|php|xargs|tee|base64)\b",
         r"&&\s*(sleep|ping|python3?|perl|php|base64)\b",
         r"\|\|\s*(sleep|ping|nc|python3?|perl|bash|sh)\b",
         # ลายเซ็นของ commix / เครื่องมืออัตโนมัติ
-        r"\$\{IFS\}",                    # เลี่ยงช่องว่างด้วย IFS
+        r"\$\{IFS\}",
         r"\bIFS\s*=",
-        r"\bping\s+-[cn]\s+\d+",         # time-based probe
-        r"\bsleep\s+\d+\s*(;|\||&|$)",   # sleep ของ shell (คนละตัวกับ SLEEP() ของ SQL)
+        r"\bping\s+-[cn]\s+\d+",
+        r"\bsleep\s+\d+\s*(;|\||&|$)",
         r">\s*/dev/null\s*2>&1",
         # reverse shell / โหลดมารัน
         r"/dev/tcp/\d{1,3}\.\d{1,3}",
@@ -219,18 +210,9 @@ def is_valid_regex(pattern: str) -> bool:
 
 
 # ============================================================
-# DB load / seed
-# ============================================================
 
 def effective_default_signatures(detection_type: str) -> list[dict]:
-    """
-    ชุด default ที่ "ใช้จริง" ของ detection_type นี้ — snapshot (database/seed_data.json)
-    มาก่อน ถ้าไม่มีค่อยใช้ DEFAULT_SIGNATURES ในโค้ด
-
-    ที่เดียวที่ตัดสินว่าอะไรคือ default เพื่อให้ทั้งการ seed ครั้งแรก, ปุ่มคืนค่า default
-    และ migration backfill ได้ชุดเดียวกันเสมอ (ถ้าแยกกันคำนวณแล้วหลุดจากกัน ปุ่มคืนค่า
-    จะคืนคนละชุดกับที่ระบบ seed ให้ตอนแรก)
-    """
+    """ชุด default ที่ "ใช้จริง" ของ detection_type นี้ — snapshot (database/seed_data.json)"""
     category = CATEGORY_BY_TYPE.get(detection_type, "web")
     snap = snapshot_signatures(detection_type)
 
@@ -257,13 +239,7 @@ def default_signature_patterns(detection_type: str) -> list[str]:
 
 
 async def _seed_defaults(db, detection_type: str) -> int:
-    """
-    เขียนชุด default ลง DB (mark is_default=True) — ผู้เรียกต้อง commit เอง
-
-    ข้าม pattern ที่มีแถวอยู่แล้วในชนิดนี้ กันเคสที่แอดมินเคยลบ default ตัวหนึ่งทิ้ง
-    แล้วเพิ่ม pattern เดียวกันกลับเข้ามาเองในฐานะแถวของตัวเอง — ถ้าไม่ข้าม การคืนค่า
-    จะได้ regex ซ้ำสองแถวในชนิดเดียวกัน (detector match ซ้ำโดยไม่ได้ประโยชน์)
-    """
+    """เขียนชุด default ลง DB (mark is_default=True) — ผู้เรียกต้อง commit เอง"""
     existing = {
         row.pattern
         for row in await get_detection_signatures(db, detection_type=detection_type)
@@ -289,10 +265,7 @@ async def _seed_defaults(db, detection_type: str) -> int:
 
 
 async def load_signatures_from_db(detection_type: str) -> list[str]:
-    """
-    อ่าน pattern ที่ active ของ detection_type จาก DB
-    ถ้ายังไม่มีแถวของชนิดนี้เลย (รันครั้งแรก) จะ seed ค่า default ลง DB ให้อัตโนมัติ
-    """
+    """อ่าน pattern ที่ active ของ detection_type จาก DB"""
     async with AsyncSessionLocal() as db:
         rows = await get_detection_signatures(db, detection_type=detection_type)
 
@@ -316,10 +289,7 @@ async def load_signatures_from_db(detection_type: str) -> list[str]:
 
 
 async def get_signatures(detection_type: str) -> list[str]:
-    """
-    Entry point หลักที่ detector เรียกเพื่อดึง pattern ที่ active ของ detection_type
-    เช็ค cache ก่อน (list ว่างก็นับว่าเจอ), miss แล้วค่อย fallback ไป DB
-    """
+    """Entry point หลักที่ detector เรียกเพื่อดึง pattern ที่ active ของ detection_type"""
     cached = cache_get_json(signature_cache_key(detection_type), log_prefix=LOG_PREFIX)
 
     if cached is not None:
@@ -329,8 +299,6 @@ async def get_signatures(detection_type: str) -> list[str]:
 
 
 # ============================================================
-# Management (เขียน DB แล้วเคลียร์ cache ทันที)
-# ============================================================
 
 async def add_signature(
     detection_type: str,
@@ -339,10 +307,7 @@ async def add_signature(
     description: str | None = None,
     category: str | None = None,
 ) -> dict:
-    """
-    เพิ่ม signature ใหม่ (validate ว่า regex compile ได้ก่อน)
-    ถ้ามี pattern เดิมของชนิดนี้อยู่แล้วจะไม่เพิ่มซ้ำ (คืนแถวเดิม)
-    """
+    """เพิ่ม signature ใหม่ (validate ว่า regex compile ได้ก่อน)"""
     if not is_valid_regex(pattern):
         raise ValueError(f"regex ไม่ถูกต้อง: {pattern!r}")
 
@@ -375,14 +340,7 @@ async def update_signature(
     pattern: str | None = None,
     description: str | None = None,
 ) -> dict | None:
-    """
-    แก้ pattern / คำอธิบายของ signature ที่มีอยู่ (None = ไม่แตะฟิลด์นั้น, "" = ล้างค่า)
-
-    ไม่ให้เปลี่ยน detection_type — ย้ายชนิดต้องลบแล้วเพิ่มใหม่ (แถวหนึ่งจึงผูกกับ
-    cache key เดียวตลอดอายุ ไม่ต้องไล่เคลียร์ cache ของชนิดเก่าด้วย)
-
-    คืน None ถ้าไม่พบ id · raise ValueError ถ้า regex compile ไม่ผ่าน หรือซ้ำกับแถวอื่นในชนิดเดียวกัน
-    """
+    """แก้ pattern / คำอธิบายของ signature ที่มีอยู่ (None = ไม่แตะฟิลด์นั้น, "" = ล้างค่า)"""
     if pattern is not None and not is_valid_regex(pattern):
         raise ValueError(f"regex ไม่ถูกต้อง: {pattern!r}")
 
@@ -395,7 +353,6 @@ async def update_signature(
         detection_type = signature.detection_type
 
         # กันแก้ pattern ไปชนของแถวอื่นในชนิดเดียวกัน — เท่ากับมี regex ซ้ำสองแถว
-        # detector จะ match ซ้ำโดยไม่ได้ประโยชน์ แถมตอนเพิ่มก็กันซ้ำอยู่แล้ว (add_signature)
         if pattern is not None and pattern != signature.pattern:
             duplicated = await find_detection_signature(db, detection_type, pattern)
 
@@ -447,18 +404,7 @@ async def remove_signature(signature_id: int) -> dict | None:
 
 
 async def restore_default_signatures(detection_type: str | None = None) -> dict:
-    """
-    คืนค่า signature ของระบบกลับเป็นชุด default
-
-    วิธี: ลบเฉพาะแถว is_default ทิ้งทั้งหมด แล้ว seed ชุด default ใหม่ทั้งชุด
-    **แถวที่แอดมินเพิ่มเอง (is_default=False) ไม่ถูกแตะเลย** ไม่ว่าจะเปิดหรือปิดอยู่
-
-    ที่ลบทิ้งแล้ว seed ใหม่ (แทนการไล่ update ทีละแถว) เพราะครอบทุกอาการในทางเดียว:
-    แถว default ที่ถูกลบไป -> กลับมา · ที่ถูกปิด -> เปิดคืน · ที่ถูกแก้ pattern/คำอธิบาย
-    -> กลับเป็นของเดิม (ถ้าไล่เทียบด้วย pattern แถวที่ถูกแก้จะหาต้นทางไม่เจอแล้ว)
-
-    detection_type = None -> ทำทุกชนิดที่ระบบรู้จัก
-    """
+    """คืนค่า signature ของระบบกลับเป็นชุด default"""
     types = [detection_type] if detection_type else list(DEFAULT_SIGNATURES.keys())
     details = []
 
@@ -471,8 +417,8 @@ async def restore_default_signatures(detection_type: str | None = None) -> dict:
 
         details.append({
             "detection_type": dt,
-            "removed": removed,   # แถว default เดิมที่ลบทิ้ง (รวมที่ถูกแก้/ถูกปิดไว้)
-            "restored": seeded,   # แถว default ที่ seed กลับเข้าไป
+            "removed": removed,
+            "restored": seeded,
         })
         print(f"[{LOG_PREFIX}] คืนค่า default: {dt} (ลบ {removed} · คืน {seeded})")
 

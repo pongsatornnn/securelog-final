@@ -1,12 +1,4 @@
-"""
-CLI ดู/แก้ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)
-
-ตัวอย่าง:
-  python manage_blacklist_ttl.py show
-  python manage_blacklist_ttl.py set port_scan --hours 2
-  python manage_blacklist_ttl.py set http_flood --minutes 30
-  python manage_blacklist_ttl.py set xss --permanent
-"""
+"""CLI ดู/แก้ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)"""
 
 import sys
 import asyncio

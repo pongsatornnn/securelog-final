@@ -1,9 +1,4 @@
-"""
-แปลง alert_summary (dict ที่ build_alert_summary สร้าง แล้ว publish ขึ้น
-security_alerts_stream) ให้เป็นข้อความไทยสำหรับส่ง LINE
-
-รูปแบบ: ตรวจพบการโจมตี -> ชนิด / เครื่องที่ถูกโจมตี / ต้นทาง / เวลา (ไทย)
-"""
+"""แปลง alert_summary (dict ที่ build_alert_summary สร้าง แล้ว publish ขึ้น"""
 
 from datetime import datetime, timedelta
 

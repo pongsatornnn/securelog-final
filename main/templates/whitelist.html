@@ -139,7 +139,7 @@
   </div>
 
   <div class="table-wrap">
-    <!-- 3 สถานะแยกกัน — เดิมโชว์ "ยังไม่มี IP ใน Whitelist" ตั้งแต่วินาทีแรกและตอน API พังด้วย -->
+    
     <div class="state-box" x-show="loading">
       <div class="state-spinner" aria-hidden="true"></div>
       <div class="state-title">กำลังโหลด Whitelist...</div>
@@ -153,7 +153,7 @@
 
     <div class="state-box" x-show="!loading && !loadError && whitelist.length === 0" x-cloak>
       <div class="state-title">ยังไม่มี IP ใน Whitelist</div>
-      <!-- <div class="state-detail">IP ใน Whitelist จะไม่ถูกบล็อกอัตโนมัติแม้ระบบตรวจพบว่าโจมตี</div> -->
+      
     </div>
 
     <table x-show="!loading && !loadError && whitelist.length > 0" x-cloak>
@@ -195,7 +195,7 @@
     </table>
   </div>
 
-  <!-- Add Whitelist Modal -->
+  
   <div
     class="modal-backdrop"
     x-show="showAddModal"
@@ -299,7 +299,7 @@
     </div>
   </div>
 
-  <!-- Move to Blacklist Modal — ใช้ modal แทนกล่องยืนยันธรรมดา เพราะต้องเลือกระยะเวลาบล็อกด้วย -->
+  
   <div
     class="modal-backdrop"
     x-show="showMoveModal"

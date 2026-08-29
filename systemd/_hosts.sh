@@ -1,21 +1,5 @@
 #!/usr/bin/env bash
 # ตัวช่วยเรื่อง "IP ที่แต่ละ service จะ bind" — ใช้ร่วมกันระหว่าง setup-server.sh กับ systemd/_gen.sh
-# ไฟล์นี้ source เข้าไปใช้ ไม่ได้รันตรง ๆ
-#
-# ★ ในระบบมี host อยู่ 3 ความหมาย เดิมใช้ตัวแปร BIND_HOST ตัวเดียวปนกันหมด ทำให้เลือกแยกไม่ได้:
-#
-#   BIND_HOST          "ที่อยู่ของ central" ที่เครื่องอื่นใช้เรียกเข้ามา — ลง SAN ของ cert, REDIS_HOST
-#                      ใน .env และ AGENT_CENTRAL_HOST ที่ฝังไปกับชุดติดตั้ง agent
-#                      ⚠️ ต้องเป็น IP/ชื่อจริงเสมอ ใส่ 0.0.0.0 ไม่ได้ (agent จะเอาไปต่อกลับมาไม่ถูก)
-#
-#   WEB_BIND_HOST      --host ของ dashboard (:8000) — จะรับเฉพาะ interface เดียว หรือ 0.0.0.0 = ทุกเส้น
-#                      เลือก IP เดียว = ปลอดภัยกว่า (เครือข่ายอื่นของเครื่องมองไม่เห็นพอร์ตนี้เลย)
-#                      แต่ต้องเข้าเว็บทาง IP นั้นเท่านั้น และ SAN ใน cert ต้องมี IP นั้นด้วย
-#
-#   WEBHOOK_BIND_HOST  --host ของ LINE webhook (:8080) — แยกจาก dashboard เพราะเป็นคนละเรื่องกัน:
-#                      ตัวนี้ LINE เป็นคนยิงเข้ามาผ่าน tunnel ไม่ใช่คนในองค์กรเปิดดู
-#                      tunnel อยู่เครื่องเดียวกัน -> 127.0.0.1 พอ (ไม่โผล่ออกเน็ตเวิร์กเลย)
-#                      tunnel/reverse proxy อยู่คนละเครื่อง -> ต้องเป็น IP ที่เครื่องนั้นเข้าถึงได้
 
 # IPv4 ทุกเส้นบนเครื่อง -> "IP<TAB>ชื่อ interface" (เส้น global ก่อน แล้วค่อย loopback)
 list_host_ips() {
@@ -24,8 +8,6 @@ list_host_ips() {
 }
 
 # IP หลักของเครื่อง = เส้นที่ออกเน็ต ใช้เป็นค่า default ตอนไม่มีอะไรให้อ้างอิงเลย
-# ⚠️ เครื่องที่มีหลาย interface อาจไม่ใช่เส้นที่ใช้คุยกับ agent (เช่น NAT ของ VirtualBox)
-#    จึงเป็นแค่ค่าตั้งต้นให้กด Enter ผ่าน ไม่ใช่ค่าที่เชื่อได้เสมอ
 detect_primary_ip() {
     local ip
     # || true ทุกบรรทัด: เครื่องที่ไม่มี default route จะทำให้ pipefail ของสคริปต์แม่ตายทั้งตัว
@@ -35,8 +17,6 @@ detect_primary_ip() {
 }
 
 # --host ที่ unit ซึ่งติดตั้งอยู่ "ตอนนี้" ใช้อยู่จริง — เอามาเป็นค่า default ของคำถาม
-# เพื่อไม่ให้ติดตั้งรอบถัดไปเปลี่ยนพฤติกรรมของเครื่องเงียบ ๆ (โดยเฉพาะโหมดไม่มี tty ที่กด Enter แทนไม่ได้)
-# (SYSTEMD_UNIT_DIR ตั้งได้เผื่อติดตั้งลง chroot/container ที่ unit ไม่ได้อยู่ /etc/systemd/system)
 installed_bind_host() {  # installed_bind_host UNIT_NAME
     local unit="${SYSTEMD_UNIT_DIR:-/etc/systemd/system}/$1"
     [ -f "$unit" ] || return 0
@@ -55,9 +35,14 @@ valid_host() {
     printf '%s' "$h" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'
 }
 
+# พอร์ต TCP ที่ service ของเรา bind — ใช้ร่วมกันระหว่าง setup-server.sh (ตอนถาม) กับ
+valid_port() {  # valid_port PORT
+    local p="$1"
+    printf '%s' "$p" | grep -qE '^[1-9][0-9]{0,4}$' || return 1
+    [ "$p" -ge 1024 ] && [ "$p" -le 65535 ]
+}
+
 # pick_bind_host VAR "คำถาม" "ค่า default" [allow_any=1] [คำอธิบายเพิ่ม]
-#   - ตัวแปรมีค่ามาแล้ว (preset ทาง env หรืออ่านได้จาก .env) = ใช้เลย ไม่ถาม
-#   - ไม่มี tty (ถูกเรียกจากสคริปต์อื่น/cron) = ใช้ default เงียบ ๆ ไม่ค้างรอ input
 pick_bind_host() {
     local var="$1" title="$2" def="${3:-}" allow_any="${4:-1}" hint="${5:-}"
     local cur ans i ip iface mark
@@ -108,8 +93,6 @@ pick_bind_host() {
 }
 
 # อ่านค่าจาก .env (รองรับทั้ง KEY=value และ KEY = "value" ที่ปนกันอยู่ในไฟล์จริง)
-# ⚠️ "ไม่เจอคีย์" ต้องคืน 0 เสมอ — สคริปต์ที่ source ไฟล์นี้ใช้ set -e + pipefail กันทั้งคู่
-#    ถ้าปล่อยให้ grep คืน 1 ออกไป การเรียก VAR="${VAR:-$(env_get ...)}" จะทำให้ทั้งสคริปต์ตายเงียบ
 env_get() {  # env_get KEY FILE
     local key="$1" file="$2" line val
     [ -f "$file" ] || return 0
@@ -121,7 +104,6 @@ env_get() {  # env_get KEY FILE
 }
 
 # เขียนค่าลง .env — มีคีย์อยู่แล้วแทนที่บรรทัดนั้น ไม่มีก็ต่อท้าย
-# เขียนทับด้วย cat (ไม่ใช่ mv) เพื่อให้ไฟล์ยังเป็นเจ้าของเดิมและสิทธิ์ 600 เหมือนเดิม
 env_set() {  # env_set KEY VALUE FILE
     local key="$1" val="$2" file="$3" tmp
     [ -f "$file" ] || return 0

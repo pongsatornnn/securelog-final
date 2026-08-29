@@ -13,16 +13,7 @@ def _redirect_login() -> HTTPException:
 
 
 async def require_login(request: Request):
-    """
-    ยืนยันตัวตนจาก JWT cookie แล้ว "โหลดสถานะสดจาก DB" ทุก request — ไม่เชื่อค่า role/is_active/
-    must_change_password ที่ฝังใน JWT (JWT ใช้แค่พิสูจน์ว่า login มาแล้วเป็น username ไหน)
-
-    ผลคือการ ลบ / ปิดใช้งาน / เปลี่ยน role / บังคับเปลี่ยนรหัส มีผลกับ session ที่ค้างอยู่ทันที
-    ในรอบ request ถัดไป โดยไม่ต้องรอ JWT หมดอายุหรือให้เจ้าตัว login ใหม่ (session invalidation)
-
-    ใช้ session อายุสั้นของตัวเอง (async with) ไม่ผูกกับ get_db ของ endpoint — กันเคส SSE/
-    streaming ที่ dependency ของ endpoint ถูกถือยาวตลอด connection แล้ว connection DB รั่ว
-    """
+    """ยืนยันตัวตนจาก JWT cookie แล้ว "โหลดสถานะสดจาก DB" ทุก request — ไม่เชื่อค่า role/is_active/"""
     token = request.cookies.get("access_token")
     if not token:
         raise _redirect_login()
@@ -44,7 +35,6 @@ async def require_login(request: Request):
 
     return {
         # id ไว้ให้ endpoint ที่เก็บสถานะรายบัญชี (เช่น สถานะอ่านแล้วของ alert) อ้างถึง user
-        # ได้เลยโดยไม่ต้อง query หา user ซ้ำอีกรอบ
         "id": user.id,
         "username": user.username,
         "role": user.role,
@@ -55,11 +45,7 @@ async def require_login(request: Request):
 
 
 async def require_login_page(request: Request, user=Depends(require_login)):
-    """
-    ใช้กับ page route (render HTML) — เหมือน require_login แต่เพิ่ม redirect ไป /change-password
-    ถ้าบัญชียังต้องเปลี่ยนรหัสจากค่าเริ่มต้น/ที่ admin reset/ตั้งให้ (must_change_password)
-    (หน้า /change-password เองต้องใช้ require_login เฉยๆ ไม่ใช่ตัวนี้ ไม่งั้น redirect วนลูป)
-    """
+    """ใช้กับ page route (render HTML) — เหมือน require_login แต่เพิ่ม redirect ไป /change-password"""
     if user["must_change_password"] and request.url.path != "/change-password":
         raise HTTPException(
             status_code=status.HTTP_303_SEE_OTHER,

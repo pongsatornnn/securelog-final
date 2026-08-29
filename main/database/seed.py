@@ -1,21 +1,4 @@
-"""
-Seed ค่าเริ่มต้นลง DB ตอน start (เรียกจาก `main.py` lifespan ครั้งเดียวต่อการ start)
-
-เป้าหมาย: เครื่องที่เพิ่งติดตั้งใหม่ (DB เปล่า) เปิดหน้า /rules /signatures แล้วเห็นค่า
-ครบเหมือนเครื่องที่ตั้งค่าไว้แล้วทันที ไม่ต้องรอให้มีการโจมตีเข้ามาก่อน และไม่ต้องนั่งตั้งใหม่ทีละหน้า
-
-ค่าที่ seed มาจาก 2 ชั้น (ดู `database/defaults.py`):
-  1. `database/seed_data.json` — snapshot ที่ export จาก DB เครื่องที่ตั้งค่าไว้แล้ว (`export_seed.py`)
-  2. ค่า hardcode ในโค้ด (DEFAULT_RULES / DEFAULT_SEVERITY / BASE_TTL_SECONDS / DEFAULT_SIGNATURES)
-     — ใช้กับ key ที่ไม่มีใน snapshot หรือกรณีไม่มีไฟล์ snapshot เลย
-
-**กติกาสำคัญ: เติมเฉพาะที่ยังไม่มี ไม่เขียนทับของเดิมเด็ดขาด**
-รันทุกครั้งที่ start ได้โดยไม่ทำลายค่าที่แอดมินปรับไว้เองบนเครื่องนั้น (idempotent)
-
-สิ่งที่ **ไม่** seed (เป็นข้อมูลของแต่ละเครื่อง ไม่ใช่ค่าเริ่มต้น):
-ประวัติการโจมตี (security_alerts/alert_reads), ip_black_list, ip_white_list,
-line_recipients, agents/agent_downloads — ส่วน users seed แค่บัญชี admin/admin ตอน DB ว่าง
-"""
+"""Seed ค่าเริ่มต้นลง DB ตอน start (เรียกจาก `main.py` lifespan ครั้งเดียวต่อการ start)"""
 
 from database.connection import AsyncSessionLocal
 from database.crud import (
@@ -49,10 +32,7 @@ LOG_PREFIX = "SEED"
 
 
 def _merged_keys(section: str, code_defaults) -> list[str]:
-    """
-    key ทั้งหมดที่ต้อง seed = ของใน snapshot (มาก่อน คงลำดับตามไฟล์) + ของในโค้ดที่ snapshot ไม่มี
-    (snapshot เก่าที่ export ไว้ก่อนเพิ่ม rule ใหม่ในโค้ด ก็ยังได้ rule ใหม่ไปด้วย)
-    """
+    """key ทั้งหมดที่ต้อง seed = ของใน snapshot (มาก่อน คงลำดับตามไฟล์) + ของในโค้ดที่ snapshot ไม่มี"""
     keys = list(snapshot_section(section).keys())
     keys += [k for k in code_defaults if k not in keys]
     return keys
@@ -148,13 +128,7 @@ async def seed_alert_severity(db) -> int:
 
 
 async def seed_detection_signatures(db) -> int:
-    """
-    regex ของ signature-based detector — seed "ทั้งชนิด" เฉพาะชนิดที่ยังไม่มีสักแถวเลย
-
-    ไม่ไล่เติมทีละ pattern ให้ชนิดที่มีแถวอยู่แล้ว เพราะแอดมินอาจตั้งใจลบ pattern บางตัวทิ้ง
-    (ถ้าเติมกลับทุก start มันจะกลับมาเองทุกครั้ง) — ตรงกับพฤติกรรมเดิมของ
-    `signature_cache.load_signatures_from_db` ต่างกันแค่ทำตอน start แทนที่จะรอ log ตัวแรก
-    """
+    """regex ของ signature-based detector — seed "ทั้งชนิด" เฉพาะชนิดที่ยังไม่มีสักแถวเลย"""
     created = 0
 
     for detection_type in _merged_keys("detection_signatures", DEFAULT_SIGNATURES):
@@ -199,13 +173,7 @@ async def seed_detection_signatures(db) -> int:
 
 
 async def seed_admin_user(db) -> bool:
-    """
-    สร้าง admin/admin ตอน users ว่างเปล่าเท่านั้น (เครื่อง deploy ใหม่ที่ยังไม่เคยมี user เลย)
-    เช็คทุกครั้งที่ start แต่สร้างจริงแค่ครั้งเดียว — รอบถัดไป users ไม่ว่างแล้ว จึงไม่มีทาง
-    reset รหัสที่ตั้งไปแล้วกลับเป็น admin/admin ทับ
-
-    must_change_password=True บังคับเปลี่ยนรหัสก่อนใช้งานหน้าอื่นต่อ (ดู dependencies.py)
-    """
+    """สร้าง admin/admin ตอน users ว่างเปล่าเท่านั้น (เครื่อง deploy ใหม่ที่ยังไม่เคยมี user เลย)"""
     # import ตรงนี้เพื่อไม่ให้ database/ ผูกกับ auth ตอน import module (auth ใช้แค่ตอน seed จริง)
     from auth import hash_password
 

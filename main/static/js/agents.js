@@ -19,7 +19,7 @@ function agentsApp() {
       copiedRegenDownloadLink: false,
       copiedRegenDownloadCommand: false,
       editForm: {
-        host_ip: '',        // แสดงอย่างเดียว ไม่ได้ส่งกลับไปที่ API (IP ที่ผูกไว้แก้ไม่ได้)
+        host_ip: '',
         hostname: '',
         description: '',
         is_active: true
@@ -28,14 +28,13 @@ function agentsApp() {
       createdAgentId: '',
       copiedDownloadLink: false,
       copiedDownloadCommand: false,
-      linkTtlSeconds: 120,
+      linkTtlSeconds: 300,
       linkRemaining: 0,
       linkCountdownTimer: null,
       error: '',
       creating: false,
 
       // สถานะการโหลดรายการ — ต้องแยก "กำลังโหลด" / "โหลดไม่สำเร็จ" / "ไม่มีข้อมูล" ออกจากกัน
-      // ไม่งั้นตอน API ล่มหน้าจะขึ้นว่า "ยังไม่มี Agent" ซึ่งอ่านแล้วเข้าใจผิดว่าไม่มีเครื่องในระบบ
       loading: true,
       loadError: '',
 
@@ -82,7 +81,6 @@ function agentsApp() {
           }
         } catch (err) {
           // หน้านี้ refresh เองทุก 3 วิ — ถ้าเคยโหลดสำเร็จแล้วเน็ตสะดุดรอบเดียว ไม่ต้องล้าง
-          // ตารางทิ้งให้ตกใจ แค่แจ้งว่าค่าที่เห็นอาจไม่สดแล้ว
           this.loadError = err.message || 'โหลด Client Server ไม่สำเร็จ'
           console.error(err)
         } finally {
@@ -146,8 +144,7 @@ function agentsApp() {
         this.stopLinkCountdown()
       },
 
-      // นับถอยหลังอายุลิงก์ดาวน์โหลด (ตรงกับ DOWNLOAD_LINK_TTL ฝั่ง server = 2 นาที)
-      // ใช้ตัวเดียวร่วมกันทั้ง modal create-success และ regen เพราะเปิดได้ทีละอัน
+      // นับถอยหลังอายุลิงก์ดาวน์โหลด (ตรงกับ DOWNLOAD_LINK_TTL ฝั่ง server = 5 นาที)
       startLinkCountdown() {
         this.stopLinkCountdown()
         this.linkRemaining = this.linkTtlSeconds
@@ -210,8 +207,6 @@ function agentsApp() {
         const fullUrl = this.buildFullDownloadUrl(url)
         if (!fullUrl) return ''
         // เครื่อง agent ยังไม่มี ca.crt ของเรา (มันอยู่ *ใน* zip ที่กำลังจะโหลด — ไก่กับไข่)
-        // เลยยังตรวจ cert ปกติไม่ได้ตอน bootstrap ครั้งแรก ต้องข้ามด้วย --no-check-certificate
-        // ยังเข้ารหัสผ่าน TLS อยู่ แค่ไม่ verify CA + token ใช้ได้ครั้งเดียวหมดอายุไว (2 นาที) อยู่แล้ว
         return `wget --no-check-certificate -O agent_package.zip "${fullUrl}"`
       },
 
@@ -381,7 +376,6 @@ function agentsApp() {
 
       async deleteAgent(agent) {
         // log/alert ของเครื่องนี้ถูกลบไปด้วยและกู้คืนไม่ได้ — ต้องบอกจำนวนก่อนกด ไม่ใช่มารู้ทีหลัง
-        // ส่วน IP ที่บล็อกไว้ "ไม่หาย" ก็ต้องบอกเหมือนกัน เพราะคนมักเข้าใจว่าลบ agent = ปลดบล็อกหมด
         const alertCount = agent.alert_count || 0
         const ok = await this.$store.ui.confirm({
           title: 'ลบ Client Server',

@@ -1,11 +1,4 @@
-"""
-โค้ดกลางที่ detector ทุกตัว (auth / web / firewall) ใช้ร่วมกัน
-เดิมแต่ละ detector มีสำเนาของตัวเองเหมือนกันเกือบทั้งไฟล์ — รวมไว้ที่เดียว
-แก้ที่เดียวมีผลทุก detector (บทเรียนจากบั๊ก merge re-check ที่ต้องไล่แก้ทีละไฟล์)
-
-แต่ละ detector เหลือแค่: logic การตรวจของตัวเอง + print รายละเอียด event ของตัวเอง
-แล้วเรียก save_alert_to_db / run_detector_loop จากไฟล์นี้
-"""
+"""โค้ดกลางที่ detector ทุกตัว (auth / web / firewall) ใช้ร่วมกัน"""
 
 import json
 import time
@@ -30,22 +23,13 @@ from redis_client import get_redis
 
 
 # ถ้า attacker ยิงต่อเนื่อง (ครบ threshold ซ้ำๆ ในเวลาไม่ห่างกันมาก) จะ merge
-# เข้า alert แถวเดิมแทนที่จะสร้างแถวใหม่ทุกครั้ง กัน dashboard เด้งเป็นหลายแถวจาก
-# การโจมตีเดียวกัน — นับว่า "ต่อเนื่อง" ถ้า alert ล่าสุดของเหตุการณ์เดิม
-# ยัง active (updated_at) อยู่ภายในกี่วินาทีนี้
 ALERT_MERGE_COOLDOWN_SECONDS = 60
 
 
 # BLPOP รอของในคิวนานสุดกี่วินาทีก่อนวนรอบใหม่ — ต้อง **น้อยกว่า** socket timeout ของ redis-py
-# (ตั้งแต่ redis-py 8 ค่า default socket_timeout = 5 วินาที) ถ้าตั้งเท่ากัน สองฝั่งจะหมดเวลา
-# พร้อมกัน แล้วบางครั้ง client อ่านคำตอบ "ไม่มีของ" ไม่ทัน จึงโยน TimeoutError ออกมาเป็น
-# error ใน log ทั้งที่ไม่มีอะไรผิด (เจอตอนเทสระบบ 2026-08-13: ~10-18 ครั้ง/ชม. ต่อ detector
-# หนึ่งตัว) — เผื่อไว้ 2 วินาทีให้ reply เดินทางกลับมาทัน แม้ TLS handshake/เครือข่ายจะสะดุด
 QUEUE_BLOCK_TIMEOUT_SECONDS = 3
 
 
-# ============================================================
-# Parsing helpers
 # ============================================================
 
 def safe_json_loads(raw: Any, log_prefix: str = "DETECT") -> dict | None:
@@ -68,10 +52,7 @@ def safe_json_loads(raw: Any, log_prefix: str = "DETECT") -> dict | None:
 
 
 def parse_agent_time_to_epoch(log: dict) -> float:
-    """
-    ใช้เวลา log ฝั่ง Agent เป็นหลักในการนับ window
-    ถ้า parse ไม่ได้ fallback เป็นเวลาปัจจุบันของ central
-    """
+    """ใช้เวลา log ฝั่ง Agent เป็นหลักในการนับ window"""
     value = log.get("agent_event_time_thai")
 
     if not value:
@@ -85,8 +66,6 @@ def parse_agent_time_to_epoch(log: dict) -> float:
         return time.time()
 
 
-# ============================================================
-# Sliding window helpers
 # ============================================================
 
 def prune_old_events(
@@ -108,8 +87,6 @@ def get_events_in_window(events: deque, now_ts: float, window_seconds: int) -> l
 
 
 # ============================================================
-# Save alert (merge หรือสร้างใหม่ + ตัดสินใจ block + publish SSE)
-# ============================================================
 
 async def save_alert_to_db(
     *,
@@ -125,15 +102,7 @@ async def save_alert_to_db(
     source_ip: str | None = None,
     username: str | None = None,
 ) -> None:
-    """
-    เขียน alert ลง DB — merge เข้าแถวเดิมของเหตุการณ์เดียวกันที่ยัง active ใน cooldown
-    (ตาม detection_type + agent_id + source_ip หรือ username) ไม่งั้นสร้างแถวใหม่
-
-    ทั้ง branch merge และ new เรียก handle_attack_ip ทุกครั้ง — กันเคส admin unblock IP
-    ไปแล้วแต่ IP ยังโจมตีต่อภายใน cooldown (handle_attack_ip idempotent: ถ้ายังอยู่
-    blacklist คืน already_blacklisted ไม่ block ซ้ำ / sudo ไม่มี source_ip คืน no_ip เฉยๆ)
-    เสร็จแล้ว publish alert ขึ้น SSE stream ให้ dashboard เห็น real-time
-    """
+    """เขียน alert ลง DB — merge เข้าแถวเดิมของเหตุการณ์เดียวกันที่ยัง active ใน cooldown"""
     try:
         first_event_at = None
         last_event_at = None
@@ -202,14 +171,9 @@ async def save_alert_to_db(
 
 
 # ============================================================
-# Rule seeding + main worker loop
-# ============================================================
 
 def seed_rules(loop: asyncio.AbstractEventLoop, rule_keys, log_prefix: str) -> None:
-    """
-    เรียก get_rule ครั้งแรกของแต่ละ rule เพื่อ seed ค่า default ลง DB
-    ให้หน้า Rules เห็น rule พวกนี้ได้ทันทีแม้ยังไม่มีการโจมตีเข้ามา
-    """
+    """เรียก get_rule ครั้งแรกของแต่ละ rule เพื่อ seed ค่า default ลง DB"""
     for rule_key in rule_keys:
         try:
             loop.run_until_complete(get_rule(rule_key))
@@ -224,11 +188,7 @@ def run_detector_loop(
     startup_messages: tuple[str, ...] = (),
     on_start: Callable[[asyncio.AbstractEventLoop], None] | None = None,
 ) -> None:
-    """
-    โครง worker มาตรฐานของ detector: blpop จาก queue -> decode -> process_log(log, loop)
-    reconnect เองเมื่อ Redis หลุด, Ctrl+C หยุดสวยๆ
-    on_start(loop) ไว้ให้ detector เตรียมของก่อนเข้า loop (เช่น seed rule / โหลด signature)
-    """
+    """โครง worker มาตรฐานของ detector: blpop จาก queue -> decode -> process_log(log, loop)"""
     r = get_redis()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

@@ -1,7 +1,4 @@
-"""
-เส้นทางจัดการ Agent: list/create/update/delete, regen download token,
-one-time download link, และ resolve สถานะ online/offline จาก Redis runtime cache
-"""
+"""เส้นทางจัดการ Agent: list/create/update/delete, regen download token,"""
 
 import logging
 import os
@@ -57,10 +54,7 @@ def get_agent_runtime(agent_id: str) -> dict | None:
 
 
 def resolve_agent_live_state(agent) -> dict:
-    """
-    ใช้ Redis runtime เป็นตัวตัดสิน online/offline แบบ real-time
-    ถ้า runtime key หมด TTL จะถือว่า offline
-    """
+    """ใช้ Redis runtime เป็นตัวตัดสิน online/offline แบบ real-time"""
     runtime = get_agent_runtime(agent.agent_id)
     now_ts = time.time()
 
@@ -111,7 +105,6 @@ def agent_to_dict(agent):
         "hostname": agent.hostname,
         "host_ip": agent.ip_address,
         # สถานะการผูก IP — host_ip ว่าง = ยังไม่เคยผูก (รอ agent รายงานมาครั้งแรก)
-        # pending_ip มีค่า = มีคนส่งข้อมูลมาในนามของ agent นี้จาก IP อื่น และถูกปฏิเสธไปแล้ว
         "ip_interface": agent.ip_interface,
         "pending_ip": agent.pending_ip,
         "pending_ip_at": iso_utc(agent.pending_ip_at),
@@ -166,7 +159,6 @@ async def api_create_agent(
         )
     except Exception as exc:
         # ข้อความที่ส่งออกไปตั้งใจไม่บอกรายละเอียดภายใน แต่ถ้าไม่ log ไว้เลย ตอนเกิดปัญหาจริง
-        # แอดมินจะเห็นแค่ "สร้างไม่สำเร็จ" โดยไม่มีอะไรให้ไล่ว่าติดที่ openssl / DB / site.conf
         logger.exception("สร้าง package ของ %s ไม่สำเร็จ", agent_id)
         raise HTTPException(
             status_code=500,
@@ -194,7 +186,6 @@ async def api_update_agent(
     old_is_active = agent.is_active
 
     # ไม่ส่ง ip_address ไปด้วย — IP ที่ผูกไว้แก้ผ่าน API นี้ไม่ได้โดยตั้งใจ
-    # (ต้องสร้าง package ใหม่ ซึ่งจะปลด binding ให้เอง)
     agent = await update_agent(
         db=db,
         agent=agent,
@@ -229,7 +220,6 @@ async def api_delete_agent(
         raise HTTPException(status_code=404, detail="ไม่พบ Client Server")
 
     # ลบไฟล์ cert/package ของ Agent ออกจากเครื่อง Central ด้วย
-    # ถ้าไม่อยากลบไฟล์จริง ให้คอมเมนต์ส่วนนี้ออกได้
     package_path = AGENT_PACKAGES_DIR / f"{agent_id}.zip"
     if package_path.exists():
         package_path.unlink()
@@ -240,7 +230,6 @@ async def api_delete_agent(
     clear_agent_auth_cache(agent_id)
 
     # IP ที่เครื่องนี้เคยรายงานว่าโจมตี ยังอยู่ใน blacklist ตามเดิม — บอกให้ชัดในข้อความตอบกลับ
-    # เพราะเป็นจุดที่คนกดลบมักเข้าใจว่า "ลบ agent = ปลดบล็อกทุกอย่างของเครื่องนั้น"
     return {
         "status": "ok",
         "deleted_alerts": deleted_alerts,
@@ -319,8 +308,6 @@ async def download_agent_package(
     cert_dir = Path(agent.key_path).parent if agent and agent.key_path else None
 
     # ลบไฟล์ zip + cert dir ของ agent ทิ้งหลังส่งให้ client จบแล้ว
-    # (token เป็น one-time โหลดซ้ำไม่ได้อยู่แล้ว ถ้าต้องการไฟล์ใหม่ให้กด regen
-    # ซึ่งสร้าง cert + zip ใหม่ได้เสมอ — get_existing_agent_cert มี fallback ออก cert ใหม่)
     return FileResponse(
         path=str(zip_path),
         filename=zip_path.name,

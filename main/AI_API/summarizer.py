@@ -1,16 +1,4 @@
-"""
-สร้าง prompt จาก SecurityAlert (metadata + raw log ในแถวนั้น) แล้วให้ Gemini สรุปเป็นภาษาไทย
-
-หลักการของ prompt:
-- ให้ AI วิเคราะห์จาก "หลักฐานใน raw log จริง" ของ alert แถวนี้เท่านั้น เจาะจงกับเหตุการณ์
-  ไม่ตอบกว้าง ๆ ที่ใช้ได้กับทุก alert และห้ามเดาสิ่งที่ไม่มีใน log
-  (ของเดิมในหน้าเว็บเป็นข้อความ hardcode ที่พูดถึง brute force/wordlist ตายตัวทุก alert)
-- response_action (บล็อก/whitelist/blacklist) เป็นแค่ "บริบท" บอก AI ว่าระบบจัดการ IP อัตโนมัติไปแล้ว
-  เพื่อไม่ให้เอามาเป็นคำแนะนำหลักหรือพูดซ้ำทุก alert — พื้นที่คำแนะนำให้เน้นวิธีแก้ที่ต้นเหตุจริง
-  (แก้โค้ด/ตั้งค่า/แพตช์/จำกัด rate/ตรวจบัญชี-endpoint ที่กระทบ)
-- ให้ประเมินผลกระทบ (สำเร็จ/ถูกปฏิเสธ/สรุปไม่ได้) จากสัญญาณจริงใน log เช่น HTTP status,
-  Accepted vs Failed password, firewall deny — ตอบตามหลักฐาน ไม่ใช่ตอบสำเร็จรูป
-"""
+"""สร้าง prompt จาก SecurityAlert (metadata + raw log ในแถวนั้น) แล้วให้ Gemini สรุปเป็นภาษาไทย"""
 
 from AI_API import config, gemini_client
 from alerts import get_attack_type_label
@@ -124,10 +112,5 @@ def build_prompt(alert, agent=None, severity: str = "LOW") -> str:
 
 
 def summarize_alert(alert, agent=None, severity: str = "LOW") -> tuple[bool, str]:
-    """
-    blocking — route ต้องเรียกผ่าน asyncio.to_thread
-    severity ต้องคำนวณมาก่อนแล้วส่งเข้ามา (ฟังก์ชันนี้รันในเทรดแยกไม่มี event loop
-    ให้ await severity_cache.get_severity ตรงๆ ไม่ได้ — route ฝั่ง async คำนวณให้ก่อน)
-    คืน (True, ข้อความสรุป) หรือ (False, ข้อความ error)
-    """
+    """blocking — route ต้องเรียกผ่าน asyncio.to_thread"""
     return gemini_client.generate(build_prompt(alert, agent, severity))

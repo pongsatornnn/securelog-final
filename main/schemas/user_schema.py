@@ -23,7 +23,6 @@ class ResetPasswordRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     # optional: บัญชีที่ถูกบังคับเปลี่ยนรหัส (login ครั้งแรก / โดน admin reset) ไม่ต้องส่งรหัสเดิม
-    # (การเปลี่ยนเองตามปกติผ่านหน้า Profile ยังต้องส่ง — บังคับเช็คในฝั่ง route)
     current_password: str | None = None
     new_password: str = Field(min_length=8, max_length=100)
 

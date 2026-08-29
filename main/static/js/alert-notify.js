@@ -1,38 +1,21 @@
 // แจ้งเตือน alert ใหม่: popup มุมขวาล่าง + ตัวเลข "ยังไม่ได้อ่าน" ที่เมนู Alerts
-//
-// เก็บสถานะเป็น Alpine store ชื่อ 'alerts' เพราะ markup 2 จุดใน base.html (badge ใน sidebar
-// กับกล่อง toast ที่อยู่นอก .layout) เป็น component แยกกัน แต่ต้องอ่านค่าชุดเดียวกัน
-//
-// "อ่านแล้ว" เก็บที่ server ผูกกับบัญชีผู้ใช้ (ตาราง alert_reads + users.last_seen_alert_id —
-// ดู routes/alerts.py) เดิมเก็บใน localStorage อย่างเดียวจึงผูกกับ "เครื่อง" ไม่ใช่ "บัญชี":
-// คนเดิม login จากอีกเครื่องเลยเห็นเป็นยังไม่ได้อ่านทั้งหมด
-//
-// localStorage ยังใช้อยู่แต่ลดบทบาทเหลือแค่ cache — โหลดหน้ามาแล้ววาดจุดได้ทันทีโดยไม่ต้องรอ
-// server ตอบ (ไม่งั้นจุดจะขึ้นครบทุกแถวแล้วค่อยหายไป) จากนั้น syncReadState() เอาของจริงจาก
-// server มาทับ พร้อมดัน id ที่เครื่องนี้เปิดไปแล้วแต่ server ยังไม่รู้ขึ้นไปให้ครบ
 (function () {
   var READ_STATE_URL = '/api/alerts_read_state'
   var UNREAD_COUNT_URL = '/api/alerts_unread_count'
 
   // key ของ cache ใน localStorage — สองตัวนี้คนละความหมายกัน:
-  //   READ_KEY   = เห็นรายการมาถึงไหนแล้ว  -> คุมตัวเลข badge ที่เมนู (เข้าหน้า Alerts = เคลียร์)
-  //   OPENED_KEY = ตรวจสอบตัวไหนไปแล้วบ้าง -> คุมเครื่องหมาย "ยังไม่ได้อ่าน" ของแต่ละแถว
-  //
-  // READ_KEY เขียนอย่างเดียวไม่ได้อ่านกลับ (ตัวจริงมาจาก server ทุกครั้งที่โหลดหน้า) — เขียนไว้
-  // เป็นสัญญาณให้แท็บอื่นในเครื่องเดียวกันรู้ผ่าน event 'storage' ว่าต้องเคลียร์ badge ตาม
   var READ_KEY = 'securelog.alerts.lastReadId'
   var OPENED_KEY = 'securelog.alerts.openedIds'
-  var MAX_OPENED = 500             // เก็บเฉพาะ id ใหม่สุด กัน localStorage โตไม่จำกัด
+  var MAX_OPENED = 500
 
-  var TOAST_TTL_MS = 8000          // popup อยู่บนจอกี่ ms ก่อนหายเอง
-  var MAX_TOASTS = 4               // เกินนี้ใบเก่าสุดหายไป กัน alert รัว ๆ ท่วมจอ
+  var TOAST_TTL_MS = 8000
+  var MAX_TOASTS = 4
   var REFRESH_DEBOUNCE_MS = 400
 
   function setLastReadId(id) {
     try {
       window.localStorage.setItem(READ_KEY, String(id))
     } catch (err) {
-      /* ไม่เป็นไร — server เป็นตัวจริงอยู่แล้ว แค่แท็บอื่นจะไม่รู้ตัวทันที */
     }
   }
 
@@ -41,7 +24,7 @@
       var raw = JSON.parse(window.localStorage.getItem(OPENED_KEY) || '[]')
       return Array.isArray(raw) ? raw : []
     } catch (err) {
-      return []                          // ค่าเสีย/localStorage ใช้ไม่ได้ -> รอ server ตอบอย่างเดียว
+      return []
     }
   }
 
@@ -49,7 +32,6 @@
     try {
       window.localStorage.setItem(OPENED_KEY, JSON.stringify(ids))
     } catch (err) {
-      /* ไม่เป็นไร — server เป็นตัวจริง แค่รอบหน้าต้องรอ server ตอบก่อนจุดถึงหาย */
     }
   }
 
@@ -59,28 +41,24 @@
       toasts: [],
 
       // map id -> 1 (ไม่ใช่ array) เพราะตารางเรียก isOpened() ทุกแถวทุกครั้งที่ render
-      // เก็บใน store ให้เป็น reactive ด้วย พอ markOpened() แถวนั้นจะเปลี่ยนหน้าตาทันที
       opened: {},
 
       // จุดที่เห็นรายการถึงแล้ว — สำเนาของ users.last_seen_alert_id ฝั่ง browser
-      // null = ยังไม่ได้ถาม server ในรอบโหลดหน้านี้
       _lastSeenId: null,
 
-      _timers: {},        // id -> timeout ของ popup แต่ละใบ (ไม่ได้เอาไป render)
+      _timers: {},
       _refreshTimer: null,
 
       // ตั้งชื่อ start ไม่ใช่ init เพราะ Alpine เรียก init() ของ store ให้เองอัตโนมัติ
-      // จะกลายเป็นผูก listener ซ้ำสองรอบ
       start() {
-        this.loadOpened()       // cache ก่อน -> จุดขึ้นถูกต้องทันทีไม่ต้องรอ server
-        this.syncReadState()    // แล้วค่อยเอาของจริงจาก server มาทับ
+        this.loadOpened()
+        this.syncReadState()
         this.refreshUnread()
 
         AlertStream.on('alert', (alert) => this.onAlert(alert))
 
         AlertStream.on('state', (state) => {
           // กลับมาต่อได้แล้ว = ช่วงที่หลุดอาจมี alert เข้ามา หรืออีกเครื่องอาจกดอ่านไปแล้ว
-          // -> ถามสถานะจริงจาก server ใหม่ทั้งคู่
           if (state !== 'connected') return
 
           this.refreshUnread()
@@ -144,7 +122,6 @@
           serverIds.forEach(function (id) { onServer[id] = 1 })
 
           // id ที่เครื่องนี้เปิดไปแล้วแต่ server ไม่รู้ — POST ตอนนั้นพลาด หรือเป็นของที่ค้าง
-          // มาจากตอนที่ยังเก็บใน localStorage อย่างเดียว -> ดันขึ้นไป ไม่งั้นเครื่องอื่นไม่มีวันเห็น
           var missing = cached.filter(function (id) { return !onServer[id] })
 
           this.applyOpened(serverIds.concat(missing))
@@ -174,7 +151,6 @@
         if (!id || this.opened[id]) return
 
         // อัปเดตหน้าจอ + cache ทันทีโดยไม่รอ server — ยิงพลาดก็แค่ค้างอยู่ใน cache แล้ว
-        // syncReadState() รอบหน้าดันขึ้นไปให้เอง
         this.applyOpened(Object.keys(this.opened).map(Number).concat([id]))
 
         this.pushReadState({ opened_ids: [id] })
@@ -192,8 +168,6 @@
           const data = await res.json()
 
           // server เป็นตัวจริงเสมอ (รวมถึงเคสเข้าใช้ครั้งแรกที่ server ตั้งค่าเริ่มต้นให้เอง)
-          // ถ้าค่าใน memory เคยเดินหน้าไปแล้วแต่ POST ตอนนั้นพลาด ค่าจะถูกดึงกลับมาตรงนี้
-          // แล้ว markRead() ครั้งถัดไปยิงซ้ำให้เอง
           this._lastSeenId = data.last_seen_id || 0
 
           this.unread = this.isAlertsPage ? 0 : (data.count || 0)
@@ -212,12 +186,11 @@
         if (this._lastSeenId !== null && id <= this._lastSeenId) return
 
         // เลื่อนค่าใน memory ต่อเมื่อ server รับไปแล้วเท่านั้น — ถ้าเลื่อนไปก่อนแล้วยิงพลาด
-        // ครั้งถัดไปจะติดเงื่อนไข "ห้ามถอยหลัง" ด้านบนจนไม่มีใครยิงซ้ำให้อีกเลย
         this.pushReadState({ last_seen_id: id }).then((ok) => {
           if (!ok) return
 
           this._lastSeenId = id
-          setLastReadId(id)     // สัญญาณให้แท็บอื่นในเครื่องเดียวกันเคลียร์ badge ตาม
+          setLastReadId(id)
         })
       },
 
@@ -231,7 +204,6 @@
         }
 
         // ไม่ +1 เองเพราะ alert เดิมที่ backend merge แล้ว publish ซ้ำจะใช้ id เดิม
-        // ถ้านับทุก event ตัวเลขจะเฟ้อกว่าความจริง — ถาม server เอาจำนวนจริงแทน
         clearTimeout(this._refreshTimer)
         this._refreshTimer = setTimeout(() => this.refreshUnread(), REFRESH_DEBOUNCE_MS)
       },

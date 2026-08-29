@@ -1,17 +1,4 @@
-"""
-Blacklist expiry sweeper (background worker)
-
-เดินตรวจทุก SWEEP_INTERVAL_SECONDS หา IP ใน blacklist ที่ถึงกำหนดหมดอายุแล้ว
-(is_active=True และ expires_at <= now) แล้ว:
-  1. mark is_active=False (เก็บแถวไว้เพื่อ escalation/history — ไม่ลบ)
-  2. broadcast unblock_ip ไปทุก Agent (agent ลบ ufw rule ออก)
-
-- IP ที่ expires_at = NULL (ถาวร: manual/critical) จะไม่ถูกแตะ
-- ถ้า IP หมดอายุแล้วกลับมาโจมตีอีก handle_attack_ip จะ re-block + escalate (ban นานขึ้น)
-  โดยดูจากแถวเดิมที่ is_active=False (ดู process_log_detect/security_response.py)
-
-รันด้วย: python -m blacklist_expiry
-"""
+"""Blacklist expiry sweeper (background worker)"""
 
 import asyncio
 from datetime import datetime

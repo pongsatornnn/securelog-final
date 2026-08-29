@@ -1,13 +1,4 @@
-"""
-Worker: subscribe Redis channel `security_alerts_stream` (ตัวเดียวกับที่ detector
-publish alert เข้ามา และ dashboard SSE ฟังอยู่) แล้ว push แจ้งเตือนไปยังผู้รับ LINE
-ที่แอดมิน "อนุมัติแล้ว" (status=approved) เท่านั้น
-
-รันเป็น process แยกเหมือน detector ตัวอื่น:
-    cd main && python -m LINE_API.alert_subscriber
-
-ดีไซน์เดียวกับ detector: sync redis pub/sub loop + event loop ถาวรสำหรับ async DB
-"""
+"""Worker: subscribe Redis channel `security_alerts_stream` (ตัวเดียวกับที่ detector"""
 
 import asyncio
 import json
@@ -32,11 +23,7 @@ async def _approved_user_ids() -> list[str]:
 
 
 def _is_new_alert(r: redis.Redis, alert_id) -> bool:
-    """
-    True = alert แถวนี้ (id นี้) ยังไม่เคยส่ง -> ส่งได้
-    ใช้ SET NX: ครั้งแรกของ id เซ็ตสำเร็จ (True); merge ซ้ำ id เดิม key มีอยู่แล้ว (False=ข้าม)
-    ไม่มี id (เช่น event ทดสอบ) ให้ส่งเสมอ
-    """
+    """True = alert แถวนี้ (id นี้) ยังไม่เคยส่ง -> ส่งได้"""
     if alert_id is None:
         return True
     try:
@@ -58,7 +45,6 @@ def handle_alert(alert: dict, loop: asyncio.AbstractEventLoop, r: redis.Redis) -
         return
 
     # อ่านค่า LINE ล่าสุดเข้า cache ก่อนใช้ — worker นี้เป็น process แยกและรันยาว
-    # ถ้าไม่เติม แอดมินเปลี่ยน token ในหน้า Settings แล้ว worker จะยังใช้ค่าเก่าจนกว่าจะ restart
     loop.run_until_complete(ensure_loaded())
 
     if not config.is_configured():
@@ -86,7 +72,6 @@ def start_line_notifier() -> None:
     asyncio.set_event_loop(loop)
 
     # เตือนตอน start เฉย ๆ ไม่ต้อง exit — แอดมินตั้งค่าทีหลังจากหน้า System Settings ได้
-    # แล้ว handle_alert จะเห็นค่าใหม่เอง (เช็คซ้ำทุกครั้งที่มี alert เข้ามา)
     if not loop.run_until_complete(_configured_now()):
         print("[LINE-NOTIFY] ยังไม่ได้ตั้งค่า LINE — ตั้งได้ที่หน้า System Settings แล้วมีผลทันที")
 

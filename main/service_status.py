@@ -1,17 +1,4 @@
-"""
-บอกว่า service ตัวไหน "ยังรันด้วยค่าเก่า" หลัง `.env` ถูกแก้ — ใช้กับแถบเตือนในหน้า System Settings
-
-**ทำไมไม่เก็บธง "ค้างรีสตาร์ต" ไว้ที่ไหนสักที่:**
-ธงต้องมีคนมาล้าง ถ้าลืมล้าง (หรือ Redis ที่เก็บธงถูกล้างเอง) สถานะจะโกหกทันที — ที่นี่จึง
-**คำนวณจากของจริงทุกครั้ง**: เทียบ "เวลาที่ unit เริ่มทำงาน" กับ "mtime ของ .env"
-ตัวไหนเริ่ม *ก่อน* ไฟล์ถูกแก้ = process นั้นยังถือค่าเก่าที่อ่านไว้ตอน import อยู่แน่นอน
-
-ผลพลอยได้: ใช้ได้กับการแก้ `.env` ทุกกรณี ไม่ใช่แค่ตอนเปลี่ยนรหัส Redis (แก้ DB_PASSWORD
-หรือ JWT_SECRET ด้วยมือแล้วลืมรีสตาร์ต ก็ขึ้นเตือนเหมือนกัน)
-
-`systemctl show` เป็นคำสั่งอ่านอย่างเดียว **ไม่ต้องใช้ root** (ต่างจาก restart) — จงใจไม่ให้
-เว็บสั่งรีสตาร์ตเอง เพราะนั่นต้องเปิดสิทธิ์ sudo ถาวรให้ process ที่รับ request จากภายนอก
-"""
+"""บอกว่า service ตัวไหน "ยังรันด้วยค่าเก่า" หลัง `.env` ถูกแก้ — ใช้กับแถบเตือนในหน้า System Settings"""
 
 import os
 import subprocess
@@ -25,7 +12,6 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(REPO_ROOT, ".env")
 
 # ชื่อ unit ทั้งหมดมาจาก systemd/_gen.sh (ขึ้นต้น securelog- เสมอ) — ใช้ glob จะได้ไม่ต้องไล่แก้
-# ที่นี่ทุกครั้งที่เพิ่ม service ใหม่ · centralredis ไม่รวมด้วยเพราะไม่ได้อ่าน .env
 UNIT_GLOB = "securelog-*.service"
 WEB_UNIT = "securelog-web.service"
 TARGET_UNIT = "securelog.target"
@@ -37,11 +23,7 @@ _env_applied_at = time.time()
 
 
 def mark_env_applied() -> None:
-    """
-    เรียกเมื่อ process นี้เขียน .env แล้ว **อัปเดตค่าในหน่วยความจำตามไปด้วยแล้ว**
-    (ตอนนี้มีที่เดียวคือ redis_admin_password ซึ่งตั้ง REDIS_CONFIG/os.environ ใหม่ + reset client)
-    ถ้าไม่บอก ตัวเว็บเองจะขึ้นเตือนว่าต้องรีสตาร์ตทั้งที่เพิ่งใช้ค่าใหม่ไปแล้ว
-    """
+    """เรียกเมื่อ process นี้เขียน .env แล้ว **อัปเดตค่าในหน่วยความจำตามไปด้วยแล้ว**"""
     global _env_applied_at
     _env_applied_at = time.time()
 
@@ -53,11 +35,7 @@ def _iso(epoch: float) -> str:
 
 
 def _monotonic_to_epoch(usec: int) -> float:
-    """
-    systemd ให้เวลาเริ่ม unit เป็น monotonic (ไมโครวินาทีตั้งแต่ boot) — แปลงเป็น epoch
-    ด้วยฐานเดียวกับ time.monotonic() ของ Python (CLOCK_MONOTONIC ทั้งคู่บน Linux)
-    เลี่ยงการ parse ActiveEnterTimestamp ที่รูปแบบขึ้นกับ locale/timezone ของเครื่อง
-    """
+    """systemd ให้เวลาเริ่ม unit เป็น monotonic (ไมโครวินาทีตั้งแต่ boot) — แปลงเป็น epoch"""
     return (time.time() - time.monotonic()) + usec / 1_000_000
 
 
@@ -82,12 +60,7 @@ def _query_units() -> list[dict]:
 
 
 def restart_status() -> dict:
-    """
-    สรุปว่าตอนนี้มี service ไหนต้องรีสตาร์ตบ้าง — ปลอดภัยที่จะเรียกบ่อย (อ่านอย่างเดียวทั้งหมด)
-
-    คืน ok=False พร้อม problem เมื่อ "ตรวจไม่ได้" (ไม่มี systemctl / unit ยังไม่ติดตั้ง / อ่าน .env
-    ไม่ได้) — ฝั่งหน้าเว็บถือว่าไม่มีข้อมูล ไม่ใช่ถือว่าทุกอย่างปกติ
-    """
+    """สรุปว่าตอนนี้มี service ไหนต้องรีสตาร์ตบ้าง — ปลอดภัยที่จะเรียกบ่อย (อ่านอย่างเดียวทั้งหมด)"""
     info = {
         "ok": False,
         "problem": "",
@@ -128,7 +101,6 @@ def restart_status() -> dict:
         started_at = _monotonic_to_epoch(int(fields.get("ActiveEnterTimestampMonotonic") or 0))
 
         # ตัวเว็บ (process นี้) เทียบกับเวลาที่ "รับค่าใหม่เข้าหน่วยความจำ" ไม่ใช่เวลาที่ unit start
-        # เพราะเปลี่ยนรหัส Redis จากหน้าเว็บแล้วมันอัปเดตตัวเองทันทีโดยไม่ต้องรีสตาร์ต
         fresh_since = max(started_at, _env_applied_at) if unit == WEB_UNIT else started_at
         stale = env_mtime > fresh_since
 

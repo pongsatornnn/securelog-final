@@ -7,20 +7,18 @@
 
   <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
 
-  <!-- ธีมมืด: บอกเบราว์เซอร์ด้วย เพื่อให้ scrollbar/ช่องกรอกที่ระบบวาดเองใช้โทนเข้มตาม -->
+  
   <meta name="color-scheme" content="dark">
 
   <script src="{{ static_url('csrf.js') }}"></script>
   <script src="{{ static_url('session.js') }}"></script>
   <script src="{{ static_url('js/common.js') }}"></script>
 
-  <!-- SSE เส้นเดียวที่แชร์ทุกหน้า + popup/badge แจ้งเตือน alert ใหม่
-       (ต้องโหลดก่อน alpine.min.js ที่เป็น defer เพราะ alert-notify ผูก event alpine:init) -->
+  
   <script src="{{ static_url('js/alert-stream.js') }}"></script>
   <script src="{{ static_url('js/alert-notify.js') }}"></script>
 
-  <!-- กล่องยืนยัน + แถบแจ้งผล (แทน confirm()/alert() ของเบราว์เซอร์) และ a11y ของ modal
-       ทุกหน้า — ต้องโหลดก่อน alpine.min.js เช่นกันเพราะผูก event alpine:init -->
+  
   <script src="{{ static_url('js/ui.js') }}"></script>
 
   <script defer src="{{ static_url('alpine.min.js') }}"></script>
@@ -61,11 +59,10 @@
   {% block head %}{% endblock %}
 </head>
 
-<!-- data-page ให้ alert-notify.js รู้ว่ากำลังอยู่หน้าไหน (อยู่หน้า Alerts = เห็นแล้ว ไม่ต้องนับ unread) -->
+
 <body data-page="{{ page or '' }}">
 
-<!-- ชุดไอคอนของเมนู: นิยาม <symbol> ไว้ครั้งเดียวแล้วอ้างด้วย <use> ทุกจุด
-     (โปรเจกต์ไม่มี icon font และเครื่องออกเน็ตไม่ได้ จึงฝัง SVG มาเองทั้งหมด) -->
+
 <svg style="display:none" aria-hidden="true" focusable="false">
   <symbol id="ico-dashboard" viewBox="0 0 16 16">
     <rect x="2" y="2" width="5" height="5" rx="1"/>
@@ -111,7 +108,7 @@
     <circle cx="8" cy="6.4" r="2"/>
     <path d="M4.2 12.7a4.3 4.3 0 0 1 7.6 0"/>
   </symbol>
-  <!-- เฟือง — หน้า System Settings (ต่างจาก ico-profile ที่เป็นรูปคน = ตั้งค่าของ "บัญชีเรา") -->
+  
   <symbol id="ico-settings" viewBox="0 0 16 16">
     <circle cx="8" cy="8" r="2.1"/>
     <path d="M8 1.4v1.8M8 12.8v1.8M14.6 8h-1.8M3.2 8H1.4M12.67 3.33l-1.27 1.27M4.6 11.4l-1.27 1.27M12.67 12.67l-1.27-1.27M4.6 4.6L3.33 3.33"/>
@@ -166,7 +163,7 @@
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-alerts"/></svg>
         <span class="nav-label">Alerts</span>
 
-        <!-- จำนวนการโจมตีใหม่ที่ยังไม่ได้เข้าไปดู (เคลียร์เองเมื่อเปิดหน้า Alerts) -->
+        
         <span class="nav-badge" x-cloak
               x-show="$store.alerts.unread > 0"
               x-text="$store.alerts.unread > 99 ? '99+' : $store.alerts.unread"
@@ -239,20 +236,20 @@
     </div>
   </aside>
 
-  <!-- ฉากหลังตอนเปิดเมนูบนมือถือ (จอใหญ่ CSS ซ่อนไว้) — แตะที่ไหนก็ปิดเมนู -->
+  
   <div class="nav-backdrop" x-show="navOpen" x-cloak @click="navOpen = false"></div>
 
   <main class="main">
 
     <header class="topbar">
       <div class="topbar-left">
-        <!-- จอเล็ก: เปิด/ปิดเมนูแบบ off-canvas -->
+        
         <button class="nav-toggle" type="button"
                 @click="navOpen = !navOpen"
                 :aria-expanded="navOpen"
                 aria-label="เปิด/ปิดเมนู">☰</button>
 
-        <!-- จอใหญ่: ย่อเมนูเหลือแต่ไอคอน -->
+        
         <button class="rail-toggle" type="button"
                 @click="toggleRail()"
                 :aria-expanded="!collapsed"
@@ -281,7 +278,7 @@
       </div>
     </header>
 
-    <!-- ตำแหน่งปัจจุบันในระบบ (หมวด / หน้า) แบบเดียวกับ breadcrumb ของ Wazuh -->
+    
     <div class="breadcrumbs" aria-label="ตำแหน่งปัจจุบัน">
       <span>{{ nav_group }}</span>
       <span class="crumb-sep" aria-hidden="true">/</span>
@@ -297,8 +294,7 @@
 
 </div>
 
-<!-- กล่องยืนยัน — ใบเดียวใช้ร่วมทุกหน้า แทน confirm() ของเบราว์เซอร์ (ดู static/js/ui.js)
-     อยู่นอก .layout เพราะ backdrop เป็น position:fixed ที่ต้องคลุมทั้งจอ -->
+
 <div class="modal-backdrop" x-data x-show="$store.ui.dialog.open" x-cloak
      x-transition.opacity
      @click.self="$store.ui.cancel()"
@@ -331,12 +327,10 @@
   </div>
 </div>
 
-<!-- Popup แจ้งเตือน alert ใหม่ มุมขวาล่าง — อยู่นอก .layout เพราะ position: fixed
-     และต้องโผล่ได้ทุกหน้า (x-data เปล่า ๆ เพื่อให้ $store ใช้ได้ในบล็อกนี้) -->
+
 <div class="toast-stack" x-data role="status" aria-live="polite">
 
-  <!-- แถบแจ้งผลของสิ่งที่ผู้ใช้เพิ่งกด (แทน alert()) — อยู่บนสุดของกองเพราะเกี่ยวกับ
-       สิ่งที่เพิ่งทำไป ต้องเห็นก่อน alert การโจมตีที่เด้งเข้ามาเองตลอดเวลา -->
+  
   <template x-for="notice in $store.ui.notices" :key="notice.id">
     <div class="notice" :class="'notice-' + notice.kind"
          @mouseenter="$store.ui.hold(notice.id)"

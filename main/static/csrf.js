@@ -1,6 +1,4 @@
 // เพิ่ม header X-CSRF-Token อัตโนมัติให้ทุก fetch ที่ "เปลี่ยนข้อมูล" (POST/PUT/PATCH/DELETE)
-// แบบ same-origin โดยอ่าน token จาก cookie `csrf_token` (ตั้งโดย CSRFMiddleware ฝั่ง server)
-// โหลดแบบ synchronous ก่อน script อื่น เพื่อ patch window.fetch ให้ทันก่อนหน้าจะยิง request ใด ๆ
 (function () {
   function getCookie(name) {
     var parts = document.cookie ? document.cookie.split('; ') : [];

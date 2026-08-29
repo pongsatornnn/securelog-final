@@ -1,14 +1,4 @@
-"""
-เส้นทางเกี่ยวกับ LINE:
-- POST /line/webhook   : รับ event จาก LINE (public, ไม่ต้อง login แต่ verify signature)
-                         มีคน follow OA -> บันทึกเป็น recipient สถานะ pending (รออนุมัติ)
-                         unfollow        -> ตั้งเป็น rejected (หยุดส่ง)
-- /api/line/recipients : admin จัดการผู้รับ (ต้อง login) — list / approve / reject / delete
-- /api/line/oa         : LINE OA ID + ลิงก์แอดเพื่อน ให้หน้า LINE Recipients เอาไปโชว์
-                         (อ่านจากค่าที่ตั้งไว้ ไม่ได้เรียก LINE API)
-
-ผู้รับจะได้รับแจ้งเตือนก็ต่อเมื่อ status=approved เท่านั้น (ดู LINE_API/alert_subscriber.py)
-"""
+"""เส้นทางเกี่ยวกับ LINE:"""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,19 +23,14 @@ from LINE_API import config as line_config, line_client
 router = APIRouter()
 
 # webhook_router = endpoint เดียวที่ LINE เรียกเข้ามา — แยกออกมาเพื่อเอาไป mount
-# บน app เล็ก (LINE_API/webhook_app.py) ที่เปิด public ผ่าน tunnel ได้โดยไม่ต้อง
-# เปิดทั้งระบบออก public (ระบบหลักอยู่หลังบ้าน ไม่ออกเน็ต)
 webhook_router = APIRouter()
 
 
-# ============================================================
-# Webhook (public) — LINE เรียกเข้ามา
 # ============================================================
 
 @webhook_router.post("/line/webhook")
 async def line_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     # เติม cache จาก DB ก่อน — verify_signature/get_profile เป็นโค้ด sync ที่อ่านค่าจาก cache
-    # อย่างเดียว (ดูหมายเหตุใน settings_cache.py) app นี้เป็น process แยกด้วย
     await ensure_loaded()
 
     body = await request.body()
@@ -75,15 +60,11 @@ async def line_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             continue
 
         # follow / message / event อื่นๆ ที่มี userId -> ลงทะเบียนเป็น pending
-        # รองรับ "คนที่แอด OA ไว้ก่อนมีระบบ" (event follow ยิงไปแล้ว จับไม่ได้) —
-        # ให้เขาส่งข้อความอะไรก็ได้มา ระบบจะเก็บ userId เข้าคิวรออนุมัติ
         existing = await get_line_recipient_by_user_id(db, user_id)
         display_name = existing.display_name if existing else None
         picture_url = existing.picture_url if existing else None
 
         # ดึง profile เฉพาะตอนยังขาดชื่อหรือยังไม่เคยดึงรูป (ลด API call ต่อทุกข้อความ)
-        # picture_url = '' คือ "ดึงแล้วเจ้าตัวไม่ได้ตั้งรูป" ไม่ใช่ "ยังไม่เคยดึง" จึงไม่ดึงซ้ำ
-        # — เป็นทางที่แถวเก่า (สมัยยังไม่มีคอลัมน์นี้) ได้รูปมาเองโดยไม่ต้อง backfill
         if display_name is None or picture_url is None:
             profile = line_client.get_profile(user_id)
 
@@ -98,8 +79,6 @@ async def line_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     return {"status": "ok"}
 
 
-# ============================================================
-# Admin API (require login)
 # ============================================================
 
 def _serialize(recipient) -> dict:
@@ -118,19 +97,12 @@ def _serialize(recipient) -> dict:
 
 @router.get("/api/line/oa")
 async def api_line_oa(user=Depends(require_admin)):
-    """
-    ข้อมูล OA ที่หน้า LINE Recipients ใช้บอกว่า "ให้แอดบัญชีไหนถึงจะได้รับแจ้งเตือน"
-
-    อ่านจาก settings_cache (หน้า System Settings เป็นคนตั้ง) **ไม่เรียก LINE API** —
-    หน้านี้เรียก endpoint นี้ทุกครั้งที่เปิด ไม่ควรเสียโควตา API กับค่าที่ตั้งเองอยู่แล้ว
-    (ปุ่มทดสอบการเชื่อมต่อในหน้า System Settings เป็นที่เดียวที่ยิงไปถาม LINE จริง)
-    """
+    """ข้อมูล OA ที่หน้า LINE Recipients ใช้บอกว่า "ให้แอดบัญชีไหนถึงจะได้รับแจ้งเตือน" """
     await ensure_loaded()
 
     oa_id = (line_config.oa_id() or "").strip()
 
     # basic id ของ LINE ขึ้นต้นด้วย @ เสมอ แต่คนกรอกมักลืมใส่ — เติมให้เฉพาะตอนสร้างลิงก์
-    # ส่วนที่โชว์บนหน้าเว็บคงไว้ตามที่ตั้งจริง จะได้เห็นตรงกับช่องในหน้า System Settings
     link_id = oa_id if oa_id.startswith("@") else f"@{oa_id}"
 
     return {

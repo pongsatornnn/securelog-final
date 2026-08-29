@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 
 
 # ต้องตรงกับความยาวคอลัมน์ detection_signatures.description
-# (pattern เป็น TEXT ไม่มีเพดาน จึงไม่ต้องกำหนด — ดูเหตุผลเต็มใน schemas/agent_schema.py)
 DESCRIPTION_MAX = 200
 
 
@@ -23,10 +22,5 @@ class EditSignatureRequest(BaseModel):
 
 
 class RestoreDefaultSignaturesRequest(BaseModel):
-    """
-    คืนค่า default ของ signature
-
-    detection_type = None -> คืนทุกชนิด · ส่งมา -> คืนเฉพาะชนิดนั้น (ปุ่มบนแท็บที่เปิดอยู่)
-    ทั้งสองแบบแตะเฉพาะแถวของระบบ (is_default) — แถวที่แอดมินเพิ่มเองไม่ถูกแตะ
-    """
+    """คืนค่า default ของ signature"""
     detection_type: str | None = None

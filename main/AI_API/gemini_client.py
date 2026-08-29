@@ -1,14 +1,4 @@
-"""
-Gemini REST client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency
-(แนวเดียวกับ LINE_API/line_client.py)
-
-เรียก generateContent แล้วคืน (ok, text_or_error) ไม่โยน exception ดิบให้ route
-
-**ข้อความ error ต้องมีต้นฉบับจาก Google ติดมาด้วยเสมอ** (GeminiError.full_message):
-เดิมคืนแค่ "เรียก AI ไม่สำเร็จ (HTTP 404)" ซึ่งบอกไม่ได้ว่าต้องไปแก้อะไร ทั้งที่ Google
-ส่งคำตอบมาชัดเจนอยู่แล้ว เช่น "This model models/gemini-2.5-flash is no longer available
-to new users. Please update your code to use models/gemini-3.6-flash"
-"""
+"""Gemini REST client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency"""
 
 import json
 import re
@@ -23,10 +13,7 @@ _MODEL_VERSION_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)")
 
 
 class GeminiError(Exception):
-    """
-    error ที่รู้ที่มา — เก็บทั้งข้อความไทยที่สรุปแล้ว และคำตอบดิบจาก Google ไว้ด้วยกัน
-    (`api_message` คือ error.message ใน body ของ Google ตัวที่บอกสาเหตุจริง)
-    """
+    """error ที่รู้ที่มา — เก็บทั้งข้อความไทยที่สรุปแล้ว และคำตอบดิบจาก Google ไว้ด้วยกัน"""
 
     def __init__(self, summary: str, *, http_code=None, api_status=None, api_message=None):
         self.summary = summary
@@ -77,10 +64,7 @@ def _http_error(e: urllib.error.HTTPError) -> GeminiError:
 
 
 def _request(url: str, payload: dict | None = None) -> dict:
-    """
-    ยิงไป Gemini API แล้วคืน body ที่ parse แล้ว — ผิดพลาดโยน GeminiError ที่มีข้อความจาก Google
-    payload = None -> GET (ใช้กับ ListModels) · มี payload -> POST
-    """
+    """ยิงไป Gemini API แล้วคืน body ที่ parse แล้ว — ผิดพลาดโยน GeminiError ที่มีข้อความจาก Google"""
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
 
     headers = {"x-goog-api-key": config.api_key()}
@@ -114,13 +98,7 @@ def _request(url: str, payload: dict | None = None) -> dict:
 
 
 def _thinking_config() -> dict | None:
-    """
-    รุ่น 2.5 คุมการคิดด้วย `thinkingBudget` (จำนวน token) — รุ่น 3 ขึ้นไปเปลี่ยนเป็น
-    `thinkingLevel` และ **ไม่รับ budget=0 อีกแล้ว** (ตอบ 400 INVALID_ARGUMENT ทันที)
-
-    ชื่อที่อ่านเวอร์ชันไม่ได้ (gemini-flash-latest, gemma-*) ไม่ส่งอะไรไปเลย ปล่อยใช้ค่า
-    default ของโมเดลนั้น — เดาผิดแล้วพังทั้งคำขอ ไม่คุ้มกับ token ที่ประหยัดได้
-    """
+    """รุ่น 2.5 คุมการคิดด้วย `thinkingBudget` (จำนวน token) — รุ่น 3 ขึ้นไปเปลี่ยนเป็น"""
     match = _MODEL_VERSION_RE.match(config.model().strip())
     if not match:
         return None
@@ -149,12 +127,7 @@ def _payload(prompt: str, thinking: dict | None) -> dict:
 
 
 def _generate_content(prompt: str) -> dict:
-    """
-    ยิง generateContent ด้วยค่าที่ตั้งไว้ — ถ้าโมเดลไม่รับ thinkingConfig (400) ลองใหม่แบบไม่ส่ง
-
-    การลองซ้ำมีไว้รองรับโมเดลรุ่นใหม่ที่ยังไม่รู้จักในตอนเขียนโค้ด: ทั้งชื่อและรูปแบบ
-    thinkingConfig ของ Google เปลี่ยนมาแล้วหลายรอบ ไม่ควรให้แอดมินเลือกโมเดลไม่ได้เพราะเรื่องนี้
-    """
+    """ยิง generateContent ด้วยค่าที่ตั้งไว้ — ถ้าโมเดลไม่รับ thinkingConfig (400) ลองใหม่แบบไม่ส่ง"""
     thinking = _thinking_config()
 
     try:
@@ -184,7 +157,6 @@ def _extract_text(data: dict) -> str:
         raise ValueError(f"Gemini ส่งคำตอบว่าง (finishReason={finish})")
 
     # MAX_TOKENS = คำตอบถูกตัดกลางคัน (ไม่จบประโยค/ไม่ครบหัวข้อ) — ต้องไม่เอาไปเก็บลง DB
-    # เพราะแอดมินจะเห็นสรุปครึ่ง ๆ กลาง ๆ โดยไม่รู้ว่ามันไม่ครบ
     if finish == "MAX_TOKENS":
         raise ValueError(
             "คำตอบจาก AI ยาวเกินเพดานที่ตั้งไว้เลยถูกตัดกลางคัน "
@@ -195,12 +167,7 @@ def _extract_text(data: dict) -> str:
 
 
 def generate(prompt: str) -> tuple[bool, str]:
-    """
-    ส่ง prompt ไป Gemini — คืน (True, ข้อความสรุป) หรือ (False, ข้อความ error ที่อ่านรู้เรื่อง)
-
-    เป็นฟังก์ชัน blocking (urllib) — ฝั่ง FastAPI ต้องเรียกผ่าน asyncio.to_thread
-    ไม่งั้นจะบล็อก event loop ทั้ง process ระหว่างรอ AI ตอบ (นานได้หลายวินาที)
-    """
+    """ส่ง prompt ไป Gemini — คืน (True, ข้อความสรุป) หรือ (False, ข้อความ error ที่อ่านรู้เรื่อง)"""
     if not config.is_configured():
         return False, "ยังไม่ได้ตั้งค่า API Key ของ Gemini — ตั้งได้ที่หน้า System Settings"
 
@@ -218,13 +185,7 @@ def generate(prompt: str) -> tuple[bool, str]:
 
 
 def list_models() -> tuple[bool, list[dict] | str]:
-    """
-    โมเดลที่ **คีย์ปัจจุบัน** เรียกได้จริง — หน้า Settings เอาไปทำตัวเลือกใน dropdown
-    คืน (True, [{"name", "label"}, ...]) หรือ (False, ข้อความ error)
-
-    กรองด้วย allowlist (`config.MODEL_ALLOWLIST`) — เหลือเฉพาะตัวที่ระบบรองรับและคีย์ใบนี้
-    เห็นจริง · เรียงตามลำดับใน allowlist ไม่ใช่ลำดับที่ Google ส่งมา (ตัวแนะนำต้องอยู่บนสุด)
-    """
+    """โมเดลที่ **คีย์ปัจจุบัน** เรียกได้จริง — หน้า Settings เอาไปทำตัวเลือกใน dropdown"""
     if not config.is_configured():
         return False, "ยังไม่ได้ตั้ง API Key — ตั้งคีย์แล้วบันทึกก่อนถึงจะดึงรายชื่อได้"
 
@@ -253,10 +214,7 @@ def list_models() -> tuple[bool, list[dict] | str]:
 
 
 def test_connection() -> dict:
-    """
-    ยิงของจริงหนึ่งครั้งด้วยคีย์+โมเดลที่ตั้งอยู่ตอนนี้ — คืนผลที่หน้า Settings แสดงได้เลย
-    prompt สั้นที่สุดเท่าที่จะสั้นได้ จุดประสงค์คือดูว่าคีย์/โมเดลใช้ได้ ไม่ได้เอาคำตอบ
-    """
+    """ยิงของจริงหนึ่งครั้งด้วยคีย์+โมเดลที่ตั้งอยู่ตอนนี้ — คืนผลที่หน้า Settings แสดงได้เลย"""
     if not config.is_configured():
         return {"ok": False, "message": "ยังไม่ได้ตั้ง API Key"}
 

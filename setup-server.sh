@@ -1,53 +1,5 @@
 #!/usr/bin/env bash
 #
-# setup-server.sh — ติดตั้ง SecureLog "ฝั่ง Central" บนเครื่องใหม่ (แบบ interactive)
-#
-#   sudo ./setup-server.sh
-#
-# - ติดตั้ง "ตรงที่วางโปรเจกต์ไว้" — วางไว้ที่ไหนก็รันจากที่นั่นได้เลย ไม่ผูกกับ /opt
-#   อยากให้ไปอยู่ที่อื่น:  sudo INSTALL_DIR=/srv/securelog ./setup-server.sh  (ย้ายให้แล้วรันต่อ)
-#   หมายเหตุ: ถ้าวางไว้ใน /home/<คนอื่น>/ ให้ใช้ APP_USER=<เจ้าของ home นั้น> ไม่งั้น service
-#   เข้าไปอ่านไฟล์ไม่ได้ (home ปกติเป็น 750) — หรือวางนอก home ไปเลยเช่น /srv, /usr/local
-# - ถาม user / IP / รหัสผ่าน เอง (ไม่รู้ก็กรอกตอนรัน) — หรือ preset ผ่าน env เพื่อรันแบบไม่ถาม:
-#     sudo APP_USER=deploy BIND_HOST=10.0.0.5 DB_PASSWORD=xxx REDIS_PASS=yyy ./setup-server.sh
-#   IP ถามแยก 3 ช่อง (โชว์ interface ที่มีจริงให้เลือก): BIND_HOST = ที่อยู่ของ central ที่เครื่องอื่น
-#   เรียกเข้ามา (ลง SAN/agent · ห้าม 0.0.0.0) · WEB_BIND_HOST = --host ของ dashboard :8000 ·
-#   WEBHOOK_BIND_HOST = --host ของ LINE webhook :8080  (สองตัวหลังใส่ 0.0.0.0 = ทุก interface ได้)
-#   (ถ้า PostgreSQL superuser ต้องใช้รหัส — peer auth ต่อไม่ได้ — สคริปต์จะถามรหัสตอนรัน หรือ preset
-#    PG_SUPERUSER_PASSWORD=xxx ; ตั้ง PG_SUPERUSER/PG_HOST ได้ถ้าไม่ใช่ postgres@localhost)
-# - รันซ้ำได้ (idempotent): apt/venv/DB/systemd ข้ามของที่มีอยู่แล้ว · ค่าที่เคยตั้งไว้ถูกอ่านกลับมา
-#   จาก .env เป็นค่าตั้งต้น กด Enter รัว ๆ = ไม่มีอะไรเปลี่ยน (คีย์ LINE/Gemini/JWT/CSRF ไม่ถูกแตะ)
-# - ★ รันซ้ำบนเครื่องที่ติดตั้งไปแล้ว จะถามก่อนว่าจะเอาแบบไหน:
-#     1) ใช้ค่าเดิมจาก .env (ค่าตั้งต้น — รันซ้ำเพื่อซ่อม/อัปเดตโค้ด เหมือนพฤติกรรมเดิมทุกอย่าง)
-#     2) ตั้งค่าใหม่ทั้งชุด — ถามใหม่ทุกช่องโดยเอาค่าที่ใช้อยู่ตอนนี้เป็น default (Enter = ของเดิม)
-#        ไว้เปลี่ยนฐานข้อมูล/ผู้ใช้ postgres/รหัส Redis/IP โดยไม่ต้องไปแก้ .env เอง — และผลของค่าที่
-#        เปลี่ยนถูกไล่ทำให้ครบ (users.acl เขียนใหม่ + restart centralredis, ALTER ROLE, cert, unit)
-#        preset ได้: RECONFIGURE=1 (ตั้งใหม่) / RECONFIGURE=0 (ใช้ของเดิม)
-#     จบแล้วสรุปให้ด้วยว่า agent (client) ที่ลงไปแล้วต้องไปลงใหม่ไหม เพราะอะไร
-# - ★ ย้าย IP ด้วยการรันซ้ำได้เลย: ตอบ IP ใหม่ในช่อง "Address other machines use to reach this
-#   central server" แล้วสคริปต์ไล่แก้ให้ครบทุกที่ที่ IP เดิมฝังอยู่ — SAN ในใบรับรอง (ออกใหม่ด้วย
-#   CA เดิม agent ที่ลงไปแล้วจึงยังเชื่อถือใบใหม่), REDIS_HOST/AGENT_CENTRAL_HOST ใน .env,
-#   site.conf, แถว agent_central_host ในตาราง app_settings และ unit ของ systemd + restart ให้
-#   ⚠️ agent ที่ติดตั้งไปแล้วยังชี้ IP เดิม ต้องออก package ใหม่ไปลงทับ (หรือแก้ site.conf บนเครื่องนั้น)
-#
-# ทำให้ครบตั้งแต่ต้นจนพร้อมใช้ รวมถึงส่วนที่เคยต้องทำเอง:
-#   * ออก cert ใน cert/central/ ให้ SAN ตรง BIND_HOST (Root CA -> central mTLS -> dashboard HTTPS)
-#   * เขียน redis/users.acl ทั้ง 3 บัญชีด้วยรหัสจริงที่กรอก/สุ่มให้ (ไม่เหลือค่า default)
-#   * เขียน for_Agent/package/site.conf ให้ zip ของ agent ฝังค่าถูกต้องตั้งแต่ครั้งแรก
-#   * เปิด port ที่ระบบใช้บน firewall (ufw/firewalld): 6380 Redis mTLS, 8000 dashboard, 8080 LINE webhook
-#
-# ตัวแปรบังคับเขียนทับของเดิม (ปกติไม่ต้องใช้ — ของที่ตั้งไว้แล้วสคริปต์จะไม่แตะ):
-#   FORCE_CERT=1  ออก cert ใหม่ · FORCE_ACL=1 เขียน users.acl ใหม่ · FORCE_SITE_CONF=1 เขียน site.conf ใหม่
-#   SKIP_FIREWALL=1 ไม่ต้องแตะ firewall เลย (ปกติสคริปต์เปิด port ให้ผ่าน ufw/firewalld)
-#   SKIP_DB_CHECK=1 ข้ามการทดสอบล็อกอิน PostgreSQL ด้วยรหัสที่กรอก (ปกติทดสอบให้ก่อนไปต่อ)
-#   ALLOW_FOREIGN_DB=1 ยอมใช้ฐานข้อมูลเดิมที่ไม่มีตารางของระบบนี้ (ปกติหยุด กันไปสร้างตารางทับฐานของแอปอื่น)
-#   FORCE_DB_PASSWORD=1 ยอมทับรหัสของ PostgreSQL role ที่มีอยู่แล้วด้วยรหัสที่กรอกรอบนี้ (ALTER ROLE)
-#     ปกติสคริปต์แค่ "ตรวจ" ว่ารหัสถูกไหม กรอกผิดจะหยุด ไม่ไปเปลี่ยนรหัสของ role ทิ้งเงียบ ๆ
-#   ALLOW_NEW_CA=1 ยอมออก Root CA ใบใหม่ทั้งที่ฐานยังมี agent ลงทะเบียนอยู่ (ปกติเตือนแล้วถามก่อน —
-#     CA ใหม่ = agent ที่ลงไปแล้วต่อไม่ได้ทุกเครื่องด้วย CERTIFICATE_VERIFY_FAILED)
-#   FORCE_PIP_UPGRADE=1 บังคับ upgrade pip (ปกติทำเฉพาะตอน venv เพิ่งสร้าง/pip เก่ากว่า 23 — ขั้นนี้
-#     ต้องออกไปถาม PyPI ทุกครั้งเสมอ เน็ตช้าเมื่อไหร่คือขั้นที่ดูเหมือนค้าง อ่านคำอธิบายที่ขั้น 4)
-#   PIP_TIMEOUT=15 / PIP_RETRIES=2 เวลารอต่อ PyPI ของทุกคำสั่ง pip (default ของ pip เองคือ 15 x 5 + backoff)
 set -euo pipefail
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -55,16 +7,6 @@ ok()   { printf '  \033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m[!]\033[0m %s\n' "$*"; }
 err()  { printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
 
-# ---------------------------------------------------------------------------
-# run_step — รันขั้นที่กินเวลานาน (apt/venv/pip) พร้อมตัวหมุน + เวลาที่ใช้ไป
-#
-# ของเดิมสั่ง apt/pip แบบ -q แล้วเงียบไปเป็นนาที แยกไม่ออกว่ากำลังโหลดอยู่หรือค้างไปแล้ว
-# ที่นี่จึงเก็บเอาต์พุตจริงลงไฟล์ log แล้วโชว์ตัวหมุนแทน — คำสั่งพังเมื่อไหร่ค่อยพ่น 20 บรรทัด
-# ท้าย log ออกมาให้เห็นสาเหตุ แล้ว return code เดิมกลับไป (set -e หยุดสคริปต์ให้เหมือนเดิม)
-#
-# stdin ต่อ /dev/null: ถ้ามีอะไรแอบถามขึ้นมา จะได้ตายไปเลยพร้อมข้อความ ไม่ใช่ค้างหมุนไม่รู้จบ
-# หลังตัวหมุนที่คนมองไม่เห็นว่ามันรอ input อยู่
-# ไม่มี tty (รันผ่าน pipe/cron/CI) ก็ปล่อยเอาต์พุตไหลตามปกติ ไม่ต้องหมุนให้ log รก
 # ---------------------------------------------------------------------------
 STEP_LOG=""
 run_step() {  # run_step "คำอธิบาย" cmd [args...]
@@ -93,8 +35,6 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
     while kill -0 "$pid" 2>/dev/null; do
         spent=$((SECONDS - start))
         # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
-        # ตอนนี้มันติดอยู่กับอะไร — ของเดิมซ่อนเอาต์พุตไว้หมด ขั้นที่ค้างจึงหน้าตาเหมือนขั้นที่
-        # กำลังทำงานปกติเป๊ะ ๆ (เช่น pip ที่นั่ง retry ต่อ PyPI ไม่ติดเงียบ ๆ อยู่เป็นนาที)
         if [ "$spent" -ge 15 ]; then
             tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-58)"
             if [ -n "$tail_line" ]; then hint="  "$'\033[2m'"| $tail_line"$'\033[0m'; fi
@@ -116,9 +56,6 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
 
 [ "$(id -u)" -eq 0 ] || { err "Must be run as root: sudo ./setup-server.sh"; exit 1; }
 
-# ---------------------------------------------------------------------------
-# 0) ที่ตั้งของระบบ = ที่ที่วางโปรเจกต์ไว้ตอนรัน (วางไว้ตรงไหนก็ติดตั้งตรงนั้น)
-#    อยากให้ไปอยู่ที่อื่น สั่ง INSTALL_DIR=/path/ที่ต้องการ แล้วสคริปต์จะย้ายให้เอง
 # ---------------------------------------------------------------------------
 SELF="$(readlink -f "$0")"
 SRC_DIR="$(cd "$(dirname "$SELF")" && pwd)"
@@ -145,24 +82,8 @@ for need in main/main.py systemd/_gen.sh systemd/_hosts.sh requirements.txt .env
 done
 
 # ตัวช่วยเลือก IP ที่จะ bind + env_get/env_set (ใช้ชุดเดียวกับ systemd/_gen.sh จะได้ตรงกันทั้งสองทาง)
-# shellcheck source=systemd/_hosts.sh
 source "$PROJECT_DIR/systemd/_hosts.sh"
 
-# ---------------------------------------------------------------------------
-# 0.1) ของที่ "ติดตั้งไว้แล้ว" บนเครื่องนี้ = ความจริงของระบบที่รันอยู่
-#
-# รันซ้ำต้องต่อจากของเดิม ไม่ใช่เริ่มใหม่ — ค่าที่เคยตั้งจึงถูกอ่านกลับมาจาก .env ตั้งแต่ก่อนถาม
-# คนติดตั้งไม่ต้องจำรหัสเดิมมากรอกซ้ำ และไม่มีทางที่ postgres/redis/cert จะไปคนละทางกับ .env
-# (ของเดิมถามใหม่หมดทุกรอบแล้วค่อยทิ้งคำตอบทีหลัง — รหัส DB ที่กรอกใหม่จึงไป ALTER ROLE จริง
-#  แต่ .env ยังเป็นรหัสเก่า service ตายยกแผงด้วย password authentication failed)
-#
-# ใครชนะเมื่อค่าไม่ตรงกัน:
-#   DB_*                 ค่าที่ preset มาทาง env ชนะ · **รหัสของ role ที่มีอยู่แล้วจะไม่ถูกทับ** —
-#                        สคริปต์ลองล็อกอินด้วยรหัสที่กรอก ไม่ผ่าน = หยุดพร้อมบอกว่ารหัสผิด
-#                        ตั้งใจเปลี่ยนรหัสจริง ๆ: `sudo FORCE_DB_PASSWORD=1 DB_PASSWORD=ใหม่ ./setup-server.sh`
-#   REDIS_PASS /         ค่าใน .env ชนะเสมอ — รหัสจริงอยู่ใน users.acl ที่ผูกกับ .env อยู่แล้ว และ
-#   AGENT_REDIS_PASS     เปลี่ยนจากหน้าเว็บได้ (System Settings) สคริปต์จึงห้ามไปทับ
-#   IP ทั้ง 3 ช่อง       ถามใหม่ทุกครั้งโดยใช้ค่าปัจจุบันเป็น default -> ตอบค่าใหม่ = ย้าย IP ทั้งระบบ
 # ---------------------------------------------------------------------------
 ENV_FILE="$PROJECT_DIR/.env"
 ENV_EXISTED=0
@@ -202,8 +123,13 @@ preload_env AGENT_REDIS_PASS AGENT_REDIS_PASSWORD 1
 # ที่อยู่ของ central ที่ระบบใช้อยู่ "ตอนนี้" — ไว้เทียบว่ารอบนี้ IP เปลี่ยนไหม
 CURRENT_BIND_HOST="$(env_get REDIS_HOST "$ENV_FILE")"
 
+# พอร์ต Redis ที่ระบบใช้อยู่ "ตอนนี้" — ต้องอ่านเก็บไว้ก่อนขั้น 6 เขียนทับ .env เพราะเป็นพอร์ต
+OLD_REDIS_PORT="$(env_get REDIS_PORT "$ENV_FILE")"
+if [ -z "$OLD_REDIS_PORT" ] && [ "$ENV_EXISTED" = "1" ]; then
+    OLD_REDIS_PORT=6380
+fi
+
 # ค่าที่ระบบ "ใช้อยู่ตอนนี้" ตัวอื่น ๆ อ่านเก็บไว้ตั้งแต่ก่อนถาม — ขั้น 6 เขียนทับ .env ไปแล้ว
-# ตอนที่เราต้องรู้ว่ารอบนี้เปลี่ยนอะไรไปบ้าง (ต้องเขียน users.acl ใหม่ไหม · agent ต้องลงใหม่ไหม)
 OLD_DB_NAME="$(env_get DB_NAME "$ENV_FILE")"
 OLD_DB_USER="$(env_get DB_USER "$ENV_FILE")"
 OLD_DB_HOST="$(env_get DB_HOST "$ENV_FILE")"
@@ -215,24 +141,11 @@ OLD_AGENT_PASS="$(env_get AGENT_REDIS_PASSWORD "$ENV_FILE")"
 INSTALLED_APP_USER=""   # เติมตอนขั้น 1 (ฟังก์ชัน installed_app_user ประกาศทีหลัง)
 
 # postgres อยู่ไหน: DB_HOST คือค่าที่แอปใช้ต่อ (ลง .env) · PG_HOST คือที่ที่สคริปต์ต่อไปสร้าง role/db
-# แยกกันได้ แต่ค่าตั้งต้นอิงกัน — เครื่องที่ DB อยู่ host อื่น ตั้ง PG_HOST มาแล้ว .env จะตามให้เอง
 PG_HOST_PRESET="${PG_HOST:-}"   # ตั้ง PG_HOST มาเองทาง env ไหม — ถ้าใช่ ตอบ DB_HOST ใหม่ก็ไม่ไปแตะ
 PG_HOST="${PG_HOST:-${DB_HOST:-localhost}}"
 DB_HOST="${DB_HOST:-$PG_HOST}"
 DB_PORT="${DB_PORT:-5432}"
 
-# ---------------------------------------------------------------------------
-# 0.2) รันซ้ำบนเครื่องที่ติดตั้งไปแล้ว: "ใช้ของเดิม" หรือ "ตั้งค่าใหม่ทั้งชุด"
-#
-# ของเดิมพอมี .env อยู่แล้ว ค่าที่สคริปต์ดูแล (DB/Redis) ถูกอ่านกลับมาใช้เงียบ ๆ ไม่ถามอีกเลย —
-# ดีตอน "รันซ้ำเพื่อซ่อม/อัปเดตโค้ด" แต่ทำอะไรไม่ได้เลยตอนอยากเปลี่ยนของจริง เช่นย้ายไปฐานข้อมูล
-# ใหม่ เปลี่ยน user ของ postgres หรือหมุนรหัส Redis — ต้องไปแก้ .env ด้วยมือก่อนแล้วค่อยรัน
-#
-# ตรงนี้จึงถามก่อนว่าจะเอาแบบไหน แล้วโหมด "ตั้งค่าใหม่" ถามใหม่ทุกช่องโดยเอา **ค่าที่ใช้อยู่จริง
-# ตอนนี้เป็น default** — กด Enter ผ่าน = ได้ค่าเดิม เปลี่ยนเฉพาะช่องที่ตั้งใจพิมพ์ทับเท่านั้น
-# ผลของค่าที่เปลี่ยนถูกไล่ทำให้ครบจริง ๆ ไม่ใช่แค่เขียนลง .env: รหัส Redis ใหม่ -> users.acl ถูก
-# เขียนใหม่ + restart centralredis ให้ · ฐานใหม่ -> สร้าง role/db + ตรวจล็อกอินให้เหมือนติดตั้งใหม่
-# preset ผ่าน env: RECONFIGURE=1 (ตั้งใหม่) / RECONFIGURE=0 (ใช้ของเดิม — ค่าตั้งต้น และโหมดไม่มี tty)
 # ---------------------------------------------------------------------------
 RECONFIGURE="${RECONFIGURE:-}"
 if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ]; then
@@ -263,8 +176,6 @@ fi
 RECONFIGURE="${RECONFIGURE:-0}"
 
 # ย้ายค่าที่โหลดมาจาก .env ไปเป็น "ค่าตั้งต้นของคำถาม" แทนการเอาไปใช้เงียบ ๆ
-# ค่าที่ preset มาทาง env ยังชนะเหมือนเดิม ไม่ถูกถามซ้ำ — `sudo DB_PASSWORD=x RECONFIGURE=1 ...`
-# จึงยังรันแบบไม่ต้องนั่งตอบได้
 reask() {  # reask VAR
     local var="$1" cur
     case "$FROM_ENV_FILE" in *" $var "*) ;; *) return 0 ;; esac
@@ -281,14 +192,11 @@ if [ "$RECONFIGURE" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1) เก็บค่า config (ถามถ้ายังไม่ได้ preset ผ่าน env)
-# ---------------------------------------------------------------------------
 ask() {  # ask VAR "คำถาม" "ค่า default"
     local var="$1" prompt="$2" def="${3:-}" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"      # ถ้า preset มาทาง env แล้วใช้เลย
     if [ -n "$cur" ]; then ok "$var = $cur (from $(value_source "$var"))"; return; fi
     # ไม่มี tty (รันจากสคริปต์/cron) แต่มีค่าตั้งต้นที่เชื่อได้ = ใช้ค่านั้นเงียบ ๆ เหมือน pick_bind_host
-    # ไม่มีให้ใช้เลยค่อยตาย — รันซ้ำแบบไม่ถามจะได้ไม่ติดตรงคำถามที่ตอบแทนได้อยู่แล้ว
     if [ ! -t 0 ]; then
         [ -n "$def" ] || { err "No tty and $var was not preset"; exit 1; }
         eval "$var=\$def"
@@ -301,7 +209,6 @@ ask() {  # ask VAR "คำถาม" "ค่า default"
     eval "$var=\$ans"
 }
 # ask_secret VAR "คำถาม" ["ค่าเดิม"] — มีค่าเดิม (โหมดตั้งค่าใหม่) กด Enter = ใช้ค่าเดิมต่อ
-# ไม่โชว์ค่าเดิมบนจอ (มันคือรหัสผ่าน) จึงบอกแค่ว่า Enter แล้วได้ของเดิม
 ask_secret() {  # ask_secret VAR "คำถาม" ["ค่าเดิม"]
     local var="$1" prompt="$2" def="${3:-}" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
@@ -317,7 +224,6 @@ ask_secret() {  # ask_secret VAR "คำถาม" ["ค่าเดิม"]
 }
 
 # เงื่อนไขเดียวกับ main/redis_password_rules.py — รหัสที่หลุดเงื่อนไขจะทำให้ users.acl/.env เพี้ยน
-# (ไฟล์ ACL แยก token ด้วยช่องว่าง · .env ตีความ # ' " $ ` \ ! เป็นอย่างอื่น)
 valid_redis_pass() {
     local p="$1"
     [ "${#p}" -ge 12 ] || return 1
@@ -326,7 +232,6 @@ valid_redis_pass() {
 }
 
 # ถามรหัส Redis — ยังไม่มีรหัสเดิม: Enter = สุ่มให้ · มีรหัสเดิมอยู่ (โหมดตั้งค่าใหม่): Enter = ใช้ของเดิม
-# อยากได้ของใหม่ทั้งที่มีของเดิมอยู่ ให้พิมพ์ `new` (สั้นกว่า 12 ตัว จึงไม่มีทางไปชนกับรหัสจริง)
 GENERATED_PASSWORDS=""
 ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญชี" ["รหัสเดิม"]
     local var="$1" what="$2" def="${3:-}" cur ans hint
@@ -363,8 +268,67 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
     eval "$var=\$ans"
 }
 
+# ---- พอร์ตที่ service ของเราจะ bind ----
+
+# port_reject PORT — พิมพ์เหตุผลออกมาถ้ารับพอร์ตนี้ไม่ได้ · ไม่พิมพ์อะไร = ผ่าน
+port_reject() {
+    local p="$1"
+    if ! valid_port "$p"; then
+        printf '%s' "not a port number in 1024-65535 (centralredis runs as '$APP_USER', not root, so anything below 1024 cannot be bound)"
+        return 0
+    fi
+    case "$p" in
+        8000) printf '%s' "8000 is the dashboard on this machine" ;;
+        8080) printf '%s' "8080 is the LINE webhook on this machine" ;;
+    esac
+}
+
+# มีอย่างอื่นฟังพอร์ตนี้อยู่ไหม — **เตือนอย่างเดียว ไม่บล็อก**: ตัวที่ฟังอยู่อาจเป็นของที่กำลังจะถูก
+port_warn_in_use() {  # port_warn_in_use PORT
+    local p="$1"
+    [ "$p" = "${OLD_REDIS_PORT:-}" ] && return 0
+    if command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :$p" 2>/dev/null | grep -q .; then
+        warn "Something is already listening on $p/tcp - centralredis cannot start until it stops"
+        warn "  See what it is:  sudo ss -ltnp \"sport = :$p\""
+    fi
+    if [ "$p" = "6379" ]; then
+        warn "6379 is the default port of the distro's own redis-server (this script disables that service,"
+        warn "  but anything else pointed at 127.0.0.1:6379 would then reach our instance instead)"
+    fi
+}
+
+# ask_port VAR "คำถาม" "ค่าเดิม" — โครงเดียวกับ ask(): preset ทาง env ชนะ · ไม่มี tty ใช้ค่าเดิม
+ask_port() {
+    local var="$1" prompt="$2" def="${3:-}" cur ans why
+
+    cur="$(eval "printf '%s' \"\${$var:-}\"")"
+    if [ -n "$cur" ]; then
+        why="$(port_reject "$cur")"
+        [ -z "$why" ] && { ok "$var = $cur (from env)"; port_warn_in_use "$cur"; return 0; }
+        err "$var=$cur: $why"; exit 1
+    fi
+
+    if [ ! -t 0 ]; then
+        [ -n "$def" ] || { err "No tty and $var was not preset"; exit 1; }
+        why="$(port_reject "$def")"
+        [ -n "$why" ] && { err "$var=$def: $why"; exit 1; }
+        eval "$var=\$def"
+        ok "$var = $def (default, no tty)"
+        return 0
+    fi
+
+    while :; do
+        read -rp "  $prompt${def:+ [$def]}: " ans
+        ans="${ans:-$def}"
+        why="$(port_reject "$ans")"
+        [ -z "$why" ] && break
+        echo "    !! '$ans' - $why"
+    done
+    eval "$var=\$ans"
+    port_warn_in_use "$ans"
+}
+
 # user ที่ unit ซึ่งติดตั้งอยู่ตอนนี้รันด้วย — เป็นค่าตั้งต้นที่ "จริง" กว่า SUDO_USER
-# (รันซ้ำด้วยบัญชี sudo คนละคนแล้วเผลอเปลี่ยน User= ของทุก service + chown โปรเจกต์ทั้งก้อน)
 installed_app_user() {
     local unit="/etc/systemd/system/securelog-web.service"
     [ -f "$unit" ] || return 0
@@ -380,10 +344,6 @@ DEFAULT_USER="$INSTALLED_APP_USER"
 ask        APP_USER   "User the services will run as (User=)" "$DEFAULT_USER"
 
 # ---- IP 3 ช่อง ถามแยกกัน (ความหมายต่างกัน — อ่านหัวไฟล์ systemd/_hosts.sh) ----
-# BIND_HOST เดาแทนไม่ได้: เครื่องหลาย interface มักมีเส้น NAT ที่ agent เรียกกลับมาไม่ได้ปนอยู่
-# ถ้าเดาผิดจะได้ cert ที่ SAN ผิดและชุดติดตั้ง agent ที่ต่อไม่ติด — โหมดไม่ถามจึงต้องส่งมาเอง
-# ค่าตั้งต้นของทั้ง 3 ช่อง = ค่าที่ระบบ "ใช้อยู่ตอนนี้" (เพิ่งติดตั้งใหม่ค่อยใช้ IP ที่ตรวจเจอ)
-# กด Enter ผ่านทุกช่อง = ไม่มีอะไรเปลี่ยน · ตอบค่าใหม่ = ย้ายทั้งระบบไป IP นั้นให้ครบทุกไฟล์
 if [ ! -t 0 ] && [ -z "${BIND_HOST:-}" ] && [ -z "$CURRENT_BIND_HOST" ]; then
     err "No tty and BIND_HOST was not preset"; exit 1
 fi
@@ -394,6 +354,11 @@ pick_bind_host BIND_HOST \
     "Address other machines use to reach this central server" \
     "${CURRENT_BIND_HOST:-${DETECTED_IP:-}}" 0 \
     "Goes into the cert SAN, REDIS_HOST and the agent installer - must be a real IP"
+# พอร์ต Redis ถามต่อจากที่อยู่ทันที เพราะเป็นคู่กัน — "agent ต่อกลับมาที่ไหน" คือ IP + พอร์ตนี้
+ask_port REDIS_PORT \
+    "Port the Redis of this central listens on (mTLS - agents connect to it)" \
+    "${OLD_REDIS_PORT:-6380}"
+
 pick_bind_host WEB_BIND_HOST \
     "dashboard (HTTPS :8000) - which IP to listen on" "${WEB_DEFAULT:-$BIND_HOST}" 1 \
     "One IP = other networks on this host cannot reach it; 0.0.0.0 = all interfaces"
@@ -402,16 +367,22 @@ pick_bind_host WEBHOOK_BIND_HOST \
     "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 is fine"
 
 # ★ IP ของ central เปลี่ยนจากรอบก่อน = ต้องไล่แก้ให้ครบทุกที่ที่ IP เดิมฝังอยู่ ไม่งั้นระบบจะ
-#   ครึ่ง ๆ กลาง ๆ แบบไล่ยาก (เว็บเปิดได้ แต่ agent ต่อ Redis ไม่ติด / package ที่ออกใหม่ยังชี้ IP เก่า)
 IP_CHANGED=0
 if [ -n "$CURRENT_BIND_HOST" ] && [ "$CURRENT_BIND_HOST" != "$BIND_HOST" ]; then
     IP_CHANGED=1
     warn "Central address changed: $CURRENT_BIND_HOST -> $BIND_HOST"
-    warn "  cert SAN, .env, site.conf, the agent_central_host row in the DB and the units will all follow"
+    warn "  cert SAN, .env, site.conf and the units will all follow"
+fi
+
+# ★ พอร์ต Redis เปลี่ยน = เรื่องเดียวกับย้าย IP ในแง่ของ agent (ที่อยู่ที่ฝังไว้ในเครื่องเขาผิดไปแล้ว)
+PORT_CHANGED=0
+if [ -n "$OLD_REDIS_PORT" ] && [ "$OLD_REDIS_PORT" != "$REDIS_PORT" ]; then
+    PORT_CHANGED=1
+    warn "Redis port changed: $OLD_REDIS_PORT -> $REDIS_PORT"
+    warn "  redis-mtls.conf (the old file is kept as .bak), .env, site.conf, firewall and a restart of centralredis"
 fi
 
 # DB_HOST/DB_PORT ปกติไม่ใช่คำถาม (ตั้งผ่าน env เอาเมื่อ postgres อยู่คนละเครื่อง) — โหมดตั้งค่าใหม่
-# ค่อยถาม เพราะ "ย้ายไปฐานข้อมูลอื่น" บางทีก็คือย้ายไปอีกเครื่องด้วย
 if [ "$RECONFIGURE" = "1" ]; then
     ask DB_HOST "PostgreSQL host the services connect to" "${ENV_DEFAULT[DB_HOST]:-$DB_HOST}"
     ask DB_PORT "PostgreSQL port"                         "${ENV_DEFAULT[DB_PORT]:-$DB_PORT}"
@@ -428,7 +399,6 @@ printf '%s' "$DB_PORT" | grep -qE '^[0-9]{1,5}$' \
     || { err "DB_PORT='$DB_PORT' is not a port number"; exit 1; }
 
 # ชื่อ role/database ถูกเอาไปต่อเป็นคำสั่ง SQL ตรง ๆ — จำกัดให้เป็น identifier ปกติของ postgres
-# (กันทั้งพิมพ์อักขระที่ psql ตีความเป็นอย่างอื่น และกันค่าที่แทรกคำสั่ง SQL เข้ามาได้)
 valid_pg_ident() { printf '%s' "$1" | grep -qE '^[A-Za-z_][A-Za-z0-9_]{0,62}$'; }
 for _v in DB_NAME DB_USER; do
     valid_pg_ident "${!_v}" || {
@@ -448,7 +418,6 @@ esac
 ask        REDIS_USER "Redis user for central"          "${ENV_DEFAULT[REDIS_USER]:-admin}"
 
 # ชื่อ user ถูกเขียนลง users.acl แบบ token คั่นด้วยช่องว่าง — มีช่องว่าง/อักขระแปลกปนคือไฟล์เสีย
-# แล้ว Redis ไม่ start ทั้งตัว (เงื่อนไขเดียวกับรหัสผ่าน ดู main/redis_password_rules.py)
 printf '%s' "$REDIS_USER" | grep -qE '^[A-Za-z0-9_.-]{1,64}$' \
     || { err "REDIS_USER='$REDIS_USER' is not valid (A-Z a-z 0-9 _ - . only)"; exit 1; }
 
@@ -458,13 +427,6 @@ ask_redis_secret AGENT_REDIS_PASS "agent accounts (agent_node + default)"       
 APP_GROUP="${APP_GROUP:-$APP_USER}"
 
 # ---------------------------------------------------------------------------
-# 1.1) รอบนี้เปลี่ยนอะไรไปจากของที่ติดตั้งอยู่บ้าง
-#
-# ใช้ตัดสินอีก 3 อย่างที่ของเดิมทำไม่ได้เลย เพราะไม่เคยรู้ว่า "เปลี่ยน" กับ "เหมือนเดิม" ต่างกันตรงไหน:
-#   1. users.acl ต้องเขียนใหม่ไหม — เปลี่ยนรหัส Redis แล้วไม่เขียน = .env กับ Redis คนละรหัส ตายยกเครื่อง
-#   2. centralredis ต้อง restart ไหม — Redis อ่าน aclfile ตอน start ครั้งเดียว แก้ไฟล์เฉย ๆ ไม่มีผล
-#   3. ท้ายสคริปต์ต้องบอกไหมว่า agent ที่ลงไปแล้วใช้ต่อไม่ได้ ต้องไปลงใหม่ทุกเครื่อง
-# ---------------------------------------------------------------------------
 CHANGES=()
 DB_TARGET_CHANGED=0
 REDIS_ACL_CHANGED=0
@@ -473,7 +435,10 @@ AGENT_PASS_CHANGED=0
 if [ "$ENV_EXISTED" = "1" ]; then
     # IP ถูกเตือนไปแล้วตอนตอบคำถาม แต่ต้องอยู่ในสรุปก่อนยืนยันด้วย — มันคือข้อที่กระทบหนักที่สุด
     if [ "$IP_CHANGED" = "1" ]; then
-        CHANGES+=("central address $CURRENT_BIND_HOST -> $BIND_HOST (cert SAN, .env, site.conf, DB row and units all follow)")
+        CHANGES+=("central address $CURRENT_BIND_HOST -> $BIND_HOST (cert SAN, .env, site.conf and units all follow)")
+    fi
+    if [ "$PORT_CHANGED" = "1" ]; then
+        CHANGES+=("Redis port $OLD_REDIS_PORT -> $REDIS_PORT (redis-mtls.conf, .env, site.conf, firewall - EVERY agent already installed stops reporting)")
     fi
     if [ -n "$INSTALLED_APP_USER" ] && [ "$INSTALLED_APP_USER" != "$APP_USER" ]; then
         CHANGES+=("services run as '$APP_USER' instead of '$INSTALLED_APP_USER' (the whole project is chown'd)")
@@ -509,24 +474,6 @@ if [ "$ENV_EXISTED" = "1" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 1.2) เช็กฐานข้อมูล "ก่อนจะไปแตะอะไรทั้งนั้น"
-#
-# ของเดิมกว่าจะรู้ว่าต่อฐานไม่ได้ ต้องผ่าน apt + สร้าง venv + ลง requirements.txt ไปก่อน
-# (หลายนาที) แล้วค่อยไปตายที่ขั้น 5 · และ "ฐานนี้มีข้อมูลอยู่แล้วหรือเปล่า" ก็เป็นแค่บรรทัดเดียว
-# แทรกกลางขั้น 5 ซึ่งอ่านผ่านตาไปง่ายมาก
-#
-# ขั้นนี้จึงถามฐานตั้งแต่ยังไม่ลงมือ **ทุกคำสั่งเป็น SELECT ล้วน ไม่สร้าง ไม่แก้อะไรสักอย่าง**:
-#   - server ตอบที่ $DB_HOST:$DB_PORT ไหม
-#   - role ที่กรอกล็อกอินได้ไหม ด้วยเส้นทางเดียวกับที่ service จะต่อจริง (TCP + password)
-#   - ฐาน $DB_NAME มีอยู่ไหม · เป็นของระบบนี้ไหม · **มีข้อมูลอยู่เท่าไร**
-#     (เครื่องที่ลงซ้ำ บางเครื่องมีข้อมูลเดิมอยู่ บางเครื่องเป็นฐานเปล่า — ต้องรู้ตั้งแต่ตอนนี้ว่า
-#      กำลังจะใช้ของเดิมต่อหรือเริ่มจากศูนย์ ไม่ใช่ไปเซอร์ไพรส์ตอนเปิดเว็บแล้วเจอ admin/admin
-#      กับหน้าว่าง ๆ)
-#
-# ต่อไม่ได้แล้วสคริปต์ช่วยอะไรไม่ได้จริง ๆ (postgres อยู่อีกเครื่อง) = หยุดตรงนี้เลย ยังไม่มีอะไรถูกแตะ
-# ส่วนเคสที่ขั้นถัดไปแก้ให้ได้อยู่แล้ว (ยังไม่ได้ลง postgres / ยังไม่ start / role ยังไม่มี /
-# รหัสยังไม่ตรงเพราะรอบนี้ตั้งใจเปลี่ยน) = แค่บอกให้รู้แล้วไปต่อ ไม่ต้องหยุด
-# ---------------------------------------------------------------------------
 log "Database check (read-only - nothing has been installed or changed yet)"
 
 PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
@@ -540,7 +487,6 @@ OUR_TABLES_SQL="'agents','security_alerts','ip_black_list','ip_white_list','dete
 DB_STATE=""      # ไปโผล่ในบรรทัดสรุปท้ายสคริปต์ด้วย
 DB_ROWS=""
 # จำนวน agent ที่ "ลงทะเบียนไว้ในฐาน" — สัญญาณที่เชื่อได้ว่ามีเครื่อง agent อยู่ข้างนอกจริง
-# เชื่อถือได้กว่าการดูว่ามี .env เดิมไหม (ล้างโฟลเดอร์ทิ้งแต่ฐานยังอยู่ = .env หาย แต่ agent ยังอยู่ครบ)
 EXISTING_AGENTS=""
 
 # ต่อด้วย role ของแอปเองทาง TCP = เส้นทางเดียวกับที่ service ต่อจริง (ล้มเหลวคืนค่าว่าง ไม่ทำสคริปต์ตาย)
@@ -549,8 +495,6 @@ app_psql() {  # app_psql SQL [DATABASE]
         -d "${2:-$DB_NAME}" -tAc "$1" 2>/dev/null || true
 }
 # สำรองสำหรับตอน role ของแอปยังล็อกอินไม่ได้ — peer auth ไม่ต้องรหัส จึงไม่ต้องไปถามอะไรเพิ่มตอนนี้
-# `sudo -n` (ไม่ถามรหัส): สคริปต์นี้รันเป็น root อยู่แล้ว -n จึงไม่เปลี่ยนอะไร แต่กันไม่ให้ขั้น
-# "ตรวจเฉย ๆ" กลายเป็นขั้นที่ค้างรอรหัส sudo อยู่บนจอถ้าถูกเรียกในบริบทที่ไม่ใช่ root
 peer_psql() {  # peer_psql SQL [DATABASE]
     [ "$PG_LOCAL" = "1" ] || return 0
     sudo -n -u "$PG_SUPERUSER" psql -p "$DB_PORT" -d "${2:-$DB_NAME}" -tAc "$1" 2>/dev/null || true
@@ -614,8 +558,6 @@ else
     ok "PostgreSQL answers on $DB_HOST:$DB_PORT"
 
     # ⚠️ ต้องรู้ก่อนว่า "ล็อกอินได้ทางไหนบ้าง" ไม่งั้นแยก 2 อย่างนี้ไม่ออก แล้วรายงานผิด:
-    #      ฐานไม่มีอยู่จริง   vs.   ฐานมีอยู่แต่เรายังเข้าไปถามไม่ได้
-    #    (เจอตอนทดสอบ: กรอกรหัสผิด แล้วรายงานว่า "ฐานยังไม่มี" ทั้งที่ฐานมีข้อมูลเต็มอยู่)
     CAN_APP=0
     if [ "$(app_psql "SELECT 1" postgres)" = "1" ]; then CAN_APP=1; fi
     CAN_PEER=0
@@ -675,17 +617,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 1.3) ฐานมี agent ลงทะเบียนไว้ แต่ Root CA หายไป = กำลังจะตัด agent ทิ้งทั้งหมดโดยไม่รู้ตัว
-#
-# เคสนี้เกิดจาก "ลบ/ย้ายโฟลเดอร์โปรเจกต์ทิ้งแล้วลงใหม่ แต่ฐานข้อมูลยังอยู่" ซึ่งหน้าตาเหมือนติดตั้ง
-# ใหม่สะอาด ๆ ทุกอย่าง แต่จริง ๆ คือ: ออก Root CA ใบใหม่ -> cert ในชุดติดตั้งของ agent ทุกเครื่อง
-# เซ็นด้วย CA เก่า -> ต่อ Redis ไม่ได้ทันทีด้วย CERTIFICATE_VERIFY_FAILED และ retry เงียบ ๆ ตลอดไป
-# โดยที่ฝั่ง central ไม่มีอะไรฟ้องเลยว่าหายไปกี่เครื่อง
-#
-# ถ้ายังเก็บ ca.crt/ca.key ใบเก่าไว้ที่ไหนสักแห่ง เอากลับมาวางแล้วรันใหม่ = agent เดิมใช้ต่อได้เลย
-# ไม่ต้องไล่ลงใหม่ทุกเครื่อง จึงต้องถามตรงนี้ ก่อนที่ขั้น 7 จะออก CA ใหม่ทับ
-# ข้ามได้ด้วย ALLOW_NEW_CA=1 (หรือรันแบบไม่มี tty ซึ่งถามไม่ได้อยู่แล้ว)
-# ---------------------------------------------------------------------------
 case "${EXISTING_AGENTS:-}" in
     ''|*[!0-9]*) ;;                       # อ่านจำนวน agent ไม่ได้ = ไม่เดา ไม่เตือนมั่ว
     *)
@@ -709,7 +640,6 @@ case "${EXISTING_AGENTS:-}" in
 esac
 
 # ก่อนลงมือ: บอกให้เห็นเป็นข้อ ๆ ว่ารอบนี้จะไปแตะอะไรของจริงบ้าง แล้วให้ยืนยันครั้งเดียว
-# (ทำเฉพาะโหมดตั้งค่าใหม่ + มีของเปลี่ยนจริง — รันซ้ำเพื่อซ่อมแบบเดิมจะไม่มีจอนี้มากวน)
 if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
     echo ""
     warn "This run changes things that are already live on this machine:"
@@ -734,19 +664,15 @@ if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2) OS packages
-# ---------------------------------------------------------------------------
 log "Installing OS packages (apt)"
 export DEBIAN_FRONTEND=noninteractive
 run_step "apt-get update" apt-get update -qq
 run_step "Installing python3-venv / python3-pip / postgresql / redis-server / tar" \
     apt-get install -y -qq python3-venv python3-pip postgresql redis-server tar
 
-# ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (:6380 mTLS)
+# ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (mTLS พอร์ตที่เลือกไว้ ตั้งต้น 6380)
 systemctl disable --now redis-server >/dev/null 2>&1 || true
 
-# ---------------------------------------------------------------------------
-# 3) ผู้ใช้ระบบ
 # ---------------------------------------------------------------------------
 if id "$APP_USER" >/dev/null 2>&1; then
     ok "User '$APP_USER' already exists"
@@ -756,22 +682,6 @@ else
     ok "Created user '$APP_USER'"
 fi
 
-# ---------------------------------------------------------------------------
-# 4) venv + Python deps
-#
-# ★ ทำไมรันรอบสองแล้วเหมือนค้างตรง "Upgrading pip":
-#   `pip install --upgrade pip` ไม่มีเวอร์ชันกำกับ -> pip **ต้องยิงถาม PyPI ทุกครั้ง** ว่ารุ่นล่าสุด
-#   คืออะไร ตอบจากของที่ลงไว้ในเครื่องไม่ได้ ต่างจาก `-r requirements.txt` ที่ pin `==` ไว้ทุกตัว
-#   (ครบแล้ว pip ตอบจาก metadata ในเครื่อง ไม่แตะเน็ตเลย ~1 วินาที)
-#   รันรอบสองขั้นอื่นเป็น no-op ในเครื่องทั้งหมด (venv มีแล้ว/DB มีแล้ว/cert ครบ) เหลือขั้นนี้
-#   ขั้นเดียวที่ออกเน็ต พอเน็ตช้าหรือตัน pip จะ retry ตามค่า default (`--timeout 15 --retries 5`
-#   + backoff) = นั่งดูตัวหมุนเงียบ ๆ ได้ 1.5-5 นาที **แล้ว exit 0 เหมือนไม่มีอะไรเกิดขึ้น**
-#   (วัดจริง: index ที่ต่อไม่ติด -> 1 นาที 38 วินาที, rc=0, ไม่มี error โผล่มาสักตัว)
-#
-#   แก้: upgrade เฉพาะตอนที่จำเป็นจริง — venv เพิ่งสร้าง หรือ pip เก่ากว่าเกณฑ์เท่านั้น
-#   venv เดิมที่ pip ใหม่พออยู่แล้วให้ข้ามไปเลย ไม่ต้องออกเน็ต · บังคับ upgrade: FORCE_PIP_UPGRADE=1
-#   และทุกคำสั่ง pip ใส่ timeout/retries สั้นลง + --no-input ไว้ เน็ตพังจะได้ตายพร้อมเหตุผลใน 45
-#   วินาที ไม่ใช่ค้างยาว · ปรับได้ด้วย PIP_TIMEOUT / PIP_RETRIES
 # ---------------------------------------------------------------------------
 log "Creating venv + installing requirements.txt"
 VENV_CREATED=0
@@ -784,12 +694,10 @@ fi
 
 PIP="$PROJECT_DIR/venv/bin/pip"
 # --disable-pip-version-check: ไม่ต้องแอบถาม PyPI ว่ามี pip รุ่นใหม่ไหมตอนท้ายทุกคำสั่ง
-# --no-input: มีอะไรจะถามให้ตายไปเลย ไม่ใช่ค้างรอ input อยู่หลังตัวหมุนที่คนดูไม่เห็น
 PIP_OPTS=(--disable-pip-version-check --no-input
           --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}")
 
 # เกณฑ์: pip 23 ขึ้นไปลง wheel ทุกตัวใน requirements.txt ได้หมดแล้ว (manylinux ต้องการแค่ >= 20.3)
-# ต่ำกว่านั้นค่อยไปเอาของใหม่มา — ของ Ubuntu 24.04 ที่ ensurepip ให้มาคือ 24.0 ผ่านเกณฑ์อยู่แล้ว
 MIN_PIP_MAJOR=23
 PIP_VER="$("$PIP" --version 2>/dev/null | awk '{print $2}')" || true
 PIP_MAJOR="${PIP_VER%%.*}"
@@ -797,7 +705,6 @@ case "$PIP_MAJOR" in ''|*[!0-9]*) PIP_MAJOR=0 ;; esac
 
 if [ "$VENV_CREATED" = "1" ] || [ "$PIP_MAJOR" -lt "$MIN_PIP_MAJOR" ] || [ "${FORCE_PIP_UPGRADE:-0}" = "1" ]; then
     # ล้มเหลว = เตือนแล้วไปต่อ ไม่ล้มทั้งสคริปต์ — pip ตัวเดิมลง requirements.txt ได้อยู่แล้ว
-    # ไม่มีเหตุผลให้การติดตั้งทั้งเครื่องพังเพราะแค่ upgrade ตัวติดตั้งเองไม่ผ่าน
     run_step "Upgrading pip (this one always goes out to PyPI)" \
         "$PIP" install -q "${PIP_OPTS[@]}" --upgrade pip \
         || warn "Could not upgrade pip - carrying on with pip ${PIP_VER:-unknown}, it installs requirements.txt fine"
@@ -809,26 +716,11 @@ run_step "Installing requirements.txt (this is the slow one)" \
     "$PIP" install -q "${PIP_OPTS[@]}" -r "$PROJECT_DIR/requirements.txt"
 
 # ---------------------------------------------------------------------------
-# 5) PostgreSQL: role + database (idempotent)
-#    ต่อในฐานะ superuser ได้ 2 แบบ:
-#      - peer auth (default Ubuntu/Debian): sudo -u postgres  (ไม่ต้องรหัส)
-#      - password auth: ตั้ง PG_SUPERUSER_PASSWORD (หรือปล่อยให้ถามเมื่อ peer ต่อไม่ได้)
-#    override ได้: PG_SUPERUSER (default postgres), PG_HOST (default localhost)
-#
-#    เครื่องที่ "มี PostgreSQL + ฐานข้อมูลอยู่ก่อนแล้ว" คือเคสที่พลาดง่ายที่สุด ขั้นนี้จึงตรวจให้ครบ:
-#      - ฐานที่มีอยู่เป็นของระบบนี้จริงไหม (ไม่ใช่ก็หยุด ไม่ไปสร้างตารางทับฐานของแอปอื่น)
-#      - เจ้าของฐาน/ตาราง ตรงกับ role ที่กรอกไหม (ไม่ตรง = ตอน start ตาย permission denied)
-#      - ท้ายสุดลองล็อกอินด้วยรหัสที่กรอกจริง ๆ ทาง TCP แบบเดียวกับที่แอปต่อ
-#
-#    ทำก่อนเขียน .env (ขั้น 6) โดยตั้งใจ — DB ล้มกลางทางแล้ว .env ต้องยังเป็นของเดิมทุกตัวอักษร
-#    ไม่ใช่ถูกแก้ไปแล้วครึ่งทางจนไม่รู้ว่าเครื่องอยู่สถานะไหน
-# ---------------------------------------------------------------------------
 log "PostgreSQL: role + database"
 systemctl enable --now postgresql >/dev/null 2>&1 || true
 
 PG_SUPERUSER_PASSWORD="${PG_SUPERUSER_PASSWORD:-}"
 # PG_SUPERUSER / PG_LOCAL ตั้งไว้แล้วที่ขั้น 1.2 (ตอนเช็กฐานก่อนลงมือ) — ใช้ค่าเดียวกันทั้งสองที่
-# เพื่อไม่ให้ "ที่ที่ไปตรวจ" กับ "ที่ที่ไปสร้าง role/db" หลุดไปคนละที่กันได้
 
 # helper: รัน psql/createdb ในฐานะ superuser — เลือก peer (local + ไม่มีรหัส) หรือ TCP+password
 pg_su_psql() {
@@ -855,7 +747,6 @@ pg_su_createdb() {
 }
 
 # ไม่ได้ preset รหัส superuser -> ลองต่อด้วยวิธีข้างบนก่อน ต่อไม่ได้ค่อยถามรหัส
-# (รองรับทั้ง Postgres ที่บังคับ password และ DB ที่อยู่คนละเครื่อง)
 if [ -z "$PG_SUPERUSER_PASSWORD" ] && ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>&1; then
     if [ "$PG_LOCAL" = "1" ]; then
         warn "Peer auth to PostgreSQL (sudo -u $PG_SUPERUSER) failed - the superuser probably needs a password"
@@ -876,13 +767,6 @@ if ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>&1; then
 fi
 
 # ---- role: ยังไม่มี = สร้างพร้อมรหัสที่กรอก · มีอยู่แล้ว = "ตรวจ" ว่ารหัสถูกไหม ไม่ใช่ทับ ----
-#
-# ⚠️ ของเดิม `ALTER ROLE ... PASSWORD` ทับทุกรอบโดยไม่ถาม = กรอกรหัสผิด/พิมพ์ตกก็ไม่มีอะไรฟ้อง
-#    รหัสของ role ถูกเปลี่ยนเป็นค่าที่พิมพ์ผิดนั้นเงียบ ๆ แล้วอะไรก็ตามที่ใช้ role นี้อยู่ก็ล็อกอิน
-#    ไม่ได้ทันทีโดยไม่มีใครรู้ว่าเพราะอะไร
-#    ตอนนี้จึงลองล็อกอินจริงด้วยรหัสที่กรอก (TCP + password เส้นเดียวกับที่ service ใช้) ไม่ผ่าน =
-#    หยุดพร้อมบอกว่า "รหัสผิด" ไม่ไปแตะ role · ตั้งใจเปลี่ยนรหัสจริง ๆ ค่อยสั่ง FORCE_DB_PASSWORD=1
-#    ต่อฐาน postgres ไม่ใช่ $DB_NAME ในการทดสอบ — จะได้แยก "รหัสผิด" ออกจาก "ฐานยังไม่ถูกสร้าง"
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")" = "1" ]; then
     PG_ROLE_ERR="$(mktemp)"
     if [ "${SKIP_DB_CHECK:-0}" = "1" ]; then
@@ -921,12 +805,6 @@ fi
 
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" = "1" ]; then
     # ---- ฐานข้อมูลมีอยู่ก่อนแล้ว: เป็นของระบบนี้จริงหรือของแอปอื่นที่ชื่อบังเอิญตรงกัน? ----
-    #
-    # ปล่อยผ่านโดยไม่ตรวจ = ตอน service start ครั้งแรก create_all() จะสร้างตารางของเราลงไปในฐาน
-    # ของคนอื่น และ migration ใน main.py จะ ALTER TABLE users เติมคอลัมน์ใส่ตาราง users ของเขา
-    # (แก้ข้อมูลของระบบอื่นโดยที่คนติดตั้งไม่รู้ตัว) — ต้องหยุดตรงนี้เท่านั้น
-    #
-    # "ของเรา" ดูจากชื่อตารางเฉพาะของระบบนี้ ไม่นับ users ที่ชื่อโหลเกินกว่าจะใช้ชี้ขาด
     PUBLIC_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
     OUR_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ($OUR_TABLES_SQL)")"
 
@@ -945,15 +823,12 @@ if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" =
     fi
 
     # ---- เจ้าของฐาน/ตาราง ต้องเป็น role ที่แอปใช้ ----
-    # กรอกชื่อ user คนละตัวกับเจ้าของเดิม = ต่อฐานได้ (PUBLIC มีสิทธิ์ CONNECT) แต่ทำอะไรไม่ได้เลย
-    # และ GRANT อย่างเดียวไม่พอ เพราะ ALTER TABLE ตอน migration ต้องเป็น "เจ้าของตาราง" เท่านั้น
     DB_OWNER="$(pg_su_psql -tAc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='$DB_NAME'")"
     if [ "$DB_OWNER" != "$DB_USER" ]; then
         warn "Database '$DB_NAME' is owned by '$DB_OWNER', not '$DB_USER' - handing it over"
         pg_su_psql  -qc "ALTER DATABASE \"$DB_NAME\" OWNER TO \"$DB_USER\"" >/dev/null
         pg_su_psql_db -qc "GRANT ALL ON SCHEMA public TO \"$DB_USER\"" >/dev/null
         # โอนทีละ object แทน REASSIGN OWNED เพราะ REASSIGN ลามไปทุก object ของ role เดิมในฐานนี้
-        # (รวมของที่ไม่เกี่ยวกับระบบเรา) และล้มทันทีถ้าเจ้าของเดิมคือ postgres ซึ่งถือ object ของระบบไว้
         pg_su_psql_db -tAc "
             SELECT format('ALTER TABLE public.%I OWNER TO %I;', tablename, '$DB_USER')
               FROM pg_tables WHERE schemaname='public'
@@ -969,8 +844,6 @@ else
 fi
 
 # ---- ลองล็อกอินด้วยรหัสที่จะเขียนลง .env จริง ๆ ทางเดียวกับที่แอปต่อ (TCP + password) ----
-# ของเดิมไม่เคยทดสอบส่วนนี้: สคริปต์จบสวยแล้วไปตายตอน service start ด้วย password authentication
-# failed / no pg_hba.conf entry ซึ่งคนติดตั้งต้องไปงมใน journalctl เอง
 if [ "${SKIP_DB_CHECK:-0}" = "1" ]; then
     warn "SKIP_DB_CHECK=1 - not verifying that '$DB_USER' can actually log in"
 elif ! command -v psql >/dev/null 2>&1; then
@@ -991,37 +864,8 @@ else
     fi
 fi
 
-# ---- IP ของ central เปลี่ยน: แถวใน app_settings ต้องตามด้วย ----
-# ค่าที่ชุดติดตั้ง agent ใช้จริง มาจากตาราง app_settings (หน้า System Settings) ไม่ใช่ .env —
-# .env เป็นแค่ค่าตั้งต้นตอนยังไม่มีแถว เครื่องที่เคย start แล้วจะมีแถวนี้เสมอ ถ้าไม่แก้ด้วย
-# package ที่ออกใหม่หลังย้าย IP จะยังฝัง IP เก่าไปให้ agent ทุกเครื่อง
-if [ "$IP_CHANGED" = "1" ] \
-   && [ "$(pg_su_psql_db -tAc "SELECT to_regclass('public.app_settings') IS NOT NULL")" = "t" ]; then
-    OLD_SETTING="$(pg_su_psql_db -tAc "SELECT value FROM app_settings WHERE setting_key='agent_central_host'")"
-    if [ -n "$OLD_SETTING" ] && [ "$OLD_SETTING" != "$BIND_HOST" ]; then
-        pg_su_psql_db -q -v ON_ERROR_STOP=1 -c "
-            UPDATE app_settings SET value=$(pg_quote_lit "$BIND_HOST"), updated_at=now()
-             WHERE setting_key='agent_central_host'" >/dev/null
-        # ลงประวัติให้ตรงกับที่หน้า System Settings ทำ ไม่งั้นค่าจะเปลี่ยนเองโดยไม่มีร่องรอย
-        if [ "$(pg_su_psql_db -tAc "SELECT to_regclass('public.app_setting_changes') IS NOT NULL")" = "t" ]; then
-            pg_su_psql_db -q -v ON_ERROR_STOP=1 -c "
-                INSERT INTO app_setting_changes
-                    (setting_key, action, old_value, new_value, changed_by, source, changed_at)
-                VALUES ('agent_central_host', 'set', $(pg_quote_lit "$OLD_SETTING"),
-                        $(pg_quote_lit "$BIND_HOST"), 'system', 'cli', now())" >/dev/null
-        fi
-        ok "app_settings.agent_central_host: $OLD_SETTING -> $BIND_HOST (new agent packages get the new address)"
-    fi
-fi
+# ---- ที่อยู่ของ central ที่ชุดติดตั้ง agent ใช้ ไม่มีแถวใน DB แล้ว ----
 
-# ---------------------------------------------------------------------------
-# 6) .env — สร้างใหม่ถ้ายังไม่มี · มีแล้วก็ "ซิงค์เฉพาะคีย์ที่ระบบเป็นคนดูแล" ให้ตรงกับรอบนี้
-#
-#    ที่ต้องเขียนกลับ ไม่ใช่ปล่อยไว้เฉย ๆ: ค่าพวกนี้คือค่าที่สคริปต์เพิ่งลงมือทำของจริงไปแล้ว
-#    (ALTER ROLE ด้วยรหัสไหน · cert ออก SAN เป็น IP ไหน · unit bind อะไร) ถ้า .env ไม่ตรง
-#    = service อ่านค่าคนละชุดกับที่เครื่องเป็นอยู่จริง แล้วตายตอน start โดยไม่มีใครรู้ว่าเพราะอะไร
-#    คีย์ที่ระบบไม่ได้ดูแล (LINE_*, GEMINI_*, JWT_*, CSRF_*, COOKIE_SECURE, ALGORITHM) ไม่ถูกแตะ
-#    รวมถึงคอมเมนต์และลำดับบรรทัดเดิมด้วย — env_set แทนที่เฉพาะบรรทัดของคีย์นั้น
 # ---------------------------------------------------------------------------
 log ".env file"
 if [ "$ENV_EXISTED" = "1" ]; then
@@ -1042,8 +886,8 @@ if [ "$ENV_EXISTED" = "1" ]; then
     env_sync DB_PASSWORD "$DB_PASSWORD"
 
     # REDIS_HOST คือที่อยู่ของ central ที่ตัวมันเองใช้ต่อ Redis (ผ่าน mTLS ที่ตรวจชื่อใน SAN ด้วย)
-    # ย้าย IP แล้วไม่ตามมาแก้ที่นี่ = ทุก service ต่อ Redis ไม่ติดทั้งเครื่อง
     env_sync REDIS_HOST "$BIND_HOST"
+    env_sync REDIS_PORT "$REDIS_PORT"
     env_sync REDIS_USER "$REDIS_USER"
     env_sync REDIS_PASS "$REDIS_PASS"
 
@@ -1055,10 +899,9 @@ if [ "$ENV_EXISTED" = "1" ]; then
     env_sync WEB_BIND_HOST     "$WEB_BIND_HOST"
     env_sync WEBHOOK_BIND_HOST "$WEBHOOK_BIND_HOST"
 
-    # กลุ่ม agent: .env เป็นค่าตั้งต้นสำหรับตอนที่ตาราง app_settings ยังไม่มีแถวของคีย์นั้น
-    # (ของจริงหลังเครื่องเคย start แล้วอยู่ใน DB — ขั้น 5 ตามไปแก้แถวนั้นให้ด้วยเมื่อ IP เปลี่ยน)
+    # กลุ่ม agent: AGENT_CENTRAL_* คือค่าที่ชุดติดตั้ง agent ใช้จริง (build_site_conf อ่านจากที่นี่)
     env_sync AGENT_CENTRAL_HOST       "$BIND_HOST"
-    env_sync AGENT_CENTRAL_REDIS_PORT "6380"
+    env_sync AGENT_CENTRAL_REDIS_PORT "$REDIS_PORT"
     env_sync AGENT_REDIS_USERNAME     "agent_node"
     env_sync AGENT_REDIS_PASSWORD     "$AGENT_REDIS_PASS"
 
@@ -1079,7 +922,7 @@ DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
 
 REDIS_HOST=$BIND_HOST
-REDIS_PORT=6380
+REDIS_PORT=$REDIS_PORT
 REDIS_SSL=True
 REDIS_CERT=$PROJECT_DIR/cert/central/central.crt
 REDIS_KEY=$PROJECT_DIR/cert/central/central.key
@@ -1102,9 +945,11 @@ LINE_CHANNEL_ACCESS_TOKEN=
 LINE_CHANNEL_SECRET=
 GEMINI_API_KEY=
 
-# Values embedded into the agent installer (editable later on the System Settings page)
+# Values embedded into the agent installer
+# AGENT_CENTRAL_* are read straight from here (re-run this script to change them);
+# AGENT_REDIS_* are only the fallback - the System Settings page stores those in the database
 AGENT_CENTRAL_HOST=$BIND_HOST
-AGENT_CENTRAL_REDIS_PORT=6380
+AGENT_CENTRAL_REDIS_PORT=$REDIS_PORT
 AGENT_REDIS_USERNAME=agent_node
 AGENT_REDIS_PASSWORD=$AGENT_REDIS_PASS
 EOF
@@ -1113,11 +958,6 @@ EOF
 fi
 
 # ---------------------------------------------------------------------------
-# 7) cert — ออกให้เอง (Root CA -> central สำหรับ Redis mTLS -> dashboard สำหรับ HTTPS)
-#    SAN ต้องมีทุก IP ที่ระบบถูกเรียกด้วย ไม่งั้น service ไม่ start / agent ต่อ Redis ไม่ได้ /
-#    เบราว์เซอร์ฟ้อง cert ไม่ตรง — ที่นี่จึงใส่ให้ทั้ง BIND_HOST และ WEB_BIND_HOST (ถ้าเป็นคนละ IP)
-#    ของเดิมที่ SAN ครอบครบอยู่แล้วไม่ทับ · ไม่ครบ (เช่นเพิ่งย้าย IP) = เก็บเข้ากรุแล้วออกใหม่ · FORCE_CERT=1 บังคับได้
-# ---------------------------------------------------------------------------
 log "Certificates (Redis mTLS + dashboard HTTPS)"
 CERT_DIR="$PROJECT_DIR/cert/central"
 mkdir -p "$CERT_DIR"
@@ -1125,7 +965,6 @@ mkdir -p "$CERT_DIR"
 # ---- host ที่ต้องอยู่ใน SAN ----
 SAN_HOSTS=("$BIND_HOST")
 # dashboard bind อีก IP หนึ่ง = คนเปิดเว็บด้วย IP นั้น ต้องมีใน SAN ด้วย ไม่งั้นเบราว์เซอร์ฟ้องทุกครั้ง
-# (0.0.0.0 บอกอะไรไม่ได้ว่าจะถูกเรียกด้วย IP ไหน จึงข้าม)
 if [ "$WEB_BIND_HOST" != "0.0.0.0" ] && [ "$WEB_BIND_HOST" != "$BIND_HOST" ]; then
     SAN_HOSTS+=("$WEB_BIND_HOST")
 fi
@@ -1154,9 +993,6 @@ for _h in "${SAN_HOSTS[@]}"; do add_san "$_h"; done
 ALT_NAMES="${ALT_NAMES%$'\n'}"
 
 # ---- cert เดิมครอบ host พวกนั้นครบไหม ----
-# ⚠️ ต้องเทียบ "ทั้งรายการ SAN แบบเป๊ะ ๆ" ไม่ใช่ grep หา IP ในเนื้อ cert แบบเดิม:
-#    grep -q "192.168.56.11" เจอใน cert ที่ SAN เป็น 192.168.56.110 ด้วย (เป็น substring กัน)
-#    ย้าย IP จาก .110 ไป .11 แล้วสคริปต์จะนึกว่า cert ยังใช้ได้ ปล่อย SAN เดิมไว้ทั้งที่ผิด
 cert_san() {  # cert_san FILE — openssl เก่าที่ยังไม่มี -ext ตกไปอ่านจาก -text
     openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null \
         || openssl x509 -in "$1" -noout -text 2>/dev/null | grep -A1 'Subject Alternative Name'
@@ -1175,7 +1011,6 @@ cert_covers_all() {  # cert_covers_all FILE
 }
 
 # CA เดิมเก็บไว้เสมอ — cert ของ agent ที่ออกไปแล้วเซ็นด้วย CA ตัวนี้ ถ้าเปลี่ยน CA ต้องไล่ลง
-# package ใหม่ทุกเครื่อง · ออก central/dashboard ใหม่ด้วย CA เดิม agent เก่าจึงยังเชื่อถือใบใหม่ได้
 CERT_ISSUED=0
 CA_CREATED=0
 if [ -f "$CERT_DIR/central.crt" ] || [ -f "$CERT_DIR/dashboard.crt" ]; then
@@ -1260,21 +1095,11 @@ for f in ca.crt central.crt central.key dashboard.crt dashboard.key; do
 done
 
 # ---------------------------------------------------------------------------
-# 7.1) redis/users.acl — เขียนรหัสจริงให้ตรงกับ .env และชุดติดตั้ง agent
-#      ห้ามมีคอมเมนต์ในไฟล์นี้ (Redis 7 ไม่ start ถ้าบรรทัดไม่ขึ้นต้นด้วย user) — ดู redis/README.md
-# ---------------------------------------------------------------------------
 log "redis/users.acl"
 ACL_FILE="$PROJECT_DIR/redis/users.acl"
 mkdir -p "$PROJECT_DIR/redis"
 
 # รหัสของ "บัญชี agent" ที่จะเขียนลงไฟล์ — ไม่ใช่ค่าจาก .env เสมอไป
-#
-# ⚠️ หน้าเว็บเปลี่ยนรหัส agent ได้ (System Settings) และ apply_agent_password() เขียนแค่
-#    users.acl + ACL LOAD + แถวใน DB — **ไม่แตะ .env** เพราะฝั่ง central ไม่ได้ใช้รหัสนี้ล็อกอิน
-#    .env จึงอาจค้างค่าเก่าไว้ ถ้าเอาค่านั้นมาเขียนทับตอนที่เรามาแก้บรรทัดอื่น (เช่นเปลี่ยนรหัส
-#    admin อย่างเดียว) = agent ทุกเครื่องหลุดทันทีโดยไม่มีใครสั่งให้เปลี่ยน
-#    -> รอบไหน "ไม่ได้ตอบรหัส agent มาใหม่" ให้ยึดรหัสที่อยู่ในไฟล์จริงเป็นหลัก
-#    (ยกเว้น FORCE_ACL=1 ซึ่งคือการสั่งตรง ๆ ว่าให้เขียนใหม่จากค่าของสคริปต์)
 acl_pass_of() {  # acl_pass_of USER FILE — รหัส (token ที่ขึ้นต้นด้วย >) ของ user นั้นในไฟล์ ACL
     [ -f "$2" ] || return 0
     awk -v u="$1" '
@@ -1284,7 +1109,6 @@ acl_pass_of() {  # acl_pass_of USER FILE — รหัส (token ที่ขึ
 }
 
 # หาให้ได้ก่อนว่า "รหัส agent ตัวจริง" รอบนี้คือตัวไหน — ทั้ง users.acl (ขั้นนี้) และ site.conf
-# (ขั้น 7.2) ต้องใช้ค่าเดียวกัน ไม่งั้นไฟล์สองตัวบนเครื่องเดียวกันบอกคนละรหัส
 ACL_AGENT_PASS="$AGENT_REDIS_PASS"
 if [ "$AGENT_PASS_CHANGED" != "1" ] && [ "${FORCE_ACL:-0}" != "1" ]; then
     LIVE_AGENT_PASS="$(acl_pass_of agent_node "$ACL_FILE")"
@@ -1299,15 +1123,10 @@ if [ "$AGENT_PASS_CHANGED" != "1" ] && [ "${FORCE_ACL:-0}" != "1" ]; then
 fi
 
 # เขียนใหม่เมื่อ: ยังไม่มีไฟล์ / ยังเป็นรหัส placeholder / สั่ง FORCE_ACL=1 /
-#   **รอบนี้ตอบรหัส Redis หรือชื่อ user มาใหม่** (ขั้น 1.1 เป็นคนตัดสิน)
-# นอกจากนั้นไม่แตะ — กันรันซ้ำแล้วทับรหัสที่เปลี่ยนไปจากหน้าเว็บ
-# ⚠️ ข้อสุดท้ายขาดไม่ได้: ไม่มีมันแล้วโหมดตั้งค่าใหม่จะเขียนรหัสใหม่ลง .env อย่างเดียว ส่วน Redis
-#    ยังใช้รหัสเก่าในไฟล์เดิม -> central ล็อกอิน Redis ไม่ได้ ตายทั้งเครื่องแบบไล่หาสาเหตุยาก
 ACL_WRITTEN=0
 if [ ! -f "$ACL_FILE" ] || grep -q '>123 ' "$ACL_FILE" || [ "${FORCE_ACL:-0}" = "1" ] \
    || [ "$REDIS_ACL_CHANGED" = "1" ]; then
     # รหัสที่ไฟล์เดิมถืออยู่ = รหัสที่ agent ข้างนอกใช้จริง ณ ตอนนี้ — ต่างจากที่กำลังจะเขียนเมื่อไหร่
-    # แปลว่า agent ทุกเครื่องจะล็อกอินไม่ได้ ต้องไปโผล่ในสรุปท้ายสคริปต์ด้วย
     PREV_ACL_AGENT_PASS="$(acl_pass_of agent_node "$ACL_FILE")"
     if [ -n "$PREV_ACL_AGENT_PASS" ] && [ "$PREV_ACL_AGENT_PASS" != "$ACL_AGENT_PASS" ]; then
         AGENT_PASS_CHANGED=1
@@ -1326,8 +1145,6 @@ else
     warn "users.acl already holds real passwords - left untouched (force a rewrite with FORCE_ACL=1)"
 
     # ไฟล์นี้ไม่ถูกเขียนทับโดยตั้งใจ (หน้าเว็บเปลี่ยนรหัส agent ได้ และเขียนลงไฟล์นี้อย่างเดียว
-    # ไม่แตะ .env) แต่ถ้าบรรทัดของ $REDIS_USER ไม่มีรหัสตรงกับ .env = central ล็อกอิน Redis
-    # ไม่ได้ทั้งเครื่อง ต้องรู้ตั้งแต่ตอนนี้ ไม่ใช่ไปงมใน journalctl ทีหลัง
     if ! awk -v u="$REDIS_USER" -v p=">$REDIS_PASS" '
             $1 == "user" && $2 == u { for (i = 3; i <= NF; i++) if ($i == p) { found = 1 } }
             END { exit !found }
@@ -1338,30 +1155,28 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 7.2) for_Agent/package/site.conf — ค่าที่ถูกฝังลง zip ของ agent ทุกครั้งที่สร้าง
-# ---------------------------------------------------------------------------
 log "Agent installer settings (site.conf)"
 SITE_CONF="$PROJECT_DIR/for_Agent/package/site.conf"
 
 # ของเดิมเขียนแค่ตอนยังไม่มีไฟล์ — ย้าย IP แล้วไฟล์นี้จึงค้าง IP เก่าไว้เงียบ ๆ
-# เทียบค่าในไฟล์กับค่ารอบนี้ ต่างเมื่อไหร่เขียนใหม่ (ไฟล์นี้เป็นค่าตั้งต้นของ System Settings
-# ตอนที่ตาราง app_settings ยังไม่มีแถวของคีย์นั้น — ดู settings_cache.seed_agent_settings_from_site_conf)
 SITE_HOST="$(env_get CENTRAL_HOST "$SITE_CONF")"
+SITE_PORT="$(env_get CENTRAL_REDIS_PORT "$SITE_CONF")"
 SITE_PASS="$(env_get REDIS_PASSWORD "$SITE_CONF")"
 
 # เทียบกับ ACL_AGENT_PASS (รหัสตัวจริงที่ users.acl ถืออยู่) ไม่ใช่ค่าจาก .env ที่อาจค้างของเก่า
 if [ ! -f "$SITE_CONF" ] || [ "${FORCE_SITE_CONF:-0}" = "1" ] \
-   || [ "$SITE_HOST" != "$BIND_HOST" ] || [ "$SITE_PASS" != "$ACL_AGENT_PASS" ]; then
+   || [ "$SITE_HOST" != "$BIND_HOST" ] || [ "$SITE_PORT" != "$REDIS_PORT" ] \
+   || [ "$SITE_PASS" != "$ACL_AGENT_PASS" ]; then
     [ -f "$SITE_CONF" ] && cp -p "$SITE_CONF" "$SITE_CONF.bak.$(date +%Y%m%d%H%M%S)"
     cat > "$SITE_CONF" <<EOF
 CENTRAL_HOST="$BIND_HOST"
-CENTRAL_REDIS_PORT="6380"
+CENTRAL_REDIS_PORT="$REDIS_PORT"
 REDIS_USERNAME="agent_node"
 REDIS_PASSWORD="$ACL_AGENT_PASS"
 EOF
     chmod 600 "$SITE_CONF"
-    if [ -n "$SITE_HOST" ] && [ "$SITE_HOST" != "$BIND_HOST" ]; then
-        ok "Rewrote site.conf (CENTRAL_HOST $SITE_HOST -> $BIND_HOST)"
+    if [ -n "$SITE_HOST" ] && [ "$SITE_HOST:$SITE_PORT" != "$BIND_HOST:$REDIS_PORT" ]; then
+        ok "Rewrote site.conf (agents now dial $BIND_HOST:$REDIS_PORT, was $SITE_HOST:$SITE_PORT)"
     else
         ok "Wrote site.conf - agent zips embed these values automatically"
     fi
@@ -1370,38 +1185,23 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 8) สิทธิ์ไฟล์ + data dir ของ Redis
-# ---------------------------------------------------------------------------
 log "Setting file ownership to $APP_USER:$APP_GROUP"
 mkdir -p "$PROJECT_DIR/redis/data-redis"
 chown -R "$APP_USER":"$APP_GROUP" "$PROJECT_DIR"
 ok "chown done"
 
 # ---------------------------------------------------------------------------
-# 9) systemd: generate units (ตาม user/path/host) แล้วติดตั้ง
-# ---------------------------------------------------------------------------
 log "Generating systemd units + redis-mtls.conf, then installing them"
 APP_USER="$APP_USER" APP_GROUP="$APP_GROUP" PROJECT_DIR="$PROJECT_DIR" BIND_HOST="$BIND_HOST" \
     WEB_BIND_HOST="$WEB_BIND_HOST" WEBHOOK_BIND_HOST="$WEBHOOK_BIND_HOST" \
+    REDIS_PORT="$REDIS_PORT" \
     bash "$PROJECT_DIR/systemd/_gen.sh"
 
 # ★ Redis อ่านทั้ง cert และ aclfile ตอน start ครั้งเดียว แก้ไฟล์เฉย ๆ จึงไม่มีผลกับตัวที่รันอยู่
-#   ปกติ install.sh ตั้งใจไม่แตะ centralredis (restart = ตัดคิว log + connection ของ agent ทุกตัว)
-#   แต่ 2 เคสนี้ไม่ restart ไม่ได้:
-#     - cert ใหม่: ใบเก่ายังถูกยื่นให้ client อยู่ในหน่วยความจำ และ redis_config.py ต่อแบบ
-#       ssl_check_hostname=True -> ย้าย IP แล้วไม่ restart = ทุก service ต่อ Redis ไม่ผ่านการตรวจชื่อ
-#     - users.acl ใหม่: .env ถือรหัสใหม่แต่ Redis ยังบังคับรหัสเก่า -> ล็อกอินไม่ผ่านทั้งเครื่อง
-# ★ ตัวชี้ขาดที่เชื่อได้คือ "ใบที่ Redis ยื่นออกมาตอนนี้" ไม่ใช่ CERT_ISSUED ของรอบนี้
-#
-# ⚠️ เจอจริงบนเครื่องทดสอบ: รอบก่อนออก cert ใหม่แล้วจบกลางคันก่อนถึงขั้นนี้ -> Redis ยังถือใบเก่าไว้
-#    รอบถัดมาเห็นว่า cert บนดิสก์ครบและ SAN ถูกแล้ว CERT_ISSUED จึงเป็น 0 -> ไม่ restart · แล้ว
-#    install.sh ก็ข้ามให้อีกเพราะ "centralredis รันอยู่แล้ว" -> Redis ค้างใบเก่าถาวร ทุก service
-#    ต่อไม่ติดด้วย CERTIFICATE_VERIFY_FAILED วนไปเรื่อย ๆ ทั้งที่สคริปต์จบด้วยข้อความว่าสำเร็จ
-#    ถาม Redis เองว่าตอนนี้ยื่นใบไหน แล้วเทียบกับไฟล์บนดิสก์ = จับได้ทุกกรณีที่มันหลุดจากกัน
 redis_serving_stale_cert() {
     local served ondisk
     [ -f "$CERT_DIR/central.crt" ] || return 1
-    served="$(echo | timeout 5 openssl s_client -connect "$BIND_HOST:6380" 2>/dev/null \
+    served="$(echo | timeout 5 openssl s_client -connect "$BIND_HOST:${OLD_REDIS_PORT:-$REDIS_PORT}" 2>/dev/null \
         | openssl x509 -noout -fingerprint -sha256 2>/dev/null)" || true
     [ -n "$served" ] || return 1          # ต่อไม่ได้/ยังไม่ start = ไม่มีอะไรให้สรุป
     ondisk="$(openssl x509 -in "$CERT_DIR/central.crt" -noout -fingerprint -sha256 2>/dev/null)" || true
@@ -1417,6 +1217,10 @@ elif redis_serving_stale_cert; then
 fi
 if [ "$ACL_WRITTEN" = "1" ]; then
     REDIS_RESTART_REASON="${REDIS_RESTART_REASON:+$REDIS_RESTART_REASON, and }users.acl was rewritten"
+fi
+# พอร์ตอยู่ใน redis-mtls.conf ซึ่ง Redis อ่านตอน start ครั้งเดียว — ไม่ restart = ยังฟังพอร์ตเก่า
+if [ "$PORT_CHANGED" = "1" ]; then
+    REDIS_RESTART_REASON="${REDIS_RESTART_REASON:+$REDIS_RESTART_REASON, and }the port moved $OLD_REDIS_PORT -> $REDIS_PORT"
 fi
 if [ -n "$REDIS_RESTART_REASON" ] && systemctl is-active --quiet centralredis.service; then
     log "Restarting centralredis ($REDIS_RESTART_REASON)"
@@ -1435,17 +1239,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 10) Firewall — เปิดเฉพาะ port ที่ระบบนี้ใช้จริง
-#       6380/tcp  Redis mTLS   เปิดเสมอ — ไม่เปิด agent ส่ง log เข้ามาไม่ได้เลย
-#       8000/tcp  dashboard    เปิดเมื่อ WEB_BIND_HOST ไม่ใช่ 127.0.0.1
-#       8080/tcp  LINE webhook เปิดเมื่อ WEBHOOK_BIND_HOST ไม่ใช่ 127.0.0.1
-#     PostgreSQL 5432 ไม่เปิด — ต่อผ่าน localhost อย่างเดียว
-#
-#     ไม่สั่ง `ufw enable` ให้เอง: คนติดตั้งส่วนใหญ่ ssh เข้ามาทำ พอ ufw ขึ้นมาพร้อม
-#     default deny incoming มันจะตัด ssh ของตัวเองทิ้งกลางคัน เข้าเครื่องไม่ได้อีก
-#     rule ที่เพิ่มไว้ตอน ufw ยัง inactive ไม่หายไปไหน enable ทีหลังมีผลทันที
-#     ข้ามทั้งขั้น: SKIP_FIREWALL=1
-# ---------------------------------------------------------------------------
 log "Firewall (opening the ports this system serves)"
 
 FW_KIND="none"
@@ -1458,39 +1251,145 @@ elif command -v firewall-cmd >/dev/null 2>&1; then
 fi
 
 FW_OPENED=""
-# เปิดไม่สำเร็จแค่เตือน ไม่ล้มสคริปต์ — ของอื่นติดตั้งครบแล้ว และ firewall เครื่องนั้น
-# อาจเปิดทางไว้อยู่แล้วด้วยวิธีอื่น เอาไปเช็คเองได้จากบรรทัดที่เตือน
+
+# ป้ายที่ใช้บอกว่า "rule นี้สคริปต์นี้เป็นคนเปิด" — เก็บไว้ใน comment ของ ufw เอง ไม่ใช่ไฟล์ข้างนอก
+FW_TAG="SecureLog"
+
+# ไฟล์จำพอร์ตที่เปิดเอง — **เฉพาะ firewalld** ซึ่งไม่มี comment ให้ติดป้าย (ufw ไม่ใช้ไฟล์นี้)
+FW_OWNED_FILE="$PROJECT_DIR/.fw-owned-ports"
+
+# ---- ufw: อ่าน rule ที่ ufw จำไว้ ----
+fw_rules_for() {  # fw_rules_for PORT — บรรทัด rule ทั้งหมดที่เกี่ยวกับพอร์ตนี้
+    local port="$1"
+    ufw show added 2>/dev/null | sed -n 's/^ufw //p' | awk -v p="$port" '
+        {
+            bare = $0
+            sub(/ comment .*$/, "", bare)     # ตัด comment ก่อนค้นเลข ไม่งั้นเลขในข้อความก็นับด้วย
+            if (bare ~ "(^|[[:space:]])" p "(/tcp|/udp)?([[:space:]]|$)") print
+        }'
+}
+
+# มี rule ของพอร์ตนี้อยู่แล้วไหม (ของใครก็ตาม)
+fw_port_covered() { [ -n "$(fw_rules_for "$1")" ]; }
+
+# rule ของพอร์ตนี้เป็นของสคริปต์ไหม — ดูจากป้ายใน comment
+fw_port_is_ours() { fw_rules_for "$1" | grep -q "comment '$FW_TAG"; }
+
+# ---- เปิดพอร์ต ----
 fw_allow() {  # fw_allow PORT "คำอธิบาย"
     local port="$1" what="$2"
+
     case "$FW_KIND" in
         ufw)
-            # ufw ก่อน 0.35 ไม่รู้จัก comment — ตกลงมาสั่งแบบไม่มี comment ให้
-            ufw allow "$port"/tcp comment "SecureLog $what" >/dev/null 2>&1 \
-                || ufw allow "$port"/tcp >/dev/null 2>&1 \
-                || { warn "ufw could not open $port/tcp ($what) - open it yourself"; return 0; }
+            if fw_port_covered "$port"; then
+                if fw_port_is_ours "$port"; then
+                    ok "$port/tcp already open - rule added by this script earlier, left as is"
+                else
+                    ok "$port/tcp already allowed by a rule that was here before this script - left as is"
+                fi
+                FW_OPENED="$FW_OPENED $port"
+                return 0
+            fi
+
+            if ! ufw allow "$port"/tcp comment "$FW_TAG $what" >/dev/null 2>&1; then
+                # ufw ก่อน 0.35 ไม่รู้จัก comment — เปิดพอร์ตให้ได้ แต่ไม่มีป้ายบอกว่าเป็นของเรา
+                ufw allow "$port"/tcp >/dev/null 2>&1 \
+                    || { warn "ufw could not open $port/tcp ($what) - open it yourself"; return 0; }
+                warn "$port/tcp opened, but this ufw cannot store comments - the rule carries no owner tag,"
+                warn "  so it will NOT be removed automatically if the port changes later"
+            fi
             ;;
         firewalld)
+            if firewall-cmd --permanent --query-port="$port"/tcp >/dev/null 2>&1; then
+                ok "$port/tcp already allowed by firewalld - left as is"
+                FW_OPENED="$FW_OPENED $port"
+                return 0
+            fi
             firewall-cmd --permanent --add-port="$port"/tcp >/dev/null 2>&1 \
                 || { warn "firewalld could not open $port/tcp ($what) - open it yourself"; return 0; }
+            # firewalld ไม่มี comment ให้ติดป้าย -> จดไว้ในไฟล์แทน (รูปแบบ: หนึ่งพอร์ตต่อบรรทัด)
+            if ! grep -qx "$port" "$FW_OWNED_FILE" 2>/dev/null; then
+                echo "$port" >> "$FW_OWNED_FILE"
+            fi
             ;;
         *) return 0 ;;
     esac
+
     ok "$port/tcp open - $what"
     FW_OPENED="$FW_OPENED $port"
 }
 
+# ---- ปิดพอร์ตเก่าหลังย้ายพอร์ต Redis ----
+fw_close_old_port() {  # fw_close_old_port PORT
+    local port="$1"
+
+    case "$FW_KIND" in
+        ufw)
+            if ! fw_port_covered "$port"; then
+                ok "Nothing allows the old port $port any more - nothing to close"
+                return 0
+            fi
+
+            if ! fw_port_is_ours "$port"; then
+                warn "Port $port is still allowed, but by a rule this script did not create:"
+                fw_rules_for "$port" | sed 's/^/       ufw /'
+                warn "  Left untouched. Close it yourself if you want it closed:"
+                warn "    sudo ufw status numbered   then   sudo ufw delete <number>"
+                return 0
+            fi
+
+            ufw --force delete allow "$port"/tcp >/dev/null 2>&1 || true
+
+            if fw_port_is_ours "$port"; then
+                warn "Could not remove the $port/tcp rule this script had added - remove it yourself:"
+                warn "    sudo ufw delete allow $port/tcp"
+                return 0
+            fi
+
+            ok "Closed $port/tcp - the rule this script had added is gone"
+            if fw_port_covered "$port"; then
+                warn "  Port $port is still allowed by a rule that was here before - left as is:"
+                fw_rules_for "$port" | sed 's/^/       ufw /'
+            fi
+            ;;
+
+        firewalld)
+            if ! firewall-cmd --permanent --query-port="$port"/tcp >/dev/null 2>&1; then
+                ok "Nothing allows the old port $port any more - nothing to close"
+                return 0
+            fi
+            if ! grep -qx "$port" "$FW_OWNED_FILE" 2>/dev/null; then
+                warn "Port $port/tcp is still allowed by firewalld, but this script did not open it - left as is"
+                warn "  Close it yourself: sudo firewall-cmd --permanent --remove-port=$port/tcp && sudo firewall-cmd --reload"
+                return 0
+            fi
+            if firewall-cmd --permanent --remove-port="$port"/tcp >/dev/null 2>&1; then
+                sed -i "/^$port\$/d" "$FW_OWNED_FILE" 2>/dev/null || true
+                ok "Closed $port/tcp - the rule this script had added is gone (a --reload runs below)"
+            else
+                warn "Could not remove $port/tcp from firewalld - do it yourself"
+            fi
+            ;;
+    esac
+}
+
 case "$FW_KIND" in
     skip)
-        warn "SKIP_FIREWALL=1 - firewall left alone (open tcp 6380/8000/8080 yourself if one sits in front)"
+        warn "SKIP_FIREWALL=1 - firewall left alone (open tcp $REDIS_PORT/8000/8080 yourself if one sits in front)"
         FW_SUMMARY="skipped (SKIP_FIREWALL=1)"
         ;;
     none)
         warn "Neither ufw nor firewalld found on this machine - nothing to open"
-        warn "If something else filters traffic, open tcp 6380 (agents), 8000 (dashboard), 8080 (LINE webhook)"
+        warn "If something else filters traffic, open tcp $REDIS_PORT (agents), 8000 (dashboard), 8080 (LINE webhook)"
         FW_SUMMARY="no ufw/firewalld - nothing opened"
         ;;
     *)
-        fw_allow 6380 "Redis mTLS (agents send logs in)"
+        fw_allow "$REDIS_PORT" "Redis mTLS (agents send logs in)"
+
+        # ย้ายพอร์ตแล้วพอร์ตเก่าไม่มีอะไรฟังอีก — ปิดให้ **เฉพาะ rule ที่สคริปต์นี้เปิดไว้เอง**
+        if [ "$PORT_CHANGED" = "1" ]; then
+            fw_close_old_port "$OLD_REDIS_PORT"
+        fi
 
         if [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
             warn "dashboard binds 127.0.0.1 - 8000/tcp left closed (local access only)"
@@ -1523,14 +1422,6 @@ case "$FW_KIND" in
 esac
 
 # ---------------------------------------------------------------------------
-# 11) ตรวจว่า "ใช้งานได้จริง" ไม่ใช่แค่ service ขึ้น
-#
-# ⚠️ ของเดิมจบด้วย "Setup complete - services running" โดยดูแค่ว่า systemd ยังไม่ตาย — แต่ service
-#    ของระบบนี้ออกแบบให้ retry ต่อ Redis ไปเรื่อย ๆ ไม่ยอมตาย เครื่องที่ Redis ยื่น cert คนละใบกับ
-#    ที่ .env ชี้ จึงขึ้นเขียวครบทุกตัวทั้งที่ต่อไม่ติดสักตัว และไม่มีใครรู้จนกว่าจะไปเปิด journalctl เอง
-#    (เกิดขึ้นจริงบนเครื่องทดสอบ: ทุก service วน CERTIFICATE_VERIFY_FAILED อยู่เป็นชั่วโมง)
-#    ตรงนี้จึงต่อ Redis ด้วยค่าใน .env จริง ๆ ทางเดียวกับที่ service ต่อ แล้วบอกผลตรง ๆ
-# ---------------------------------------------------------------------------
 REDIS_CHECK="skipped"
 if [ "$STARTED" -eq 1 ] && [ -x "$PROJECT_DIR/venv/bin/python" ] && [ "$CERT_OK" -eq 1 ]; then
     log "Checking that this machine can actually use its own Redis (mTLS + ACL)"
@@ -1543,7 +1434,7 @@ except Exception:
     print("skipped (the redis library is not in the venv)"); sys.exit(0)
 try:
     c = redis.Redis(
-        host="$BIND_HOST", port=6380, ssl=True,
+        host="$BIND_HOST", port=$REDIS_PORT, ssl=True,
         ssl_certfile="$CERT_DIR/central.crt", ssl_keyfile="$CERT_DIR/central.key",
         ssl_ca_certs="$CERT_DIR/ca.crt", ssl_cert_reqs="required", ssl_check_hostname=True,
         username="$REDIS_USER", password="$REDIS_PASS",
@@ -1557,7 +1448,7 @@ PYCHK
 )"
     case "$REDIS_CHECK" in
         ok)
-            ok "Logged in to Redis at $BIND_HOST:6380 over mTLS as '$REDIS_USER' - the services connect the same way"
+            ok "Logged in to Redis at $BIND_HOST:$REDIS_PORT over mTLS as '$REDIS_USER' - the services connect the same way"
             ;;
         skipped*)
             warn "Redis check $REDIS_CHECK"
@@ -1574,12 +1465,10 @@ PYCHK
 fi
 
 # ---------------------------------------------------------------------------
-# สรุป
-# ---------------------------------------------------------------------------
 log "Done - summary"
 echo "  Location      : $PROJECT_DIR"
 echo "  Runs as user  : $APP_USER"
-echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:6380)"
+echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:$REDIS_PORT)"
 # เว็บ bind IP เดียว = ต้องเข้าด้วย IP นั้นเท่านั้น (0.0.0.0 ค่อยใช้ที่อยู่ของ central เป็นตัวแทน)
 if [ "$WEB_BIND_HOST" = "0.0.0.0" ]; then WEB_URL_HOST="$BIND_HOST"; else WEB_URL_HOST="$WEB_BIND_HOST"; fi
 echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$WEB_URL_HOST:8000"
@@ -1599,24 +1488,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# ฝั่ง agent (client) — สิ่งที่สคริปต์นี้ตามไปแก้ให้ไม่ได้
-#
-# ค่าที่ agent ใช้ต่อกลับมา (CENTRAL_HOST + รหัส Redis ของ agent + CA) ถูก **ฝังลงเครื่อง agent
-# ตั้งแต่ตอนติดตั้ง** ไม่ได้ถามจาก central ตอนรัน เปลี่ยนที่นี่จึงไม่มีทางถึงเขาเอง และ agent จะ
-# retry เงียบ ๆ ไปเรื่อย ๆ — ที่ central ไม่มีอะไรฟ้องเลยว่าหายไปกี่เครื่อง จึงต้องบอกตรงนี้ให้ชัด
-# ว่าต้องไปไล่ลงใหม่ ไม่ใช่ปล่อยให้ไปเจอเองตอนสงสัยว่าทำไม log หาย
-#
-# cert ของ central/dashboard ที่ออกใหม่ "ไม่" อยู่ในรายการนี้ — เซ็นด้วย CA เดิม agent เก่าจึงยัง
-# เชื่อถือใบใหม่ได้ตามปกติ (เหตุผลเดียวกับที่ขั้น 7 หวง CA เดิมไว้)
-# ---------------------------------------------------------------------------
-# เงื่อนไขคือ "มี agent อยู่ข้างนอกไหม" ไม่ใช่ "เคยมี .env ไหม" — ล้างโฟลเดอร์ทิ้งแล้วลงใหม่โดยที่
-# ฐานข้อมูลยังอยู่ คือเคสที่ .env หายไปแต่ agent ยังอยู่ครบ และเป็นเคสที่ต้องเตือนที่สุด
 AGENT_COUNT_KNOWN=0
 case "${EXISTING_AGENTS:-}" in ''|*[!0-9]*) ;; *) AGENT_COUNT_KNOWN=1 ;; esac
 if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -gt 0 ]; }; then
     AGENT_REASONS=()
     if [ "$IP_CHANGED" = "1" ]; then
         AGENT_REASONS+=("the central address moved $CURRENT_BIND_HOST -> $BIND_HOST (they still dial $CURRENT_BIND_HOST)")
+    fi
+    if [ "$PORT_CHANGED" = "1" ]; then
+        AGENT_REASONS+=("the Redis port moved $OLD_REDIS_PORT -> $REDIS_PORT (they still dial ${CURRENT_BIND_HOST:-the central}:$OLD_REDIS_PORT)")
     fi
     if [ "$AGENT_PASS_CHANGED" = "1" ]; then
         AGENT_REASONS+=("the Redis password of the agent accounts changed (they authenticate with the old one)")
@@ -1638,13 +1518,13 @@ if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_
         echo "     On EVERY agent machine, one of these:"
         echo "       - open the dashboard -> download a fresh package for that agent -> unzip it there"
         echo "         and run:  sudo ./setup.sh      (it rewrites everything, this is the safe one)"
-        echo "       - or, in the agent folder, edit site.conf (CENTRAL_HOST / REDIS_PASSWORD) and"
+        echo "       - or, in the agent folder, edit site.conf (CENTRAL_HOST / CENTRAL_REDIS_PORT / REDIS_PASSWORD) and"
         echo "         re-run:   sudo ./setup.sh"
         echo "     Editing one file by hand is not enough - those values sit in BOTH"
         echo "     <agent dir>/agent_config.json and /etc/filebeat/filebeat.yml; setup.sh writes both."
         if [ "$IP_CHANGED" = "1" ]; then
             echo "     Updated on this machine already: cert SAN, REDIS_HOST/AGENT_CENTRAL_HOST in .env,"
-            echo "     site.conf, the agent_central_host row in the database and the systemd units."
+            echo "     site.conf and the systemd units."
         fi
     else
         ok "Agent machines: nothing they depend on changed - the agents already installed keep working as is"

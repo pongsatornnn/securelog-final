@@ -1,7 +1,4 @@
-"""
-เส้นทางหน้าเว็บที่ต้อง login (render HTML template อย่างเดียว ไม่มี logic ทางธุรกิจ)
-API จริงของแต่ละหน้าอยู่ใน routes/agents.py, blacklist.py, whitelist.py, alerts.py, rules.py
-"""
+"""เส้นทางหน้าเว็บที่ต้อง login (render HTML template อย่างเดียว ไม่มี logic ทางธุรกิจ)"""
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse

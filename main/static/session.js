@@ -1,11 +1,4 @@
 // เด้งกลับหน้า login อัตโนมัติเมื่อ session หมดอายุ/ถูกเพิกถอน แทนที่จะปล่อยให้หน้าค้าง
-//
-// ฝั่ง server `require_login` (dependencies.py) ไม่ได้ตอบ 401 แต่ raise 303 + Location: /login
-// ซึ่ง fetch() จะ "ตามไปเอง" แล้วได้ HTML ของหน้า login กลับมาเป็น 200 → หน้าเว็บ parse JSON
-// ไม่ผ่าน ตกเข้า catch แล้วขึ้นแค่ error ใน console (ผู้ใช้เห็นตารางว่าง ไม่รู้ว่าตัวเองหลุด login)
-// จึงเช็คจาก res.redirected + path ปลายทางเป็นหลัก และเผื่อ 401 ตรง ๆ ไว้ด้วย
-//
-// โหลดแบบ synchronous ต่อจาก csrf.js (patch window.fetch ซ้อนกันได้ ต่างคนต่างชั้น)
 (function () {
   // endpoint ที่ 401 = "ข้อมูลที่กรอกไม่ถูกต้อง" ไม่ใช่ session หมดอายุ ห้ามเด้ง
   var AUTH_ENDPOINTS = ['/api/login', '/api/change-password'];
@@ -51,7 +44,6 @@
       if (bouncedToLogin || res.status === 401) {
         if (goLogin()) {
           // ค้าง promise ไว้เฉย ๆ ระหว่างที่ browser กำลังเปลี่ยนหน้า เพื่อไม่ให้ผู้ใช้เห็น
-          // error/ตารางว่างแว้บก่อนเด้ง (หน้ากำลังจะถูกทิ้งอยู่แล้ว)
           return new Promise(function () {});
         }
       }

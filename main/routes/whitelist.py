@@ -1,11 +1,4 @@
-"""
-เส้นทางจัดการ IP Whitelist
-
-add_whitelist / add_whitelist_bulk เคยรับ body เป็น raw JSON ผ่าน request.json() ตรง ๆ
-ซึ่งทำให้ body ที่ parse ไม่ผ่านกลายเป็น 500 (JSONDecodeError หลุดขึ้นไปถึง handler กลาง)
-และค่าที่ยาวเกินคอลัมน์ก็หลุดไปตายที่ PostgreSQL — ตอนนี้ใช้ Pydantic model เหมือน
-routes/blacklist.py แล้ว ทั้งสองเคสจึงตอบ 422 พร้อมบอกฟิลด์ที่ผิด
-"""
+"""เส้นทางจัดการ IP Whitelist"""
 
 import ipaddress
 
@@ -48,7 +41,7 @@ async def api_get_whitelist(
             "ip_address": item.ip_address,
             "description": item.description,
             "created_at": iso_utc(item.created_at),
-            "created_by": item.created_by,   # None = แถวเก่าก่อนเก็บข้อมูลนี้
+            "created_by": item.created_by,
             "created_by_user_id": item.created_by_user_id,
         }
         for item in ips
@@ -79,8 +72,6 @@ async def api_add_whitelist(
         )
 
     # เช็คเฉพาะแถวที่ยัง block อยู่จริง (is_active) — แถวที่ปลดบล็อก/หมดอายุไปแล้ว
-    # ยังค้างอยู่ใน ip_black_list ในฐานะ "ประวัติ" เท่านั้น (ดู manual_unblock_blacklist)
-    # ถ้าไม่กรอง is_active IP ที่แอดมินเพิ่งกดปลดบล็อกจะเพิ่มเข้า Whitelist ไม่ได้ตลอดไป
     blacklist_ip = await get_blacklist_by_ip(db, ip_address)
     if blacklist_ip and blacklist_ip.is_active:
         raise HTTPException(

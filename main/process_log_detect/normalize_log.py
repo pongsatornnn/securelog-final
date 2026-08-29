@@ -15,8 +15,6 @@ TZ = ZoneInfo("Asia/Bangkok")
 
 
 # ============================================================
-# Redis Queue
-# ============================================================
 
 RAW_LOGS_QUEUE = "raw_logs_queue"
 
@@ -31,23 +29,14 @@ DROPPED_QUEUES = {NORMALIZED_SYSLOG_QUEUE, NORMALIZED_UNKNOWN_QUEUE}
 
 
 # ============================================================
-# Time helper
-# ============================================================
 
 def now_thai() -> str:
-    """
-    เวลาที่ Central normalize log นี้
-    """
+    """เวลาที่ Central normalize log นี้"""
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def parse_filebeat_timestamp(timestamp: str | None) -> tuple[str | None, str | None]:
-    """
-    @timestamp จาก Filebeat คือเวลาฝั่ง Agent / เวลาที่ Filebeat อ่าน log
-
-    คืนค่า:
-    agent_event_time_utc, agent_event_time_thai
-    """
+    """@timestamp จาก Filebeat คือเวลาฝั่ง Agent / เวลาที่ Filebeat อ่าน log"""
     if not timestamp:
         return None, None
 
@@ -70,8 +59,6 @@ def parse_filebeat_timestamp(timestamp: str | None) -> tuple[str | None, str | N
 
 
 # ============================================================
-# Basic helper
-# ============================================================
 
 def get_message(event: dict) -> str:
     return str(event.get("message", "")).strip()
@@ -92,17 +79,7 @@ def get_secret_token(event: dict) -> str | None:
 
 
 def get_host_ip(event: dict) -> str | None:
-    """
-    IP ของเครื่อง agent ที่ filebeat แนบมากับทุก event (processor add_fields target: host)
-
-    ค่านี้ถูกเขียนลง /etc/filebeat/filebeat.yml ตอนรัน setup.sh จาก interface ที่เลือกไว้
-    — ยกโฟลเดอร์ทั้งชุดไปรัน setup.sh ที่เครื่องอื่น จะได้ IP ของเครื่องใหม่ติดมาเอง
-    แล้วโดนปฏิเสธเพราะไม่ตรงกับที่ผูกไว้ (auth_cache.verify_agent_ip)
-
-    filebeat มี add_host_metadata ที่ทำให้ host.ip กลายเป็น "list ของทุก IP บนเครื่อง" ได้
-    — ถ้าเจอเป็น list ให้ถือว่าอ่านค่าเดี่ยวไม่ได้ (คืน None = ข้ามการตรวจ IP) ดีกว่าเดาเอา
-    ตัวแรกแล้วปฏิเสธ log ของ agent ที่ตั้งค่าถูกต้อง
-    """
+    """IP ของเครื่อง agent ที่ filebeat แนบมากับทุก event (processor add_fields target: host)"""
     host = event.get("host", {})
     if not isinstance(host, dict):
         return None
@@ -112,14 +89,7 @@ def get_host_ip(event: dict) -> str | None:
 
 
 def base_normalized_event(event: dict) -> dict:
-    """
-    Field กลางที่ detector ต้องใช้จริง
-    - agent_event_time_* = เวลา log ฝั่ง Agent จาก Filebeat @timestamp
-    - central_normalized_at = เวลา Central แปลง log ใช้ debug latency ได้
-    - raw_message = เก็บต้นฉบับไว้ trace / debug / แสดงผล alert
-
-    ตัด agent_ip / hostname / web_engine ออก เพราะไม่จำเป็นต่อการ detect
-    """
+    """Field กลางที่ detector ต้องใช้จริง"""
     agent_event_time_utc, agent_event_time_thai = parse_filebeat_timestamp(
         event.get("@timestamp")
     )
@@ -158,11 +128,6 @@ def to_int(value: str | None) -> int | None:
         return None
 
 
-# ============================================================
-# Auth log normalize
-# ใช้ detect:
-# - SSH Brute Force
-# - Authentication failure
 # ============================================================
 
 SSH_FAILED_RE = re.compile(
@@ -237,9 +202,6 @@ def normalize_auth(event: dict) -> dict | None:
     match = INVALID_USER_RE.search(message)
     if match:
         # ไม่ส่ง Invalid user แยกเข้า Redis
-        # เพราะโดยปกติ sshd จะมี log คู่กันอีกบรรทัดคือ
-        # Failed password for invalid user <username> from <ip> port <port>
-        # ถ้าส่งทั้งสองบรรทัด detector จะนับ failed login ซ้ำเป็น x2
         return None
 
     match = SUDO_AUTH_FAILURE_RE.search(message)
@@ -265,14 +227,6 @@ def normalize_auth(event: dict) -> dict | None:
     return None
 
 
-# ============================================================
-# Web access log normalize
-# ใช้ detect:
-# - SQL Injection
-# - Cross-Site Scripting หรือ XSS
-# - Path Traversal
-# - Command Injection
-# - Application-level DoS จาก Request rate
 # ============================================================
 
 WEB_ACCESS_RE = re.compile(
@@ -330,12 +284,6 @@ def normalize_web(event: dict) -> dict:
     return normalized
 
 
-# ============================================================
-# Firewall normalize
-# UFW / iptables / kernel firewall log
-# ใช้ detect:
-# - Port Scanning
-# - Firewall deny/reject/block rate
 # ============================================================
 
 UFW_ACTION_RE = re.compile(r"\[UFW (?P<action>\w+)\]")
@@ -431,9 +379,6 @@ def normalize_iptables(event: dict) -> dict:
 
 
 # ============================================================
-# Syslog normalize
-# ใช้เก็บ event ระบบที่อาจนำไป correlate ภายหลัง
-# ============================================================
 
 SYSLOG_RE = re.compile(
     r"^(?P<syslog_time>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+"
@@ -468,8 +413,6 @@ def normalize_syslog(event: dict) -> dict:
 
 
 # ============================================================
-# Unknown normalize
-# ============================================================
 
 def normalize_unknown(event: dict) -> dict:
     normalized = base_normalized_event(event)
@@ -479,8 +422,6 @@ def normalize_unknown(event: dict) -> dict:
     return normalized
 
 
-# ============================================================
-# Log type detector
 # ============================================================
 
 def is_ufw_log(log_type: str | None, message: str) -> bool:
@@ -527,10 +468,7 @@ def is_syslog(log_type: str | None, message: str) -> bool:
 
 
 def is_auth_pattern(message: str) -> bool:
-    """
-    ใช้ดักกรณี auth failure / ssh brute force หลุดมาปนกับ syslog
-    (ระบบที่รวม facility auth ไว้ใน syslog แทนที่จะแยกเป็น auth.log)
-    """
+    """ใช้ดักกรณี auth failure / ssh brute force หลุดมาปนกับ syslog"""
     return bool(
         SSH_FAILED_RE.search(message)
         or SSH_ACCEPTED_RE.search(message)
@@ -539,8 +477,6 @@ def is_auth_pattern(message: str) -> bool:
     )
 
 
-# ============================================================
-# Router
 # ============================================================
 
 def normalize_event(event: dict) -> tuple[str | None, dict | None]:
@@ -578,8 +514,6 @@ def normalize_event(event: dict) -> tuple[str | None, dict | None]:
 
 
 # ============================================================
-# Redis push
-# ============================================================
 
 def push_normalized_log(
     r: redis.Redis,
@@ -595,8 +529,6 @@ def push_normalized_log(
     )
 
 
-# ============================================================
-# Main worker
 # ============================================================
 
 def start_normalizer() -> None:

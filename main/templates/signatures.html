@@ -130,7 +130,7 @@
     </div>
   </div>
 
-  <!-- 3 สถานะแยกกัน: กำลังโหลด / โหลดไม่สำเร็จ / โหลดได้แต่ยังไม่มีข้อมูล -->
+  
   <div class="state-box" x-show="loading">
     <div class="state-spinner" aria-hidden="true"></div>
     <div class="state-title">กำลังโหลด signature...</div>
@@ -147,8 +147,7 @@
     <div class="state-detail">ระบบจะ seed ชุดเริ่มต้นให้อัตโนมัติเมื่อ web detector รันครั้งแรก</div>
   </div>
 
-  <!-- แท็บสร้างจากหมวดที่มีอยู่จริงในข้อมูล ไม่ได้ fix ไว้ในหน้า — หมวดไหนไม่มี signature
-       เลยก็จะไม่มีแท็บว่าง ๆ โผล่มา -->
+  
   <div class="tabs" role="tablist" x-cloak
        x-show="!loading && !loadError && signatures.length > 0">
     <template x-for="group in groupedSignatures" :key="group.detection_type">
@@ -166,8 +165,7 @@
     <div class="category-block" role="tabpanel" x-cloak
          x-show="tab === group.detection_type">
 
-      <!-- ชื่อหมวดอยู่ที่ป้ายแท็บแล้ว ตรงนี้เหลือแค่จำนวนที่แท็บบอกแทนไม่ได้
-           + ปุ่มคืนค่าเฉพาะชนิดที่เปิดแท็บอยู่ (ปุ่มบนหัวหน้าทำทุกชนิด) -->
+      
       <div class="section-subtitle sig-subtitle">
         <span>
           <span x-text="group.items.length + ' pattern'"></span> ·
@@ -187,7 +185,7 @@
       <div class="table-wrap">
         <table class="sig-table stack-table">
           <colgroup>
-            <col>                        <!-- Pattern — กินที่ที่เหลือทั้งหมด -->
+            <col>                        
             <col class="col-status">
             <col class="col-action">
           </colgroup>
@@ -205,8 +203,7 @@
               <tr :class="{ 'is-off': !sig.is_active }">
                 <td class="stack-head">
                   <span class="pattern-code" x-text="sig.pattern"></span>
-                  <!-- ป้ายเฉพาะแถวที่แอดมินเพิ่มเอง — แถวของระบบมีเยอะกว่ามาก
-                       ติดป้ายทุกแถวจะกลายเป็นสัญญาณรบกวนแทนที่จะช่วยอ่าน -->
+                  
                   <span class="sig-tag" x-show="!sig.is_default">เพิ่มเอง</span>
                   <div class="sig-desc" x-show="sig.description" x-text="sig.description"></div>
                 </td>
@@ -235,8 +232,7 @@
     </div>
   </template>
 
-  <!-- Add / Edit Signature Modal — ใบเดียวใช้ทั้งเพิ่มและแก้ไข ต่างกันที่ editingId
-       (ฟอร์มหน้าตาเหมือนกันทุกช่อง ยกเว้นชนิดการโจมตีที่แก้ไม่ได้ตอนแก้ไข) -->
+  
   <div
     class="modal-backdrop"
     x-show="showFormModal"

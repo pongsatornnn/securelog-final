@@ -1,14 +1,4 @@
-"""
-ค่าเริ่มต้นที่ "ใช้จริง" ตอน seed DB — snapshot จาก `database/seed_data.json` มาก่อน
-ถ้าไม่มีไฟล์/ไม่มี key นั้นใน snapshot ค่อย fallback ไปค่า hardcode ใน rule_cache /
-severity_cache / blacklist_policy / signature_cache เหมือนเดิม
-
-snapshot คือค่า config ที่ export มาจาก DB ของเครื่องที่ตั้งค่าไว้แล้ว (`export_seed.py`)
-เพื่อให้เครื่องที่ติดตั้งใหม่ได้ค่าเดียวกันตั้งแต่ start ครั้งแรก โดยไม่ต้องมานั่งตั้งใหม่ทีละหน้า
-
-โมดูลนี้ตั้งใจให้เป็น data ล้วน — **ห้าม import อะไรจาก *_cache.py** เพราะฝั่งนั้นเป็นคน
-import ตัวนี้ (จะกลายเป็น circular import)
-"""
+"""ค่าเริ่มต้นที่ "ใช้จริง" ตอน seed DB — snapshot จาก `database/seed_data.json` มาก่อน"""
 
 import json
 from pathlib import Path
@@ -20,10 +10,7 @@ LOG_PREFIX = "SEED-DATA"
 
 
 def _load_snapshot() -> dict:
-    """
-    อ่าน snapshot จากไฟล์ (ครั้งเดียวตอน import) — ไม่มีไฟล์ = ไม่ใช่ error
-    (repo ที่ยังไม่เคยรัน export_seed.py ก็ต้องรันได้ปกติด้วยค่า default ในโค้ด)
-    """
+    """อ่าน snapshot จากไฟล์ (ครั้งเดียวตอน import) — ไม่มีไฟล์ = ไม่ใช่ error"""
     if not SEED_DATA_PATH.exists():
         return {}
 

@@ -34,7 +34,6 @@ async def load_blacklist_ips() -> list[dict]:
     try:
         async with AsyncSessionLocal() as db:
             # เฉพาะ IP ที่ยัง block อยู่จริง (ไม่รวมที่หมดอายุแล้ว)
-            # ไม่งั้น agent reconnect จะ re-block IP ที่ถูก expire ไปแล้ว
             rows = await get_active_blacklist(db)
 
             blacklist = []
@@ -264,7 +263,6 @@ def listen_agent_metrics() -> None:
                 ram = data.get("ram")
 
                 # IP ที่ agent อ่านจาก interface ของตัวเอง ณ ตอนส่ง (ไม่ใช่ค่าที่ฝังในไฟล์)
-                # ใช้ตรวจว่ายังเป็นเครื่องเดิมที่ผูกไว้กับ agent_id นี้อยู่หรือไม่
                 host_ip = data.get("host_ip")
                 host_iface = data.get("host_iface")
 

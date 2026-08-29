@@ -10,8 +10,7 @@
 
 {% block content %}
 
-<!-- ไม่ใส่ x-init="init()" เพราะ Alpine เรียก init() ของ x-data ให้เองอยู่แล้ว
-     (ใส่ด้วยจะรันสองรอบ = setInterval โหลด /api/agents ซ้อนกันสองตัว และตัวแรกเคลียร์ไม่ได้) -->
+
 <div x-data="agentsApp()">
 
   <div class="page-header">
@@ -62,7 +61,7 @@
     </div>
   </div>
 
-  <!-- 3 สถานะแยกกัน: กำลังโหลดครั้งแรก / โหลดไม่สำเร็จตั้งแต่ครั้งแรก / โหลดได้แต่ไม่มีข้อมูล -->
+  
   <div class="state-box" x-show="loading">
     <div class="state-spinner" aria-hidden="true"></div>
     <div class="state-title">กำลังโหลดรายการ Client Server...</div>
@@ -80,7 +79,7 @@
          x-text="agents.length === 0 ? 'กด “เพิ่ม Client Server” เพื่อลงทะเบียนเครื่องแรกเข้าระบบ' : 'ลองเปลี่ยนตัวกรองด้านบน'"></div>
   </div>
 
-  <!-- เคยโหลดได้แล้วแต่รอบล่าสุดพลาด: ยังโชว์ข้อมูลเดิมไว้ แค่บอกว่าอาจไม่สดแล้ว -->
+  
   <div class="stale-banner" x-show="loadError && agents.length > 0" x-cloak>
     ข้อมูลอาจไม่เป็นปัจจุบัน — อัปเดตสถานะล่าสุดไม่สำเร็จ (<span x-text="loadError"></span>)
   </div>
@@ -150,9 +149,7 @@
             </div>
           </div>
 
-          <!-- มีคนส่งข้อมูลในนาม agent นี้จาก IP อื่นและถูกปฏิเสธไปแล้ว
-               ไม่มีปุ่ม "ยอมรับ IP นี้" โดยตั้งใจ — IP ผูกครั้งเดียวเปลี่ยนไม่ได้
-               ทางออกทางเดียวคือออก package ใหม่แล้วติดตั้งใหม่ที่เครื่องปลายทาง -->
+          
           <div class="ip-mismatch" x-show="agent.pending_ip" x-cloak>
             <div class="ip-mismatch-head">IP ไม่ตรงกับที่ผูกไว้ — ข้อมูลถูกปฏิเสธ</div>
             <div class="ip-mismatch-body">
@@ -180,7 +177,7 @@
     </template>
   </div>
 
-  <!-- Create Agent Modal -->
+  
   <div class="modal-backdrop" x-show="showCreateModal" style="display: none;" @click.self="closeCreateModal()">
     <div class="modal">
       <div class="modal-header">
@@ -195,8 +192,7 @@
           <input class="form-input" x-model="form.hostname" placeholder="เช่น ubuntu-client-01" :disabled="creating" required>
         </div>
 
-        <!-- ไม่มีช่องกรอก: ตอนสร้าง package ยังไม่รู้ว่าจะไปติดตั้งที่เครื่อง IP อะไร
-             IP ถูกผูกตอน agent ติดต่อเข้ามาครั้งแรก จาก interface ที่เลือกตอนรัน setup.sh -->
+        
         <div class="form-group">
           <label class="form-label">Host IP</label>
           <div class="form-static is-pending">รอการ setup</div>
@@ -221,7 +217,7 @@
     </div>
   </div>
 
-  <!-- Create Agent Success Modal -->
+  
   <div class="modal-backdrop" x-show="showCreateSuccessModal" style="display: none;" @click.self="closeCreateSuccessModal()">
     <div class="modal download-modal">
       <div class="modal-header">
@@ -252,13 +248,13 @@
         </div>
 
         <div class="important-read-box">
-          สำคัญ: ลิงก์ดาวน์โหลดมีอายุ 2 นาที และดาวน์โหลดได้ครั้งเดียวเท่านั้น
+          สำคัญ: ลิงก์ดาวน์โหลดมีอายุ 5 นาที และดาวน์โหลดได้ครั้งเดียวเท่านั้น
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Edit Agent Modal -->
+  
   <div class="modal-backdrop" x-show="showEditModal" style="display: none;" @click.self="closeEditModal()">
     <div class="modal">
       <div class="modal-header">
@@ -275,10 +271,8 @@
               <input class="form-input" x-model="editForm.hostname" placeholder="เช่น ubuntu-client-01" :disabled="savingEdit" required>
             </div>
 
-            <!-- แสดงอย่างเดียว แก้ไม่ได้: ถ้าแก้ตรงนี้ได้ ใครที่เข้าถึงหน้า Agents ได้ก็ย้าย
-                 binding ไปหา IP ไหนก็ได้ = กลไกทั้งหมดไร้ความหมาย -->
-            <!-- แสดงอย่างเดียว แก้ไม่ได้: ถ้าแก้ตรงนี้ได้ ใครที่เข้าถึงหน้า Agents ได้ก็ย้าย
-                 binding ไปหา IP ไหนก็ได้ = กลไกทั้งหมดไร้ความหมาย -->
+            
+            
             <div class="form-group">
               <label class="form-label">Host IP ที่ผูกไว้</label>
               <div class="form-static" :class="editForm.host_ip ? 'mono' : 'is-pending'"
@@ -314,7 +308,7 @@
     </div>
   </div>
 
-  <!-- Regen Download Result Modal -->
+  
   <div class="modal-backdrop" x-show="showRegenModal" style="display: none;" @click.self="closeRegenModal()">
     <div class="modal download-modal">
       <div class="modal-header">
@@ -344,7 +338,7 @@
         </div>
 
         <div class="important-read-box">
-          สำคัญ: ลิงก์ใหม่นี้มีอายุ 2 นาที และดาวน์โหลดได้ครั้งเดียวเท่านั้น
+          สำคัญ: ลิงก์ใหม่นี้มีอายุ 5 นาที และดาวน์โหลดได้ครั้งเดียวเท่านั้น
         </div>
       </div>
 
@@ -352,7 +346,7 @@
     </div>
   </div>
 
-  <!-- Detail Modal -->
+  
   <div class="modal-backdrop" x-show="showDetailModal" style="display: none;" @click.self="showDetailModal = false">
     <div class="modal">
       <div class="modal-header">
@@ -437,7 +431,7 @@
     </div>
   </div>
 
-  <!-- Install Guide Modal -->
+  
   <div class="modal-backdrop" x-show="showGuideModal" style="display: none;" @click.self="showGuideModal = false">
     <div class="modal guide-modal">
       <div class="modal-header">
@@ -452,7 +446,7 @@
           <div class="guide-step-body">
             <div class="guide-step-title">สร้าง Client Server แล้วกด Copy Linux Command หรือ Download</div>
             <div class="guide-step-text">
-              <b>ลิงก์ใช้ได้ครั้งเดียว หมดอายุใน 2 นาที</b> — หมดอายุแล้วกด Regenerate Token
+              <b>ลิงก์ใช้ได้ครั้งเดียว หมดอายุใน 5 นาที</b> — หมดอายุแล้วกด Regenerate Token
             </div>
           </div>
         </div>

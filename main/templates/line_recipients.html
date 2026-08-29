@@ -230,7 +230,7 @@
     </div>
   </div>
 
-  <!-- โชว์เฉพาะตอนโหลด OA เสร็จแล้ว กันแถบกระพริบเป็นค่าว่างตอนเข้าหน้า -->
+  
   <div class="oa-bar" :class="{ 'is-unset': !oa.oa_id }" x-show="oaLoaded" x-cloak>
     <span class="oa-label">LINE ID </span>
 
@@ -251,7 +251,7 @@
     </div>
   </div>
 
-  <!-- 3 สถานะแยกกัน: กำลังโหลด / โหลดไม่สำเร็จ / โหลดได้แต่ยังไม่มีข้อมูล -->
+  
   <div class="state-box" x-show="loading">
     <div class="state-spinner" aria-hidden="true"></div>
     <div class="state-title">กำลังโหลดรายชื่อผู้รับ...</div>
@@ -279,9 +279,7 @@
         <template x-for="r in group.items" :key="r.id">
           <div class="rc-card" :class="r.status">
             <div class="rc-head">
-              <!-- มีรูป -> โชว์รูป · ไม่มีรูป (หรือรูปโหลดไม่ขึ้น) -> ไอคอนเดิม
-                   รูปมาจาก CDN ของ LINE โดยตรง ถ้าเครื่องที่เปิด dashboard ออกเน็ตไม่ได้
-                   หรือ URL เก่าไปแล้ว (เจ้าตัวเปลี่ยนรูป) @error จะสลับกลับเป็นไอคอนให้ -->
+              
               <img class="rc-avatar" x-show="r.picture_url && !brokenAvatars.includes(r.id)"
                    :src="r.picture_url" :alt="'รูปโปรไฟล์ของ ' + (r.display_name || r.line_user_id)"
                    loading="lazy" referrerpolicy="no-referrer"

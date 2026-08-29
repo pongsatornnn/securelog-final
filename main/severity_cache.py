@@ -1,15 +1,4 @@
-"""
-Cache + DB layer สำหรับระดับความรุนแรง (severity) ของ alert ต่อ (detection_type, mode)
-โครงเดียวกับ rule_cache.py / blacklist_ttl_cache.py — cache-first, seed default ลง DB ครั้งแรก,
-เคลียร์ cache เมื่อแก้
-
-severity_key = "{detection_type}" เฉยๆ หรือ "{detection_type}:{mode}" ถ้าแยกตาม mode
-lookup ลอง key เฉพาะ mode ก่อน ถ้าไม่มี fallback ไปที่ key แบบไม่มี mode
-("ssh_brute_force") ถ้ายังไม่มีอีก -> "LOW" (ค่า default สุดท้ายเดิมจาก SEVERITY_MAP)
-
-ตอนนี้ยังไม่มี detection ตัวไหนใช้ mode แล้ว (ssh_brute_force รวม fast/slow เป็นกฎเดียว)
-แต่คง fallback chain ไว้ให้ alert เก่าที่มี mode ติดมายังหา severity เจอ + เผื่อ mode ในอนาคต
-"""
+"""Cache + DB layer สำหรับระดับความรุนแรง (severity) ของ alert ต่อ (detection_type, mode)"""
 
 from database.connection import AsyncSessionLocal
 from database.crud import get_alert_severity, upsert_alert_severity
@@ -17,7 +6,7 @@ from database.defaults import snapshot_severity
 from redis_client import cache_get_json, cache_set_json, cache_delete
 
 
-SEVERITY_CACHE_TTL_SECONDS = 300  # fallback เผื่อไม่ได้ผ่าน update_severity() โดยตรง
+SEVERITY_CACHE_TTL_SECONDS = 300
 CACHE_KEY_PREFIX = "alert_severity:"
 
 LOG_PREFIX = "SEVERITY-CACHE"
@@ -75,11 +64,7 @@ def severity_cache_key(severity_key: str) -> str:
 
 
 async def _load_one(severity_key: str) -> dict | None:
-    """
-    คืน {'severity_key','severity'} ของ key นี้เป๊ะๆ (cache-first แล้ว DB)
-    seed default ให้ถ้ายังไม่มีแถวแต่มีค่าอยู่ใน DEFAULT_SEVERITY
-    คืน None ถ้าไม่มีทั้งใน DB และไม่มี default (ให้ผู้เรียก fallback ไป key อื่นต่อ)
-    """
+    """คืน {'severity_key','severity'} ของ key นี้เป๊ะๆ (cache-first แล้ว DB)"""
     cached = cache_get_json(severity_cache_key(severity_key), log_prefix=LOG_PREFIX)
     if cached is not None:
         return cached
@@ -111,10 +96,7 @@ async def _load_one(severity_key: str) -> dict | None:
 
 
 async def get_severity(detection_type: str, mode: str | None = None) -> str:
-    """
-    Entry point หลัก — ตรงกับ alerts.get_severity เดิมทุกกรณี (แค่กลายเป็น async + DB-backed)
-    ลอง key เฉพาะ mode ก่อน แล้ว fallback ไป key แบบไม่มี mode แล้วค่อย "LOW"
-    """
+    """Entry point หลัก — ตรงกับ alerts.get_severity เดิมทุกกรณี (แค่กลายเป็น async + DB-backed)"""
     if mode:
         specific = await _load_one(severity_key_for(detection_type, mode))
         if specific:

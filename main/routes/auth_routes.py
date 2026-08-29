@@ -1,8 +1,4 @@
-"""
-เส้นทางล็อกอิน/ล็อกเอาต์ + หน้าแรกที่ redirect ตามสถานะ login
-- CSRF บังคับที่ csrf.py (CSRFMiddleware) ครอบทุก endpoint ที่เปลี่ยนข้อมูล ไม่ใช่แค่ login
-- JWT เก็บใน httponly cookie ชื่อ access_token
-"""
+"""เส้นทางล็อกอิน/ล็อกเอาต์ + หน้าแรกที่ redirect ตามสถานะ login"""
 
 import os
 
@@ -31,7 +27,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
 def locked_message(retry_after: int) -> str:
     """แปลงวินาทีที่เหลือเป็นข้อความไทยบอกให้รอ"""
-    minutes = (retry_after + 59) // 60  # ปัดขึ้นเป็นนาที
+    minutes = (retry_after + 59) // 60
     if minutes >= 1:
         return f"บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผิดหลายครั้ง กรุณาลองใหม่ในอีก {minutes} นาที"
     return "บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผิดหลายครั้ง กรุณาลองใหม่ในอีกสักครู่"
@@ -172,10 +168,9 @@ async def logout():
 @router.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(
     request: Request,
-    user=Depends(require_login),   # require_login เฉยๆ ไม่ใช้ require_login_page กันเคส redirect วนลูป
+    user=Depends(require_login),
 ):
     # หน้านี้ใช้เฉพาะเคส "ถูกบังคับเปลี่ยนรหัส" (login ครั้งแรก / โดน admin reset) — ตั้งรหัสใหม่
-    # ได้เลยโดยไม่ต้องกรอกรหัสเดิม; ใครที่ไม่ได้ถูกบังคับให้ไปเปลี่ยนที่หน้า Profile Setting แทน
     if not user["must_change_password"]:
         return RedirectResponse(url="/profile", status_code=303)
     return templates.TemplateResponse(
@@ -194,16 +189,7 @@ async def do_change_password(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    เปลี่ยนรหัสผ่านของตัวเอง — เปลี่ยนสำเร็จแล้ว ออก JWT cookie ใหม่ทันที
-    (must_change_password=false) ไม่ต้อง login ซ้ำ
-
-    สองเคส:
-    - บังคับเปลี่ยน (must_change_password=True: login ครั้งแรก / โดน admin reset / admin สร้างให้ใหม่)
-      => ไม่ต้องกรอกรหัสเดิม (เพิ่งใช้รหัส default/ชั่วคราวที่รู้อยู่แล้ว login เข้ามา) แค่กันตั้งซ้ำรหัสเดิม
-    - เปลี่ยนเองตามปกติ (ผ่านหน้า Profile) => ต้องกรอกรหัสเดิมให้ถูกก่อนเสมอ แม้ session ยัง login
-      ค้างอยู่ (กันเคส cookie หลุดมือคนอื่นแล้วเปลี่ยนรหัสยึดบัญชีทันทีโดยไม่รู้รหัสเดิม)
-    """
+    """เปลี่ยนรหัสผ่านของตัวเอง — เปลี่ยนสำเร็จแล้ว ออก JWT cookie ใหม่ทันที"""
     db_user = await get_user(db, user["username"])
 
     if not db_user:
@@ -239,11 +225,7 @@ async def profile_page(
     user=Depends(require_login_page),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    หน้า Profile Setting — แก้ชื่อที่แสดง (name) + ปุ่มเปลี่ยนรหัสผ่านที่เด้งเป็น popup
-    ใช้ require_login_page: บัญชีที่ยังต้องเปลี่ยนรหัส (must_change_password) จะถูกส่งไป
-    /change-password ก่อน ไม่ให้เข้ามาแก้ profile จนกว่าจะตั้งรหัสของตัวเองเสร็จ
-    """
+    """หน้า Profile Setting — แก้ชื่อที่แสดง (name) + ปุ่มเปลี่ยนรหัสผ่านที่เด้งเป็น popup"""
     db_user = await get_user(db, user["username"])
     return templates.TemplateResponse(
         request=request,
@@ -263,11 +245,7 @@ async def update_profile_name(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    แก้ชื่อที่แสดงของบัญชีตัวเอง (self-service) — ทุก role ทำได้เหมือน change-password
-    ออก JWT cookie ใหม่ที่ฝัง name ล่าสุดให้ด้วย เพื่อให้คำทักทาย "Hello <name>" มุมขวาบน
-    อัปเดตตามทันทีในหน้าถัดไป โดยไม่ต้อง login ใหม่
-    """
+    """แก้ชื่อที่แสดงของบัญชีตัวเอง (self-service) — ทุก role ทำได้เหมือน change-password"""
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="กรุณากรอกชื่อ")

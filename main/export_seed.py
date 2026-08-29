@@ -1,45 +1,4 @@
-"""
-Export ค่า config ปัจจุบันใน DB ออกเป็น snapshot (`database/seed_data.json`)
-เพื่อให้เครื่องที่ติดตั้งใหม่ (DB เปล่า) ได้ค่าชุดเดียวกันตั้งแต่ start ครั้งแรก
-โดยไม่ต้องมานั่งปรับใหม่ทีละหน้า — ตอน start `database/seed.py` จะอ่านไฟล์นี้ไป seed ให้
-
-วิธีใช้ (รันในโฟลเดอร์ main/):
-
-    ../venv/bin/python export_seed.py            # เขียนทับ database/seed_data.json
-    ../venv/bin/python export_seed.py --dry-run  # ดูว่าจะเปลี่ยนอะไรบ้าง ไม่เขียนไฟล์
-
-แล้ว **commit `database/seed_data.json` ตามไปด้วย** ไฟล์นี้คือตัวที่พาค่าไปเครื่องใหม่
-
---------------------------------------------------------------------------------
-เก็บเฉพาะ "การตั้งค่า" ที่ตั้งใจให้ติดไปเครื่องใหม่:
-    detection_rules · alert_severity · blacklist_ttl · detection_signatures
-
-**ไม่เก็บ** (เป็นข้อมูลเฉพาะของเครื่องนั้น ไม่ใช่ค่าเริ่มต้น):
-    security_alerts / alert_reads   ประวัติการโจมตี
-    ip_black_list / ip_white_list   IP ของเครือข่ายเครื่องเดิม
-    line_recipients                 ผู้รับแจ้งเตือน LINE (ผูกกับ OA/คนใช้งานจริง)
-    users                           เครื่องใหม่ seed admin/admin ให้เองตอน DB ว่าง
-    agents / agent_downloads        มี secret token + path cert ของเครื่องเดิม เอาไปใช้ต่อ
-                                    ไม่ได้ และไม่ควรให้ token หลุดข้ามเครื่อง — agent บนเครื่อง
-                                    ใหม่ต้องลงทะเบียนใหม่ผ่านหน้า /agents
-    app_settings                    ⚠️ **ห้าม export เด็ดขาด** — มีคีย์ LINE/Gemini และรหัส Redis
-                                    ของ agent เก็บเป็น plaintext · ไฟล์นี้ถูก commit ขึ้น git
-                                    ถ้าเผลอใส่เข้ามา = secret หลุดขึ้น repo ทันที
-                                    เครื่องใหม่ให้กรอกเองที่หน้า /settings (ว่างไว้ตั้งแต่ต้น
-                                    เหมือนที่ setup-server.sh เว้น LINE/GEMINI ใน .env ไว้ว่าง)
-
-**ผลต่อปุ่ม "คืนค่า default" ในหน้า Rules/Signatures:** ไฟล์นี้คือ "ค่า default ที่ใช้จริง"
-ของเครื่อง (signature_cache.effective_default_signatures / rule_cache.effective_default อ่านจาก
-ที่นี่ก่อนค่าในโค้ด) — รันสคริปต์นี้ตอนที่มี signature ที่เพิ่มเองอยู่ใน DB = **ยกระดับ pattern
-เหล่านั้นให้กลายเป็นค่า default ไปด้วย** ครั้งต่อไปที่กดคืนค่า default มันจะถูกคืนกลับมาเหมือน
-ของระบบ (ตั้งใจให้เป็นแบบนี้: สคริปต์นี้แปลว่า "เอาค่าที่ตั้งไว้ตอนนี้เป็นค่าตั้งต้นชุดใหม่")
-ถ้าไม่ต้องการแบบนั้น ให้ลบ pattern ที่ไม่อยากให้ติดไปออกก่อนรัน
-
-**หมายเหตุ — ไฟล์นี้ไม่ใช่ backup ของฐานข้อมูล:** เป็น snapshot ของ "ค่าตั้งที่อยากให้ติดไปเครื่องใหม่"
-เท่านั้น ถ้าวันหลังทำ backup จริงด้วย pg_dump ตาราง app_settings จะติดไปด้วยแน่นอน (secret อยู่ในนั้น)
-ตอนนั้นต้องตัดสินใจแยกต่างหากว่าจะ exclude ตารางนี้ หรือเข้ารหัสค่าก่อนเก็บ
---------------------------------------------------------------------------------
-"""
+"""Export ค่า config ปัจจุบันใน DB ออกเป็น snapshot (`database/seed_data.json`)"""
 
 import asyncio
 import json
@@ -106,7 +65,7 @@ async def collect() -> dict:
         },
         "blacklist_ttl": {
             row.detection_type: {
-                "ttl_seconds": row.ttl_seconds,   # None = ถาวร
+                "ttl_seconds": row.ttl_seconds,
                 "description": row.description,
             }
             for row in ttls

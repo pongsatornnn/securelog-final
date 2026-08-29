@@ -1,10 +1,4 @@
-"""
-CLI สร้าง Agent + package (ทางเลือกแทนการกดผ่านหน้า Agents บน dashboard)
-
-ไม่รับ IP เป็น argument แล้ว — IP ของ agent ถูกผูกตอนที่ agent ติดต่อเข้ามาสำเร็จครั้งแรก
-จาก interface ที่เลือกตอนรัน setup.sh บนเครื่องจริง แล้วเปลี่ยนไม่ได้อีก
-(ตอนสร้าง package ยังไม่มีทางรู้ว่าจะไปติดตั้งที่เครื่อง IP อะไร)
-"""
+"""CLI สร้าง Agent + package (ทางเลือกแทนการกดผ่านหน้า Agents บน dashboard)"""
 
 import sys
 import asyncio

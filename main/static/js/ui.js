@@ -1,28 +1,16 @@
 // UI กลางที่ทุกหน้าใช้ร่วมกัน — 3 เรื่องที่เดิมเป็นกล่องของเบราว์เซอร์หรือไม่มีเลย:
-//
-//   1. $store.ui.confirm(...)  แทน window.confirm()  -> กล่องยืนยันในหน้าเว็บ (คืน Promise)
-//   2. $store.ui.notify(...)   แทน window.alert()    -> แถบแจ้งผลมุมขวาล่าง หายเอง
-//   3. a11y ของ modal ทุกหน้า                        -> role/aria, focus trap, Escape
-//
-// ข้อ 3 ทำแบบ "จับจาก DOM" ไม่ใช่แก้ markup ทีละ modal เพราะทุกหน้าใช้โครงเดียวกัน
-// (.modal-backdrop > .modal) อยู่แล้ว — เพิ่มหน้าใหม่ก็ได้พฤติกรรมนี้ฟรีโดยไม่ต้องจำ
-//
-// โหลดก่อน alpine.min.js (ที่เป็น defer) เพราะต้องผูก event 'alpine:init' ให้ทัน
 (function () {
-  var NOTIFY_TTL_MS = 5000        // แถบแจ้งผลอยู่บนจอกี่ ms ก่อนหายเอง
-  var NOTIFY_TTL_ERROR_MS = 8000  // ข้อความ error ให้เวลาอ่านนานกว่า
-  var MAX_NOTIFY = 3              // เกินนี้ใบเก่าสุดหายไป
+  var NOTIFY_TTL_MS = 5000
+  var NOTIFY_TTL_ERROR_MS = 8000
+  var MAX_NOTIFY = 3
 
   var noticeSeq = 0
 
-  // ─────────────────────────────────────────────────────────────
-  // Alpine store
   // ─────────────────────────────────────────────────────────────
 
   document.addEventListener('alpine:init', function () {
     Alpine.store('ui', {
       // กล่องยืนยันมีได้ทีละใบ (ทุกหน้าใช้ markup ชุดเดียวใน base.html) — ถ้ามีการเรียกซ้อน
-      // ใบเก่าจะถูกตอบ false ทิ้งไปก่อน ดู confirm() ด้านล่าง
       dialog: {
         open: false,
         title: '',
@@ -42,11 +30,6 @@
       // ─── กล่องยืนยัน ───
 
       // ใช้แทน confirm(): `if (!await $store.ui.confirm({...})) return`
-      //
-      //   title       หัวข้อ (บังคับ)
-      //   message     คำอธิบายบรรทัดหลัก
-      //   detail      ข้อมูลประกอบ เช่น IP/agent id — แสดงเป็นบล็อก monospace
-      //   danger      true = ปุ่มยืนยันเป็นสีแดง (ใช้กับการลบ/ปลดบล็อก)
       confirm(options) {
         var opts = options || {}
 
@@ -87,7 +70,6 @@
       // ─── แถบแจ้งผล ───
 
       // ใช้แทน alert(): $store.ui.notify('ลบไม่สำเร็จ', 'error')
-      // kind: 'success' | 'error' | 'info'
       notify(message, kind) {
         if (!message) return
 
@@ -144,20 +126,14 @@
   })
 
   // ─────────────────────────────────────────────────────────────
-  // a11y ของ modal ทุกหน้า
-  //
-  // ทุก modal ในโปรเจกต์เป็น `.modal-backdrop` ที่ซ่อน/แสดงด้วย x-show (Alpine เขียน
-  // display:none ลง inline style) — เลยเฝ้าดู attribute `style` แล้วเทียบสถานะเอา
-  // ไม่ต้องให้แต่ละหน้ามาเรียกอะไรเพิ่ม
-  // ─────────────────────────────────────────────────────────────
 
   var FOCUSABLE = [
     'a[href]', 'button:not([disabled])', 'input:not([disabled])',
     'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
   ].join(',')
 
-  var openBackdrops = []     // เรียงตามลำดับที่เปิด — ใบท้ายสุด = ใบที่อยู่บนสุด
-  var lastFocused = null     // element ที่โฟกัสอยู่ก่อนเปิด modal ใบแรก
+  var openBackdrops = []
+  var lastFocused = null
 
   function isShown(el) {
     return window.getComputedStyle(el).display !== 'none'
@@ -191,7 +167,6 @@
     }
 
     // โฟกัสตัวแรกที่กดได้ในกล่อง — ถ้าไม่มีเลย โฟกัสตัวกล่องเองไว้ก่อน (กันโฟกัสค้าง
-    // อยู่ข้างหลัง backdrop แล้วผู้ใช้แป้นพิมพ์หลงไปกดของที่มองไม่เห็น)
     var targets = focusableIn(panel)
 
     if (targets.length) {
@@ -234,8 +209,6 @@
     if (!backdrop) return
 
     // Escape: หน้าที่เขียน @keydown.escape.window ไว้เองแล้วปล่อยให้ Alpine จัดการต่อ
-    // ไม่งั้นยิง click ที่ backdrop ให้ @click.self ของหน้านั้นทำงาน (click() ตั้ง target
-    // เป็นตัว backdrop เอง ตรงเงื่อนไขของ .self พอดี)
     if (event.key === 'Escape') {
       if (!backdrop.hasAttribute('@keydown.escape.window')) backdrop.click()
       return
@@ -263,15 +236,6 @@
   })
 
   // ─────────────────────────────────────────────────────────────
-  // ผูก <label class="form-label"> เข้ากับช่องกรอกที่มันอธิบาย
-  //
-  // ทุกฟอร์มเขียนเป็น `<label class="form-label">ชื่อ</label>` ตามด้วย `.form-input`
-  // แยกกันอยู่ (ไม่ได้ครอบ input ไว้ และไม่มี for=) — คลิกที่ป้ายจึงไม่โฟกัสช่อง และ
-  // screen reader ก็ไม่รู้ว่าป้ายไหนคู่กับช่องไหน ทำตรงนี้ทีเดียวแทนการไล่ใส่ id ทุกหน้า
-  //
-  // ตัวที่เป็น <div class="form-label"> ไม่ถูกแตะ เพราะนั่นคือหัวคอลัมน์ของแถวซ้ำ ๆ
-  // (bulk row) ไม่ใช่ป้ายของช่องใดช่องหนึ่ง
-  // ─────────────────────────────────────────────────────────────
 
   var labelSeq = 0
 
@@ -295,7 +259,6 @@
     linkFormLabels()
 
     // x-show เปลี่ยนแค่ inline style ไม่ได้เพิ่ม/ลบ node — ดู attribute อย่างเดียวพอ
-    // ส่วน childList เผื่อ modal/ฟอร์มที่ถูก render ทีหลัง (เช่นอยู่ใน template x-if/x-for)
     new MutationObserver(function () {
       sync()
       linkFormLabels()

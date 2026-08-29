@@ -193,8 +193,7 @@
     </div>
   </div>
 
-  <!-- แถบตัวตน: ชื่อที่แสดงกับ role เห็นได้ทันทีโดยไม่ต้องอ่านในฟอร์ม
-       (ชื่ออัปเดตตามช่องกรอกทันทีที่กดบันทึก เพราะผูกกับ savedName ตัวเดียวกัน) -->
+  
   <div class="profile-hero">
     <div class="hero-avatar" x-text="initial()"></div>
 
@@ -207,7 +206,7 @@
   </div>
 
   <div class="profile-stack">
-    <!-- ข้อมูลบัญชี -->
+    
     <div class="profile-card">
       <div class="card-title">ข้อมูลบัญชี</div>
       <div class="card-help"> </div>
@@ -234,7 +233,7 @@
       <div class="error-box" x-show="nameError" x-text="nameError" x-cloak></div>
     </div>
 
-    <!-- ความปลอดภัย -->
+    
     <div class="profile-card">
       <div class="card-title">ความปลอดภัย</div>
       <div class="card-help">ต้องยืนยันด้วยรหัสผ่านเดิม และรหัสใหม่อย่างน้อย 8 ตัวอักษร</div>
@@ -242,7 +241,7 @@
       <div class="sec-row">
         <div>
           <div class="sec-label">* * * * * * * * *</div>
-          <!-- <div class="sec-value">••••••••</div> -->
+          
         </div>
 
         <button class="btn-secondary" @click="openPwModal()">เปลี่ยนรหัสผ่าน</button>
@@ -250,9 +249,9 @@
     </div>
   </div>
 
-  </div><!-- /profile-wrap -->
+  </div>
 
-  <!-- Popup เปลี่ยนรหัสผ่าน -->
+  
   <div class="modal-backdrop" x-show="showPwModal" style="display: none;" @click.self="closePwModal()">
     <div class="modal">
       <div class="modal-header">

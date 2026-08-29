@@ -1,8 +1,4 @@
 // helper ที่ทุกหน้าใช้ร่วมกัน — เดิมเขียนซ้ำอยู่ใน <script> ของแต่ละ template
-//
-// ประกาศเป็น global function เพราะ Alpine หา identifier ใน scope ของ component ก่อน
-// ถ้าไม่เจอจะไต่ไปหาที่ window ต่อ — เลยเรียก formatTime(...) ใน x-text ได้เหมือนเดิม
-// โดยไม่ต้องแก้ markup และเรียกตรง ๆ (ไม่ใช่ this.xxx) ในโค้ด component ได้ด้วย
 (function () {
   // แสดงเวลาเป็นโซนไทยแบบ ค.ศ. (ไม่ใช่ พ.ศ.) — ts ว่าง/null คืน '-'
   window.formatTime = function (ts) {
@@ -14,7 +10,6 @@
   }
 
   // IPv4 แบบ 4 octet 0-255 และไม่ยอมรับเลข 0 นำหน้า (01.2.3.4)
-  // รับค่า null/undefined ได้ (เดิมเวอร์ชันใน blacklist/whitelist จะ throw ถ้าไม่ใช่ string)
   var IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
 
   window.isValidIPv4 = function (value) {
@@ -22,7 +17,6 @@
   }
 
   // address พิเศษของทราฟฟิก broadcast — ไม่ใช่เครื่องจริง บล็อกไปก็ไม่มีผล
-  // (ฝั่ง server กันไว้อีกชั้นที่ is_non_blockable_ip ใน security_response.py)
   var NON_BLOCKABLE_IPS = ['0.0.0.0', '255.255.255.255']
 
   window.isBlockableIPv4 = function (value) {
@@ -36,14 +30,6 @@
   }
 
   // ─────────────────────────────────────────────────────────────
-  // ระยะเวลาบล็อก — ทุกที่ที่ตั้งเวลาบล็อกได้ใช้ชุดนี้ร่วมกัน
-  // (หน้า Blacklist ตอนเพิ่ม, หน้า Whitelist ตอนย้ายไป Blacklist,
-  //  หน้า Rules ตอนตั้งระยะเวลา Block ต่อประเภทการโจมตี)
-  //
-  // สภาพของตัวเลือกคือ object เดียว { amount, unit } ที่ผูกกับ markup ของ
-  // macro `duration_picker` (templates/_duration_picker.html) — unit เป็น
-  // 'permanent' เมื่อเลือกถาวร ตอนนั้น amount ไม่ถูกใช้
-  // ─────────────────────────────────────────────────────────────
 
   var PERMANENT = 'permanent'
 
@@ -54,7 +40,6 @@
   }
 
   // เพดานเดียวกับ MAX_TTL_SECONDS ฝั่ง Python (blacklist_policy.py) = 10 ปี
-  // นานกว่านี้ให้เลือก "ถาวร" ไปเลย — timedelta ฝั่ง server ก็รับค่าโต ๆ ไม่ไหวด้วย
   var MAX_DURATION_SECONDS = 10 * 365 * 24 * 3600
 
   window.PERMANENT_DURATION_UNIT = PERMANENT
@@ -85,7 +70,6 @@
   }
 
   // วินาที -> ตัวเลข+หน่วยที่คนกรอก (ใช้ตอนเปิดฟอร์มมาแก้ค่าที่บันทึกไว้แล้ว)
-  // เลือกหน่วยใหญ่สุดที่หารลงตัว เพื่อไม่ให้ 1 วันกลายเป็น 1440 นาที
   window.durationFromSeconds = function (seconds) {
     if (seconds === null || seconds === undefined) return newDuration(PERMANENT)
     if (seconds % 86400 === 0) return newDuration('days', seconds / 86400)
@@ -102,7 +86,6 @@
   }
 
   // บรรทัดสรุปใต้ช่องกรอก — บอกเป็นวันเวลาจริงว่าบล็อกถึงเมื่อไร
-  // (คิดจากนาฬิกาเครื่องผู้ใช้ จึงเป็นค่าประมาณ ของจริงนับตอน server รับคำขอ)
   window.durationExpiryText = function (duration) {
     if (isPermanentDuration(duration)) return 'บล็อกถาวร จนกว่าจะกดปลดบล็อกเอง'
     if (!isValidDuration(duration)) return ''
