@@ -1,4 +1,4 @@
-"""การตอบสนองอัตโนมัติเมื่อ detector เจอการโจมตี — ใช้ร่วมกันทุก detector (auth/web/firewall)"""
+# การตอบสนองอัตโนมัติเมื่อ detector เจอการโจมตี — ใช้ร่วมกันทุก detector (auth/web/firewall)
 
 import ipaddress
 import time
@@ -29,7 +29,7 @@ NON_BLOCKABLE_IPS = frozenset({
 
 
 def is_non_blockable_ip(ip: str | None) -> bool:
-    """True ถ้า ip เป็น address พิเศษที่ห้าม block (unspecified/broadcast)"""
+    # True ถ้า ip เป็น address พิเศษที่ห้าม block (unspecified/broadcast)
     if not ip:
         return False
 
@@ -40,12 +40,12 @@ def is_non_blockable_ip(ip: str | None) -> bool:
 
 
 def _severity_rank(ttl_seconds: int | None) -> float:
-    """อันดับความรุนแรงของการ block จาก TTL: None (ถาวร) = รุนแรงสุด (∞),"""
+    # อันดับความรุนแรงของการ block จาก TTL: None (ถาวร) = รุนแรงสุด (∞),
     return float("inf") if ttl_seconds is None else float(ttl_seconds)
 
 
 def base_command_payload(command: str, ip_address: str, event: str | None, source: str) -> dict:
-    """โครง payload มาตรฐานของคำสั่งถึง agent (ip ใส่ซ้ำ 2 key ตามที่ agent เดิมรองรับ)"""
+    # โครง payload มาตรฐานของคำสั่งถึง agent (ip ใส่ซ้ำ 2 key ตามที่ agent เดิมรองรับ)
     return {
         "command": command,
         "ip_address": ip_address,
@@ -58,12 +58,12 @@ def base_command_payload(command: str, ip_address: str, event: str | None, sourc
 
 
 def publish_alert_event(alert_summary: dict) -> None:
-    """ส่ง alert ที่เพิ่งบันทึกลง DB ขึ้น Redis pub/sub เพื่อให้ dashboard (SSE) เห็นแบบ real-time"""
+    # ส่ง alert ที่เพิ่งบันทึกลง DB ขึ้น Redis pub/sub เพื่อให้ dashboard (SSE) เห็นแบบ real-time
     publish_json(SECURITY_ALERTS_STREAM_CHANNEL, alert_summary, log_prefix="ALERT-STREAM")
 
 
 def publish_block_ip_command(ip_address: str, event: str) -> dict:
-    """Broadcast คำสั่ง block_ip ไปยังทุก Agent"""
+    # Broadcast คำสั่ง block_ip ไปยังทุก Agent
     payload = base_command_payload("block_ip", ip_address, event, source="auto_detect")
     result = publish_json(GLOBAL_COMMAND_CHANNEL, payload, log_prefix="AUTO-BLOCK")
 
@@ -76,7 +76,7 @@ def publish_block_ip_command(ip_address: str, event: str) -> dict:
 
 
 def publish_unblock_ip_command(ip_address: str, event: str = "expired") -> dict:
-    """Broadcast คำสั่ง unblock_ip ไปทุก Agent (ใช้ตอน blacklist หมดอายุ ให้ agent ลบ ufw rule)"""
+    # Broadcast คำสั่ง unblock_ip ไปทุก Agent (ใช้ตอน blacklist หมดอายุ ให้ agent ลบ ufw rule)
     payload = base_command_payload("unblock_ip", ip_address, event, source="auto_expiry")
     result = publish_json(GLOBAL_COMMAND_CHANNEL, payload, log_prefix="AUTO-EXPIRY")
 
@@ -89,7 +89,7 @@ def publish_unblock_ip_command(ip_address: str, event: str = "expired") -> dict:
 
 
 def publish_sync_whitelist_command(ip_addresses: list[str]) -> dict:
-    """Broadcast whitelist ปัจจุบันไปทุก Agent ให้ใช้เป็น never-block list"""
+    # Broadcast whitelist ปัจจุบันไปทุก Agent ให้ใช้เป็น never-block list
     payload = {
         "command": "sync_whitelist",
         "ips": ip_addresses,
@@ -108,7 +108,7 @@ def publish_sync_whitelist_command(ip_addresses: list[str]) -> dict:
 
 
 async def broadcast_whitelist_from_db() -> None:
-    """โหลด whitelist ล่าสุดจาก DB แล้ว broadcast ให้ทุก Agent (เรียกหลัง admin แก้ whitelist)"""
+    # โหลด whitelist ล่าสุดจาก DB แล้ว broadcast ให้ทุก Agent (เรียกหลัง admin แก้ whitelist)
     try:
         async with AsyncSessionLocal() as db:
             rows = await get_ip_whitelist(db)
@@ -121,7 +121,7 @@ async def broadcast_whitelist_from_db() -> None:
 
 
 async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
-    """ตัดสินใจว่า source_ip ที่ detector ตรวจจับได้ควรถูก block หรือไม่"""
+    # ตัดสินใจว่า source_ip ที่ detector ตรวจจับได้ควรถูก block หรือไม่
     if not source_ip:
         return "no_ip"
 

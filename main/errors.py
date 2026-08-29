@@ -1,4 +1,4 @@
-"""หน้า error ของระบบ — แปลง HTTPException/exception ที่หลุดออกมา ให้เป็น"""
+# หน้า error ของระบบ — แปลง HTTPException/exception ที่หลุดออกมา ให้เป็น
 
 import logging
 
@@ -17,7 +17,7 @@ INTERNAL_ERROR_DETAIL = "ระบบทำงานผิดพลาดระ�
 
 
 def _wants_html(request: Request) -> bool:
-    """หน้าเว็บ (browser navigation) รับ HTML ส่วน fetch ของ frontend เรียกแต่ /api/* และรับ JSON"""
+    # หน้าเว็บ (browser navigation) รับ HTML ส่วน fetch ของ frontend เรียกแต่ /api/* และรับ JSON
     path = request.url.path
 
     if path.startswith("/api/") or path.startswith("/line/webhook"):
@@ -53,7 +53,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """บั๊กที่หลุดออกมาถึงตรงนี้ = 500 — เขียน traceback ลง log ฝั่งเซิร์ฟเวอร์ให้ครบ"""
+    # บั๊กที่หลุดออกมาถึงตรงนี้ = 500 — เขียน traceback ลง log ฝั่งเซิร์ฟเวอร์ให้ครบ
     logger.exception("unhandled error ที่ %s %s", request.method, request.url.path)
 
     if _wants_html(request):

@@ -1,4 +1,4 @@
-"""Migration ครั้งเดียว: เพิ่มคอลัมน์ detection_signatures.is_default + backfill ให้แถวเดิม"""
+# Migration ครั้งเดียว: เพิ่มคอลัมน์ detection_signatures.is_default + backfill ให้แถวเดิม
 
 import asyncio
 

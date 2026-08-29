@@ -1,4 +1,4 @@
-"""เส้นทางจัดการ IP Blacklist (manual, ผ่านหน้าเว็บ) — ต่างจาก auto-block ที่มาจาก"""
+# เส้นทางจัดการ IP Blacklist (manual, ผ่านหน้าเว็บ) — ต่างจาก auto-block ที่มาจาก
 
 import ipaddress
 from datetime import datetime, timedelta
@@ -63,7 +63,7 @@ def agent_command_channel(agent_id: str) -> str:
 
 
 def resolve_block_expiry(duration_seconds: int | None) -> datetime | None:
-    """แปลงระยะเวลาที่แอดมินกรอก (วินาที) -> เวลาหมดอายุของการบล็อก · None = ถาวร"""
+    # แปลงระยะเวลาที่แอดมินกรอก (วินาที) -> เวลาหมดอายุของการบล็อก · None = ถาวร
     if duration_seconds is None:
         return None
 
@@ -83,7 +83,7 @@ def resolve_block_expiry(duration_seconds: int | None) -> datetime | None:
 
 
 def describe_duration(duration_seconds: int | None) -> str:
-    """ระยะเวลาเป็นข้อความไทยสำหรับข้อความตอบกลับ (หน่วยใหญ่สุดที่หารลงตัว)"""
+    # ระยะเวลาเป็นข้อความไทยสำหรับข้อความตอบกลับ (หน่วยใหญ่สุดที่หารลงตัว)
     if duration_seconds is None:
         return "ถาวร"
 
@@ -95,7 +95,7 @@ def describe_duration(duration_seconds: int | None) -> str:
 
 
 def is_longer_block(new_expires_at: datetime | None, current_expires_at: datetime | None) -> bool:
-    """True ถ้าเวลาหมดอายุใหม่ 'บล็อกนานกว่า' ของเดิม (None = ถาวร = นานที่สุด)"""
+    # True ถ้าเวลาหมดอายุใหม่ 'บล็อกนานกว่า' ของเดิม (None = ถาวร = นานที่สุด)
     if current_expires_at is None:
         return False
 
@@ -111,7 +111,7 @@ def publish_agent_command(
     event: str | None = None,
     agent_id: str | None = None,
 ) -> dict:
-    """ส่งคำสั่งถึง agent เจาะจงตัว (มี agent_id) หรือ broadcast ทุกตัว (ไม่มี)"""
+    # ส่งคำสั่งถึง agent เจาะจงตัว (มี agent_id) หรือ broadcast ทุกตัว (ไม่มี)
     payload = base_command_payload(command, ip_address, event, source="central_api")
 
     if agent_id:
@@ -159,7 +159,7 @@ async def api_get_blacklist_ttl(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """TTL (ระยะเวลา block) ต่อ detection_type — seed default ครบก่อนแล้วคืนทั้งหมด"""
+    # TTL (ระยะเวลา block) ต่อ detection_type — seed default ครบก่อนแล้วคืนทั้งหมด
     for dt in BASE_TTL_SECONDS:
         await get_ttl(dt)
 
@@ -186,7 +186,7 @@ async def api_set_escalation_policy(
     payload: UpdateEscalationPolicyRequest,
     user=Depends(require_admin),
 ):
-    """แก้นโยบาย escalation — body: {"multiplier": 2, "max_block_count": 5}"""
+    # แก้นโยบาย escalation — body: {"multiplier": 2, "max_block_count": 5}
     if payload.multiplier < 1:
         raise HTTPException(
             status_code=400,
@@ -230,7 +230,7 @@ async def api_set_blacklist_ttl(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """แก้ TTL ของ detection_type — body: {"ttl_seconds": 3600} หรือ {"ttl_seconds": null} (ถาวร)"""
+    # แก้ TTL ของ detection_type — body: {"ttl_seconds": 3600} หรือ {"ttl_seconds": null} (ถาวร)
     # จำกัดเฉพาะ detection_type ที่ระบบรู้จัก กันพิมพ์ผิดสร้างแถวขยะที่ไม่มี detector ตัวไหนอ้างถึงเลย
     if detection_type not in BASE_TTL_SECONDS:
         raise HTTPException(status_code=404, detail=f"ไม่รู้จัก detection_type: {detection_type}")
@@ -400,7 +400,7 @@ async def api_move_to_whitelist(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """ปลดบล็อก IP แล้วย้ายเข้า Whitelist ในคลิกเดียว (= กด Unblock + เพิ่ม Whitelist)"""
+    # ปลดบล็อก IP แล้วย้ายเข้า Whitelist ในคลิกเดียว (= กด Unblock + เพิ่ม Whitelist)
     ip = await get_ip_blacklist_by_id(db, blacklist_id)
 
     if not ip:
@@ -460,7 +460,7 @@ async def api_move_to_blacklist(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """เอา IP ออกจาก Whitelist แล้วบล็อกทันทีในคลิกเดียว"""
+    # เอา IP ออกจาก Whitelist แล้วบล็อกทันทีในคลิกเดียว
     whitelist_ip = await get_ip_whitelist_by_id(db, whitelist_id)
 
     if not whitelist_ip:

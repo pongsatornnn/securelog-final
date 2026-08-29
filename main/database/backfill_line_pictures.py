@@ -1,4 +1,4 @@
-"""Backfill รูปโปรไฟล์ LINE ของผู้รับแจ้งเตือนที่ลงทะเบียนไว้ก่อนมีคอลัมน์ picture_url"""
+# Backfill รูปโปรไฟล์ LINE ของผู้รับแจ้งเตือนที่ลงทะเบียนไว้ก่อนมีคอลัมน์ picture_url
 
 import asyncio
 import sys

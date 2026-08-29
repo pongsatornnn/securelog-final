@@ -1,4 +1,4 @@
-"""เงื่อนไขรหัสผ่าน Redis — **ที่เดียวของทั้งระบบ** ใช้ร่วมกันทั้งรหัสของ central (user admin)"""
+# เงื่อนไขรหัสผ่าน Redis — **ที่เดียวของทั้งระบบ** ใช้ร่วมกันทั้งรหัสของ central (user admin)
 
 import re
 import secrets
@@ -17,12 +17,12 @@ MIN_DISTINCT_CHARS = 6
 
 
 def generate_password(nbytes: int = 24) -> str:
-    """สุ่มรหัสให้แอดมิน — token_urlsafe ได้ [A-Za-z0-9_-] ยาว ~32 ตัว ผ่านเงื่อนไขข้างล่างเสมอ"""
+    # สุ่มรหัสให้แอดมิน — token_urlsafe ได้ [A-Za-z0-9_-] ยาว ~32 ตัว ผ่านเงื่อนไขข้างล่างเสมอ
     return secrets.token_urlsafe(nbytes)
 
 
 def validate_password(new_password: str) -> None:
-    """ตรวจก่อนแตะไฟล์ใด ๆ — ผิดตรงไหนโยน ValueError พร้อมเหตุผลที่เอาไปโชว์ได้เลย"""
+    # ตรวจก่อนแตะไฟล์ใด ๆ — ผิดตรงไหนโยน ValueError พร้อมเหตุผลที่เอาไปโชว์ได้เลย
     if not new_password:
         raise ValueError("ยังไม่ได้กรอกรหัสใหม่")
 

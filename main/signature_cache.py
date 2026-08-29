@@ -1,4 +1,4 @@
-"""เก็บ signature (regex) ของ Signature-based detector ใน DB (ตาราง detection_signatures)"""
+# เก็บ signature (regex) ของ Signature-based detector ใน DB (ตาราง detection_signatures)
 
 import re
 
@@ -212,7 +212,7 @@ def is_valid_regex(pattern: str) -> bool:
 # ============================================================
 
 def effective_default_signatures(detection_type: str) -> list[dict]:
-    """ชุด default ที่ "ใช้จริง" ของ detection_type นี้ — snapshot (database/seed_data.json)"""
+    # ชุด default ที่ "ใช้จริง" ของ detection_type นี้ — snapshot (database/seed_data.json)
     category = CATEGORY_BY_TYPE.get(detection_type, "web")
     snap = snapshot_signatures(detection_type)
 
@@ -234,12 +234,12 @@ def effective_default_signatures(detection_type: str) -> list[dict]:
 
 
 def default_signature_patterns(detection_type: str) -> list[str]:
-    """เฉพาะตัว pattern ของชุด default — ใช้ตอน backfill คอลัมน์ is_default"""
+    # เฉพาะตัว pattern ของชุด default — ใช้ตอน backfill คอลัมน์ is_default
     return [row["pattern"] for row in effective_default_signatures(detection_type)]
 
 
 async def _seed_defaults(db, detection_type: str) -> int:
-    """เขียนชุด default ลง DB (mark is_default=True) — ผู้เรียกต้อง commit เอง"""
+    # เขียนชุด default ลง DB (mark is_default=True) — ผู้เรียกต้อง commit เอง
     existing = {
         row.pattern
         for row in await get_detection_signatures(db, detection_type=detection_type)
@@ -265,7 +265,7 @@ async def _seed_defaults(db, detection_type: str) -> int:
 
 
 async def load_signatures_from_db(detection_type: str) -> list[str]:
-    """อ่าน pattern ที่ active ของ detection_type จาก DB"""
+    # อ่าน pattern ที่ active ของ detection_type จาก DB
     async with AsyncSessionLocal() as db:
         rows = await get_detection_signatures(db, detection_type=detection_type)
 
@@ -289,7 +289,7 @@ async def load_signatures_from_db(detection_type: str) -> list[str]:
 
 
 async def get_signatures(detection_type: str) -> list[str]:
-    """Entry point หลักที่ detector เรียกเพื่อดึง pattern ที่ active ของ detection_type"""
+    # Entry point หลักที่ detector เรียกเพื่อดึง pattern ที่ active ของ detection_type
     cached = cache_get_json(signature_cache_key(detection_type), log_prefix=LOG_PREFIX)
 
     if cached is not None:
@@ -307,7 +307,7 @@ async def add_signature(
     description: str | None = None,
     category: str | None = None,
 ) -> dict:
-    """เพิ่ม signature ใหม่ (validate ว่า regex compile ได้ก่อน)"""
+    # เพิ่ม signature ใหม่ (validate ว่า regex compile ได้ก่อน)
     if not is_valid_regex(pattern):
         raise ValueError(f"regex ไม่ถูกต้อง: {pattern!r}")
 
@@ -340,7 +340,7 @@ async def update_signature(
     pattern: str | None = None,
     description: str | None = None,
 ) -> dict | None:
-    """แก้ pattern / คำอธิบายของ signature ที่มีอยู่ (None = ไม่แตะฟิลด์นั้น, "" = ล้างค่า)"""
+    # แก้ pattern / คำอธิบายของ signature ที่มีอยู่ (None = ไม่แตะฟิลด์นั้น, "" = ล้างค่า)
     if pattern is not None and not is_valid_regex(pattern):
         raise ValueError(f"regex ไม่ถูกต้อง: {pattern!r}")
 
@@ -404,7 +404,7 @@ async def remove_signature(signature_id: int) -> dict | None:
 
 
 async def restore_default_signatures(detection_type: str | None = None) -> dict:
-    """คืนค่า signature ของระบบกลับเป็นชุด default"""
+    # คืนค่า signature ของระบบกลับเป็นชุด default
     types = [detection_type] if detection_type else list(DEFAULT_SIGNATURES.keys())
     details = []
 

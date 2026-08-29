@@ -1,4 +1,4 @@
-"""เส้นทางจัดการ user (หน้า Manage Users) — เฉพาะ role=admin เข้าได้ (require_admin)"""
+# เส้นทางจัดการ user (หน้า Manage Users) — เฉพาะ role=admin เข้าได้ (require_admin)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,7 @@ async def api_reset_password(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """admin ตั้งรหัสใหม่ให้ user คนไหนก็ได้ (รวมถึงตัวเอง) โดยไม่ต้องรู้รหัสเดิม"""
+    # admin ตั้งรหัสใหม่ให้ user คนไหนก็ได้ (รวมถึงตัวเอง) โดยไม่ต้องรู้รหัสเดิม
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -93,7 +93,7 @@ async def api_delete_user(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """admin ลบ user ออกจากระบบถาวร — กันสองเคสที่ห้ามลบ:"""
+    # admin ลบ user ออกจากระบบถาวร — กันสองเคสที่ห้ามลบ:
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -120,7 +120,7 @@ async def api_set_user_active(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """admin เปิด/ปิดใช้งาน user — บัญชีที่ถูกปิด (is_active=False) จะ login ไม่ได้ และ session ที่"""
+    # admin เปิด/ปิดใช้งาน user — บัญชีที่ถูกปิด (is_active=False) จะ login ไม่ได้ และ session ที่
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -147,7 +147,7 @@ async def api_set_user_role(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """admin เปลี่ยน role ของ user (admin <-> user) — มีผลกับ session ที่ค้างอยู่ทันทีรอบ request ถัดไป"""
+    # admin เปลี่ยน role ของ user (admin <-> user) — มีผลกับ session ที่ค้างอยู่ทันทีรอบ request ถัดไป
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")

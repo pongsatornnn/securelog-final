@@ -1,4 +1,4 @@
-"""Schema ของ Whitelist — เดิมสอง endpoint นี้อ่าน body ด้วย `await request.json()` ตรง ๆ"""
+# Schema ของ Whitelist — เดิมสอง endpoint นี้อ่าน body ด้วย `await request.json()` ตรง ๆ
 
 from pydantic import BaseModel, Field
 

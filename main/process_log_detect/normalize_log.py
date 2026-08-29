@@ -31,12 +31,12 @@ DROPPED_QUEUES = {NORMALIZED_SYSLOG_QUEUE, NORMALIZED_UNKNOWN_QUEUE}
 # ============================================================
 
 def now_thai() -> str:
-    """เวลาที่ Central normalize log นี้"""
+    # เวลาที่ Central normalize log นี้
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def parse_filebeat_timestamp(timestamp: str | None) -> tuple[str | None, str | None]:
-    """@timestamp จาก Filebeat คือเวลาฝั่ง Agent / เวลาที่ Filebeat อ่าน log"""
+    # @timestamp จาก Filebeat คือเวลาฝั่ง Agent / เวลาที่ Filebeat อ่าน log
     if not timestamp:
         return None, None
 
@@ -79,7 +79,7 @@ def get_secret_token(event: dict) -> str | None:
 
 
 def get_host_ip(event: dict) -> str | None:
-    """IP ของเครื่อง agent ที่ filebeat แนบมากับทุก event (processor add_fields target: host)"""
+    # IP ของเครื่อง agent ที่ filebeat แนบมากับทุก event (processor add_fields target: host)
     host = event.get("host", {})
     if not isinstance(host, dict):
         return None
@@ -89,7 +89,7 @@ def get_host_ip(event: dict) -> str | None:
 
 
 def base_normalized_event(event: dict) -> dict:
-    """Field กลางที่ detector ต้องใช้จริง"""
+    # Field กลางที่ detector ต้องใช้จริง
     agent_event_time_utc, agent_event_time_thai = parse_filebeat_timestamp(
         event.get("@timestamp")
     )
@@ -468,7 +468,7 @@ def is_syslog(log_type: str | None, message: str) -> bool:
 
 
 def is_auth_pattern(message: str) -> bool:
-    """ใช้ดักกรณี auth failure / ssh brute force หลุดมาปนกับ syslog"""
+    # ใช้ดักกรณี auth failure / ssh brute force หลุดมาปนกับ syslog
     return bool(
         SSH_FAILED_RE.search(message)
         or SSH_ACCEPTED_RE.search(message)

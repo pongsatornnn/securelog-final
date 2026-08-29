@@ -8,5 +8,5 @@ class UpdateRuleRequest(BaseModel):
 
 
 class RestoreDefaultRulesRequest(BaseModel):
-    """คืนค่า default ของ detection rule"""
+    # คืนค่า default ของ detection rule
     rule_key: str | None = None

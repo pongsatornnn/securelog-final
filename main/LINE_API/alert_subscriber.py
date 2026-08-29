@@ -1,4 +1,4 @@
-"""Worker: subscribe Redis channel `security_alerts_stream` (ตัวเดียวกับที่ detector"""
+# Worker: subscribe Redis channel `security_alerts_stream` (ตัวเดียวกับที่ detector
 
 import asyncio
 import json
@@ -23,7 +23,7 @@ async def _approved_user_ids() -> list[str]:
 
 
 def _is_new_alert(r: redis.Redis, alert_id) -> bool:
-    """True = alert แถวนี้ (id นี้) ยังไม่เคยส่ง -> ส่งได้"""
+    # True = alert แถวนี้ (id นี้) ยังไม่เคยส่ง -> ส่งได้
     if alert_id is None:
         return True
     try:

@@ -1,4 +1,4 @@
-"""Detector: SSH brute force + Sudo failed จาก normalized auth log"""
+# Detector: SSH brute force + Sudo failed จาก normalized auth log
 
 import json
 import asyncio
@@ -34,7 +34,7 @@ sudo_failed_by_user: dict[str, deque] = defaultdict(deque)
 # ============================================================
 
 def is_failed_password_log(log: dict) -> bool:
-    """นับเฉพาะ SSH Failed password เท่านั้น"""
+    # นับเฉพาะ SSH Failed password เท่านั้น
     raw_message = str(log.get("raw_message", ""))
 
     if log.get("category") != "auth":
@@ -77,7 +77,7 @@ def get_source_ip(log: dict) -> str | None:
 # ============================================================
 
 def is_sudo_failed_log(log: dict) -> bool:
-    """ตรวจ sudo failed แยกจาก SSH brute force"""
+    # ตรวจ sudo failed แยกจาก SSH brute force
     if log.get("category") != "auth":
         return False
 
@@ -101,7 +101,7 @@ def get_sudo_key(log: dict) -> str | None:
 
 
 def get_sudo_attempts(log: dict) -> int:
-    """ถ้า normalizer เจอ "3 incorrect password attempts" จะมี attempts=3"""
+    # ถ้า normalizer เจอ "3 incorrect password attempts" จะมี attempts=3
     try:
         attempts = int(log.get("attempts") or 1)
     except Exception:
@@ -126,7 +126,7 @@ def clear_sudo_count(key: str) -> None:
 # ============================================================
 
 def print_counted_ssh_log(ip: str, count: int, log: dict) -> None:
-    """แสดงทุก SSH Failed password ที่เอามานับ"""
+    # แสดงทุก SSH Failed password ที่เอามานับ
     print(
         f"IP [{ip}] bruteforce count {count} | "
         f"agent={log.get('agent_id')} | "
@@ -334,7 +334,7 @@ def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
 
 
 def process_auth_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
-    """Main auth router"""
+    # Main auth router
     process_ssh_failed_password(log, loop)
     process_sudo_failed(log, loop)
 

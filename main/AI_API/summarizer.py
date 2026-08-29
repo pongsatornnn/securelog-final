@@ -1,4 +1,4 @@
-"""สร้าง prompt จาก SecurityAlert (metadata + raw log ในแถวนั้น) แล้วให้ Gemini สรุปเป็นภาษาไทย"""
+# สร้าง prompt จาก SecurityAlert (metadata + raw log ในแถวนั้น) แล้วให้ Gemini สรุปเป็นภาษาไทย
 
 from AI_API import config, gemini_client
 from alerts import get_attack_type_label
@@ -112,5 +112,5 @@ def build_prompt(alert, agent=None, severity: str = "LOW") -> str:
 
 
 def summarize_alert(alert, agent=None, severity: str = "LOW") -> tuple[bool, str]:
-    """blocking — route ต้องเรียกผ่าน asyncio.to_thread"""
+    # blocking — route ต้องเรียกผ่าน asyncio.to_thread
     return gemini_client.generate(build_prompt(alert, agent, severity))

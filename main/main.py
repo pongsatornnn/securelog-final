@@ -1,4 +1,4 @@
-"""FastAPI entrypoint — สร้าง app, mount static, ผูก rate-limit handler,"""
+# FastAPI entrypoint — สร้าง app, mount static, ผูก rate-limit handler,
 
 from pathlib import Path
 from contextlib import asynccontextmanager

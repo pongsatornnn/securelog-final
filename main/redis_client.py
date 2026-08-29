@@ -1,4 +1,4 @@
-"""Redis client กลางของ process — แก้ปัญหาเดิมที่ทุก operation เปิด connection ใหม่"""
+# Redis client กลางของ process — แก้ปัญหาเดิมที่ทุก operation เปิด connection ใหม่
 
 import json
 
@@ -19,7 +19,7 @@ def get_redis() -> redis.Redis:
 
 
 def reset_client() -> None:
-    """ทิ้ง client กลางของ process นี้ ให้คำสั่งถัดไปสร้างใหม่จาก REDIS_CONFIG ตัวปัจจุบัน"""
+    # ทิ้ง client กลางของ process นี้ ให้คำสั่งถัดไปสร้างใหม่จาก REDIS_CONFIG ตัวปัจจุบัน
     global _client
 
     old, _client = _client, None
@@ -34,7 +34,7 @@ def reset_client() -> None:
 # ============================================================
 
 def cache_get_json(key: str, *, log_prefix: str = "CACHE"):
-    """คืนค่า JSON ที่ cache ไว้ หรือ None ถ้าไม่มี/อ่านไม่ได้ (ให้ caller fallback DB)"""
+    # คืนค่า JSON ที่ cache ไว้ หรือ None ถ้าไม่มี/อ่านไม่ได้ (ให้ caller fallback DB)
     try:
         raw = get_redis().get(key)
 
@@ -69,7 +69,7 @@ def cache_delete(key: str, *, log_prefix: str = "CACHE") -> None:
 # ============================================================
 
 def publish_json(channel: str, payload: dict, *, log_prefix: str = "PUBLISH") -> dict:
-    """publish payload (JSON) ขึ้น channel — คืน {ok, channel, receiver_count}"""
+    # publish payload (JSON) ขึ้น channel — คืน {ok, channel, receiver_count}
     try:
         receiver_count = get_redis().publish(
             channel,

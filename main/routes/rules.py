@@ -1,4 +1,4 @@
-"""เส้นทางดู/แก้ detection rule (threshold, window) ของ detector ต่างๆ"""
+# เส้นทางดู/แก้ detection rule (threshold, window) ของ detector ต่างๆ
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,7 +81,7 @@ async def api_restore_default_rules(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """คืนค่า default ของ detection rule — ไม่ส่ง body / ไม่ส่ง rule_key = คืนทั้งหมด"""
+    # คืนค่า default ของ detection rule — ไม่ส่ง body / ไม่ส่ง rule_key = คืนทั้งหมด
     rule_key = payload.rule_key if payload else None
 
     if rule_key:

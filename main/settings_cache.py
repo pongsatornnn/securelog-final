@@ -1,4 +1,4 @@
-"""Cache + DB layer สำหรับค่าตั้งของระบบที่แก้ได้ตอนรัน (หน้า System Settings)"""
+# Cache + DB layer สำหรับค่าตั้งของระบบที่แก้ได้ตอนรัน (หน้า System Settings)
 
 import os
 
@@ -186,7 +186,7 @@ def setting_cache_key(key: str) -> str:
 
 
 def _parse_site_conf(path: str) -> dict[str, str]:
-    """อ่าน site.conf (รูปแบบ KEY="value" แบบ shell) — คืน dict ว่างถ้าไม่มีไฟล์/อ่านไม่ได้"""
+    # อ่าน site.conf (รูปแบบ KEY="value" แบบ shell) — คืน dict ว่างถ้าไม่มีไฟล์/อ่านไม่ได้
     values: dict[str, str] = {}
 
     try:
@@ -207,7 +207,7 @@ def _parse_site_conf(path: str) -> dict[str, str]:
 
 
 async def seed_agent_settings_from_site_conf() -> int:
-    """ยกค่าจาก for_Agent/package/site.conf มาเป็นค่าตั้งต้นของกลุ่ม agent — **เฉพาะคีย์ที่ยังไม่มีแถว**"""
+    # ยกค่าจาก for_Agent/package/site.conf มาเป็นค่าตั้งต้นของกลุ่ม agent — **เฉพาะคีย์ที่ยังไม่มีแถว**
     from_file = _parse_site_conf(SITE_CONF_PATH)
     if not from_file:
         return 0
@@ -236,13 +236,13 @@ async def seed_agent_settings_from_site_conf() -> int:
 
 
 def env_default(key: str) -> str:
-    """ค่าที่จะใช้เมื่อยังไม่เคยตั้งผ่านหน้าเว็บ — จาก .env ก่อน แล้วค่อยค่า default ในโค้ด"""
+    # ค่าที่จะใช้เมื่อยังไม่เคยตั้งผ่านหน้าเว็บ — จาก .env ก่อน แล้วค่อยค่า default ในโค้ด
     spec = SETTING_DEFS[key]
     return os.getenv(spec["env"], "") or spec["default"]
 
 
 def get_setting(key: str) -> str:
-    """อ่านค่าแบบ sync — **cache เท่านั้น** miss แล้วตกไป .env/default (ดูหมายเหตุหัวไฟล์)"""
+    # อ่านค่าแบบ sync — **cache เท่านั้น** miss แล้วตกไป .env/default (ดูหมายเหตุหัวไฟล์)
     if key not in SETTING_DEFS:
         raise KeyError(f"ไม่รู้จัก setting key: {key}")
 
@@ -264,7 +264,7 @@ def _cache_one(key: str, value: str) -> None:
 
 
 async def encrypt_existing_secrets() -> int:
-    """แปลงค่า secret ที่ยังเก็บเป็น plaintext ใน DB ให้เป็น ciphertext — เรียกตอน start ทุกครั้ง"""
+    # แปลงค่า secret ที่ยังเก็บเป็น plaintext ใน DB ให้เป็น ciphertext — เรียกตอน start ทุกครั้ง
     converted = 0
 
     async with AsyncSessionLocal() as db:
@@ -286,7 +286,7 @@ async def encrypt_existing_secrets() -> int:
 
 
 async def load_all_into_cache() -> dict[str, str]:
-    """อ่าน app_settings ทั้งตารางแล้วเติม cache ให้ครบ **ทุกคีย์ที่ระบบรู้จัก**"""
+    # อ่าน app_settings ทั้งตารางแล้วเติม cache ให้ครบ **ทุกคีย์ที่ระบบรู้จัก**
     async with AsyncSessionLocal() as db:
         rows = {r.setting_key: r.value for r in await get_all_app_settings(db)}
 
@@ -308,14 +308,14 @@ async def load_all_into_cache() -> dict[str, str]:
 
 
 async def ensure_loaded() -> None:
-    """เรียกที่ทางเข้าฝั่ง async ก่อนที่โค้ด sync จะไปอ่านค่า — เติม cache จาก DB ถ้ายังไม่ได้เติม"""
+    # เรียกที่ทางเข้าฝั่ง async ก่อนที่โค้ด sync จะไปอ่านค่า — เติม cache จาก DB ถ้ายังไม่ได้เติม
     if cache_get_json(LOADED_FLAG_KEY, log_prefix=LOG_PREFIX) is not None:
         return
     await load_all_into_cache()
 
 
 async def get_setting_async(key: str) -> str:
-    """อ่านค่าแบบเต็มลำดับ cache -> DB -> .env (ใช้ในโค้ด async ที่อยากได้ค่าแม่นสุด)"""
+    # อ่านค่าแบบเต็มลำดับ cache -> DB -> .env (ใช้ในโค้ด async ที่อยากได้ค่าแม่นสุด)
     if key not in SETTING_DEFS:
         raise KeyError(f"ไม่รู้จัก setting key: {key}")
 
@@ -332,7 +332,7 @@ async def get_setting_async(key: str) -> str:
 
 
 async def get_int_setting_async(key: str, minimum: int = 1) -> int:
-    """อ่านค่าตั้งที่เป็นจำนวนเต็ม — ใช้กับค่าที่อยู่ในเส้นทางตัดสินใจ (เช่น escalation)"""
+    # อ่านค่าตั้งที่เป็นจำนวนเต็ม — ใช้กับค่าที่อยู่ในเส้นทางตัดสินใจ (เช่น escalation)
     raw = await get_setting_async(key)
 
     try:
@@ -344,7 +344,7 @@ async def get_int_setting_async(key: str, minimum: int = 1) -> int:
 
 
 def _for_audit(key: str, stored: str | None) -> str | None:
-    """แปลงค่าที่เก็บใน DB ให้อยู่ในรูปที่ "บันทึกลงประวัติได้" —"""
+    # แปลงค่าที่เก็บใน DB ให้อยู่ในรูปที่ "บันทึกลงประวัติได้" —
     if stored is None:
         return None
 
@@ -361,7 +361,7 @@ async def update_setting(
     key: str, value: str, actor: str = "system", source: str = "settings",
     actor_id: int | None = None,
 ) -> str:
-    """ตั้งค่าทับจากหน้าเว็บ — เขียน DB แล้วอัปเดต cache ทันที (ไม่ต้องรอ TTL)"""
+    # ตั้งค่าทับจากหน้าเว็บ — เขียน DB แล้วอัปเดต cache ทันที (ไม่ต้องรอ TTL)
     if key not in SETTING_DEFS:
         raise KeyError(f"ไม่รู้จัก setting key: {key}")
 
@@ -388,7 +388,7 @@ async def update_setting(
 
 
 def mask_secret(value: str) -> str:
-    """ค่าที่เป็น secret ห้ามส่งกลับหน้าเว็บเต็ม ๆ — โชว์แค่ 4 ตัวท้ายพอให้แอดมินเทียบได้ว่าใช่ตัวที่ตั้งไว้"""
+    # ค่าที่เป็น secret ห้ามส่งกลับหน้าเว็บเต็ม ๆ — โชว์แค่ 4 ตัวท้ายพอให้แอดมินเทียบได้ว่าใช่ตัวที่ตั้งไว้
     if not value:
         return ""
     if len(value) < 8:
@@ -397,7 +397,7 @@ def mask_secret(value: str) -> str:
 
 
 async def all_settings_for_admin() -> list[dict]:
-    """รายการค่าทั้งหมดสำหรับหน้า System Settings — ค่า secret ถูก mask แล้ว"""
+    # รายการค่าทั้งหมดสำหรับหน้า System Settings — ค่า secret ถูก mask แล้ว
     async with AsyncSessionLocal() as db:
         rows = {r.setting_key: r for r in await get_all_app_settings(db)}
 
@@ -466,7 +466,7 @@ def _change_to_dict(row) -> dict:
 
 
 async def setting_history(key: str | None = None, limit: int = 100) -> list[dict]:
-    """ประวัติล่าสุดก่อน — ไม่ระบุคีย์ = รวมทุกคีย์ (ค่า secret ถูก mask ตั้งแต่ตอนบันทึกแล้ว)"""
+    # ประวัติล่าสุดก่อน — ไม่ระบุคีย์ = รวมทุกคีย์ (ค่า secret ถูก mask ตั้งแต่ตอนบันทึกแล้ว)
     async with AsyncSessionLocal() as db:
         rows = await get_app_setting_changes(db, key, limit)
 
@@ -489,7 +489,7 @@ async def log_external_setting_change(
     new_value: str | None = None,
     actor_id: int | None = None,
 ) -> None:
-    """บันทึกประวัติของสิ่งที่ "ไม่ได้เก็บใน app_settings" แต่เป็นการเปลี่ยนค่าตั้งของระบบจริง ๆ"""
+    # บันทึกประวัติของสิ่งที่ "ไม่ได้เก็บใน app_settings" แต่เป็นการเปลี่ยนค่าตั้งของระบบจริง ๆ
     async with AsyncSessionLocal() as db:
         await log_app_setting_change(
             db, setting_key, action, actor,

@@ -1,4 +1,4 @@
-"""System Settings — ค่าตั้งของระบบที่แก้ได้ตอนรัน (คีย์ LINE / Gemini / ค่าที่ฝังลงชุดติดตั้ง agent)"""
+# System Settings — ค่าตั้งของระบบที่แก้ได้ตอนรัน (คีย์ LINE / Gemini / ค่าที่ฝังลงชุดติดตั้ง agent)
 
 import asyncio
 import hmac
@@ -37,7 +37,7 @@ router = APIRouter()
 
 @router.get("/api/settings")
 async def api_get_settings(user=Depends(require_admin)):
-    """ค่าทั้งหมด — secret ถูก mask แล้ว (โชว์ 4 ตัวท้ายพอให้เทียบได้ว่าใช่ตัวที่ตั้งไว้)"""
+    # ค่าทั้งหมด — secret ถูก mask แล้ว (โชว์ 4 ตัวท้ายพอให้เทียบได้ว่าใช่ตัวที่ตั้งไว้)
     items = await all_settings_for_admin()
 
     return {
@@ -53,7 +53,7 @@ async def api_get_settings(user=Depends(require_admin)):
 
 
 async def _check_protected_values(payload: UpdateSettingsRequest) -> None:
-    """ด่านของคีย์ที่แก้พลาดแล้วเจ็บ (`confirm_current` / `password_rules` ใน SETTING_DEFS)"""
+    # ด่านของคีย์ที่แก้พลาดแล้วเจ็บ (`confirm_current` / `password_rules` ใน SETTING_DEFS)
     for key, value in payload.values.items():
         spec = SETTING_DEFS[key]
 
@@ -88,7 +88,7 @@ async def api_update_settings(
     payload: UpdateSettingsRequest,
     user=Depends(require_admin),
 ):
-    """บันทึกหลายค่าพร้อมกัน — ส่งมาเฉพาะคีย์ที่แก้จริงเท่านั้น"""
+    # บันทึกหลายค่าพร้อมกัน — ส่งมาเฉพาะคีย์ที่แก้จริงเท่านั้น
     unknown = [key for key in payload.values if key not in SETTING_DEFS]
     if unknown:
         raise HTTPException(status_code=404, detail=f"ไม่รู้จักค่าตั้ง: {', '.join(unknown)}")
@@ -175,7 +175,7 @@ async def api_setting_history(
     setting_key: str | None = None,
     limit: int = 100,
 ):
-    """ประวัติการแก้ค่าตั้ง — ใครแก้คีย์ไหน จากค่าอะไรเป็นอะไร เมื่อไหร่ ผ่านหน้าไหน"""
+    # ประวัติการแก้ค่าตั้ง — ใครแก้คีย์ไหน จากค่าอะไรเป็นอะไร เมื่อไหร่ ผ่านหน้าไหน
     if setting_key and setting_key not in SETTING_DEFS:
         raise HTTPException(status_code=404, detail=f"ไม่รู้จักค่าตั้ง: {setting_key}")
 
@@ -192,7 +192,7 @@ async def api_setting_history(
 
 @router.get("/api/settings/gemini/models")
 async def api_gemini_models(user=Depends(require_admin)):
-    """โมเดลที่ **คีย์ที่ตั้งไว้ตอนนี้** เรียกได้จริง — หน้าเว็บเอาไปเป็นตัวเลือกในช่อง Model"""
+    # โมเดลที่ **คีย์ที่ตั้งไว้ตอนนี้** เรียกได้จริง — หน้าเว็บเอาไปเป็นตัวเลือกในช่อง Model
     await ensure_loaded()
 
     from AI_API import gemini_client
@@ -211,13 +211,13 @@ async def api_gemini_models(user=Depends(require_admin)):
 
 @router.get("/api/settings/redis-admin-password")
 async def api_redis_admin_password_status(user=Depends(require_admin)):
-    """ความพร้อมของการเปลี่ยนรหัส — หน้าเว็บเรียกตอนโหลดเพื่อบอกล่วงหน้าว่าติดอะไรไหม"""
+    # ความพร้อมของการเปลี่ยนรหัส — หน้าเว็บเรียกตอนโหลดเพื่อบอกล่วงหน้าว่าติดอะไรไหม
     return await asyncio.to_thread(preflight)
 
 
 @router.post("/api/settings/redis-admin-password/generate")
 async def api_generate_redis_admin_password(user=Depends(require_admin)):
-    """สุ่มรหัสให้ — แค่คืนค่าไปโชว์บนหน้าเว็บ **ยังไม่เปลี่ยนอะไรทั้งนั้น**"""
+    # สุ่มรหัสให้ — แค่คืนค่าไปโชว์บนหน้าเว็บ **ยังไม่เปลี่ยนอะไรทั้งนั้น**
     return {"password": generate_password()}
 
 
@@ -226,7 +226,7 @@ async def api_rotate_redis_admin_password(
     payload: RotateRedisAdminPasswordRequest,
     user=Depends(require_admin),
 ):
-    """เปลี่ยนรหัส Redis ของ user admin ของจริง: เขียน users.acl -> ACL LOAD -> ตรวจว่ารหัสใหม่"""
+    # เปลี่ยนรหัส Redis ของ user admin ของจริง: เขียน users.acl -> ACL LOAD -> ตรวจว่ารหัสใหม่
     try:
         result = await asyncio.to_thread(
             rotate_admin_password, payload.password, payload.current_password
@@ -253,13 +253,13 @@ async def api_rotate_redis_admin_password(
 
 @router.get("/api/settings/restart-status")
 async def api_restart_status(user=Depends(require_admin)):
-    """service ตัวไหนยังรันด้วยค่าเก่าจาก `.env` — หน้าเว็บใช้ขึ้นแถบเตือนค้างไว้จนกว่าจะรีสตาร์ตจริง"""
+    # service ตัวไหนยังรันด้วยค่าเก่าจาก `.env` — หน้าเว็บใช้ขึ้นแถบเตือนค้างไว้จนกว่าจะรีสตาร์ตจริง
     return await asyncio.to_thread(restart_status)
 
 
 @router.post("/api/settings/test/{service}")
 async def api_test_service(service: str, user=Depends(require_admin)):
-    """ยิงของจริงไปเช็คว่าคีย์ที่ตั้งไว้ใช้ได้ไหม — ตรวจก่อนดีกว่ามารู้ตอนเกิดเหตุจริงแล้วแจ้งเตือนไม่ออก"""
+    # ยิงของจริงไปเช็คว่าคีย์ที่ตั้งไว้ใช้ได้ไหม — ตรวจก่อนดีกว่ามารู้ตอนเกิดเหตุจริงแล้วแจ้งเตือนไม่ออก
     await ensure_loaded()
 
     if service == "line":

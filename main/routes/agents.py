@@ -1,4 +1,4 @@
-"""เส้นทางจัดการ Agent: list/create/update/delete, regen download token,"""
+# เส้นทางจัดการ Agent: list/create/update/delete, regen download token,
 
 import logging
 import os
@@ -54,7 +54,7 @@ def get_agent_runtime(agent_id: str) -> dict | None:
 
 
 def resolve_agent_live_state(agent) -> dict:
-    """ใช้ Redis runtime เป็นตัวตัดสิน online/offline แบบ real-time"""
+    # ใช้ Redis runtime เป็นตัวตัดสิน online/offline แบบ real-time
     runtime = get_agent_runtime(agent.agent_id)
     now_ts = time.time()
 

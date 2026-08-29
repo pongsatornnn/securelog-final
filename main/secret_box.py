@@ -1,4 +1,4 @@
-"""เข้ารหัสค่า secret ก่อนเก็บลงฐานข้อมูล (encryption at rest) — ใช้กับตาราง app_settings"""
+# เข้ารหัสค่า secret ก่อนเก็บลงฐานข้อมูล (encryption at rest) — ใช้กับตาราง app_settings
 
 import base64
 import os
@@ -26,7 +26,7 @@ def key_file_path() -> str:
 
 
 def _load_or_create_key() -> bytes:
-    """อ่านกุญแจจากไฟล์ ถ้ายังไม่มีก็สร้างให้ (สิทธิ์ 0600)"""
+    # อ่านกุญแจจากไฟล์ ถ้ายังไม่มีก็สร้างให้ (สิทธิ์ 0600)
     path = key_file_path()
 
     if os.path.exists(path):
@@ -58,14 +58,14 @@ def is_encrypted(value: str | None) -> bool:
 
 
 def encrypt(value: str) -> str:
-    """คืน ciphertext พร้อมคำนำหน้า · ค่าว่างไม่เข้ารหัส (ไม่มีอะไรให้ปิด และทำให้เช็ค 'ยังไม่ตั้ง' ง่าย)"""
+    # คืน ciphertext พร้อมคำนำหน้า · ค่าว่างไม่เข้ารหัส (ไม่มีอะไรให้ปิด และทำให้เช็ค 'ยังไม่ตั้ง' ง่าย)
     if not value:
         return ""
     return ENC_PREFIX + _box().encrypt(value.encode("utf-8")).decode("ascii")
 
 
 def decrypt(value: str | None) -> str:
-    """ถอดค่าที่เข้ารหัสไว้ · ค่าที่ยังเป็น plaintext (ของเก่าก่อนอัปเกรด) คืนไปตามเดิม"""
+    # ถอดค่าที่เข้ารหัสไว้ · ค่าที่ยังเป็น plaintext (ของเก่าก่อนอัปเกรด) คืนไปตามเดิม
     if not value:
         return ""
 

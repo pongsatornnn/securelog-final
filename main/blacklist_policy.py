@@ -1,4 +1,4 @@
-"""นโยบายหมดอายุ (expiry) ของ blacklist — severity-based + escalation"""
+# นโยบายหมดอายุ (expiry) ของ blacklist — severity-based + escalation
 
 HOUR = 3600
 
@@ -35,7 +35,7 @@ MAX_TTL_SECONDS = 10 * 365 * 24 * HOUR
 
 
 def base_ttl_for(detection_type: str | None) -> int | None:
-    """คืน TTL ฐาน default (วินาที) ของ detection_type; None = ถาวร"""
+    # คืน TTL ฐาน default (วินาที) ของ detection_type; None = ถาวร
     if not detection_type or detection_type == MANUAL_EVENT:
         return None
     # ใช้ `in` แยก sentinel เพราะค่าที่ตั้งใจให้เป็น None (ถาวร) ก็มี
@@ -50,7 +50,7 @@ def escalated_ttl_seconds(
     multiplier: int = ESCALATION_MULTIPLIER,
     max_block_count: int = MAX_BLOCK_COUNT_BEFORE_PERMANENT,
 ) -> int | None:
-    """คำนวณ TTL (วินาที) หลังคิด escalation จาก base_ttl + block_count"""
+    # คำนวณ TTL (วินาที) หลังคิด escalation จาก base_ttl + block_count
     if base_ttl is None:
         return None
     if block_count > max_block_count:

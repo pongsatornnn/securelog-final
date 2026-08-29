@@ -1,4 +1,4 @@
-"""Cache + DB layer สำหรับ detection rules (window_seconds/threshold ต่อ rule_key)"""
+# Cache + DB layer สำหรับ detection rules (window_seconds/threshold ต่อ rule_key)
 
 from database.connection import AsyncSessionLocal
 from database.crud import get_detection_rule, upsert_detection_rule
@@ -88,7 +88,7 @@ def rule_cache_key(rule_key: str) -> str:
 
 
 def effective_default(rule_key: str) -> dict | None:
-    """ค่า default ที่ใช้จริงของ rule นี้ = ค่าใน snapshot (database/seed_data.json) ทับค่าในโค้ด"""
+    # ค่า default ที่ใช้จริงของ rule นี้ = ค่าใน snapshot (database/seed_data.json) ทับค่าในโค้ด
     code = DEFAULT_RULES.get(rule_key)
     snap = snapshot_rule(rule_key)
 
@@ -99,7 +99,7 @@ def effective_default(rule_key: str) -> dict | None:
 
 
 async def load_rule_from_db(rule_key: str) -> dict:
-    """อ่าน rule จาก DB ถ้ายังไม่เคยมีแถวนี้ (รันครั้งแรก) จะ seed ค่า default ลง DB ให้อัตโนมัติ"""
+    # อ่าน rule จาก DB ถ้ายังไม่เคยมีแถวนี้ (รันครั้งแรก) จะ seed ค่า default ลง DB ให้อัตโนมัติ
     default = effective_default(rule_key)
 
     async with AsyncSessionLocal() as db:
@@ -131,7 +131,7 @@ async def load_rule_from_db(rule_key: str) -> dict:
 
 
 async def get_rule(rule_key: str) -> dict:
-    """Entry point หลักที่ detector เรียกใช้ก่อนประเมิน threshold ทุกครั้ง"""
+    # Entry point หลักที่ detector เรียกใช้ก่อนประเมิน threshold ทุกครั้ง
     cached = cache_get_json(rule_cache_key(rule_key), log_prefix=LOG_PREFIX)
 
     if cached:
@@ -147,7 +147,7 @@ async def update_rule(
     threshold: int,
     is_active: bool = True,
 ) -> dict:
-    """ใช้ตอนแก้ rule (จาก CLI/API) เขียนลง DB แล้วเคลียร์ cache ทันที"""
+    # ใช้ตอนแก้ rule (จาก CLI/API) เขียนลง DB แล้วเคลียร์ cache ทันที
     default = effective_default(rule_key) or {}
 
     async with AsyncSessionLocal() as db:
@@ -186,12 +186,12 @@ async def update_rule(
 
 
 def is_default_rule(rule_key: str) -> bool:
-    """rule นี้เป็นของระบบ (มีค่า default ให้คืนกลับ) หรือไม่ — ใช้ตัดสินว่าปุ่มคืนค่าแตะได้ไหม"""
+    # rule นี้เป็นของระบบ (มีค่า default ให้คืนกลับ) หรือไม่ — ใช้ตัดสินว่าปุ่มคืนค่าแตะได้ไหม
     return effective_default(rule_key) is not None
 
 
 async def restore_default_rule(rule_key: str) -> dict | None:
-    """คืน rule ตัวเดียวกลับเป็นค่า default ของระบบ (window/threshold/is_active)"""
+    # คืน rule ตัวเดียวกลับเป็นค่า default ของระบบ (window/threshold/is_active)
     default = effective_default(rule_key)
 
     if not default:
@@ -207,7 +207,7 @@ async def restore_default_rule(rule_key: str) -> dict | None:
 
 
 async def restore_default_rules() -> dict:
-    """คืนทุก rule ที่เป็นของระบบกลับเป็นค่า default"""
+    # คืนทุก rule ที่เป็นของระบบกลับเป็นค่า default
     restored = []
 
     for rule_key in DEFAULT_RULES:

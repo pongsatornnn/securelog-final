@@ -1,4 +1,4 @@
-"""บอกว่า service ตัวไหน "ยังรันด้วยค่าเก่า" หลัง `.env` ถูกแก้ — ใช้กับแถบเตือนในหน้า System Settings"""
+# บอกว่า service ตัวไหน "ยังรันด้วยค่าเก่า" หลัง `.env` ถูกแก้ — ใช้กับแถบเตือนในหน้า System Settings
 
 import os
 import subprocess
@@ -23,24 +23,24 @@ _env_applied_at = time.time()
 
 
 def mark_env_applied() -> None:
-    """เรียกเมื่อ process นี้เขียน .env แล้ว **อัปเดตค่าในหน่วยความจำตามไปด้วยแล้ว**"""
+    # เรียกเมื่อ process นี้เขียน .env แล้ว **อัปเดตค่าในหน่วยความจำตามไปด้วยแล้ว**
     global _env_applied_at
     _env_applied_at = time.time()
 
 
 def _iso(epoch: float) -> str:
-    """epoch -> string เดียวกับที่ทั้งระบบส่งให้ frontend (UTC ลงท้าย Z ผ่าน shared.iso_utc)"""
+    # epoch -> string เดียวกับที่ทั้งระบบส่งให้ frontend (UTC ลงท้าย Z ผ่าน shared.iso_utc)
     naive_utc = datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
     return iso_utc(naive_utc) or ""
 
 
 def _monotonic_to_epoch(usec: int) -> float:
-    """systemd ให้เวลาเริ่ม unit เป็น monotonic (ไมโครวินาทีตั้งแต่ boot) — แปลงเป็น epoch"""
+    # systemd ให้เวลาเริ่ม unit เป็น monotonic (ไมโครวินาทีตั้งแต่ boot) — แปลงเป็น epoch
     return (time.time() - time.monotonic()) + usec / 1_000_000
 
 
 def _query_units() -> list[dict]:
-    """ถาม systemd ตรง ๆ — คืน list ว่างถ้าไม่มี unit ตรง glob (เช่นเครื่อง dev ที่ยังไม่ได้ติดตั้ง)"""
+    # ถาม systemd ตรง ๆ — คืน list ว่างถ้าไม่มี unit ตรง glob (เช่นเครื่อง dev ที่ยังไม่ได้ติดตั้ง)
     result = subprocess.run(
         ["systemctl", "show", UNIT_GLOB, "--no-pager",
          "--property=Id", "--property=ActiveState", "--property=SubState",
@@ -60,7 +60,7 @@ def _query_units() -> list[dict]:
 
 
 def restart_status() -> dict:
-    """สรุปว่าตอนนี้มี service ไหนต้องรีสตาร์ตบ้าง — ปลอดภัยที่จะเรียกบ่อย (อ่านอย่างเดียวทั้งหมด)"""
+    # สรุปว่าตอนนี้มี service ไหนต้องรีสตาร์ตบ้าง — ปลอดภัยที่จะเรียกบ่อย (อ่านอย่างเดียวทั้งหมด)
     info = {
         "ok": False,
         "problem": "",

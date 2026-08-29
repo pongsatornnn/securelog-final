@@ -1,4 +1,4 @@
-"""เส้นทางเกี่ยวกับ LINE:"""
+# เส้นทางเกี่ยวกับ LINE:
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,7 +97,7 @@ def _serialize(recipient) -> dict:
 
 @router.get("/api/line/oa")
 async def api_line_oa(user=Depends(require_admin)):
-    """ข้อมูล OA ที่หน้า LINE Recipients ใช้บอกว่า "ให้แอดบัญชีไหนถึงจะได้รับแจ้งเตือน" """
+    # ข้อมูล OA ที่หน้า LINE Recipients ใช้บอกว่า "ให้แอดบัญชีไหนถึงจะได้รับแจ้งเตือน"
     await ensure_loaded()
 
     oa_id = (line_config.oa_id() or "").strip()

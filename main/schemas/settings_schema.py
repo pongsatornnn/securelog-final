@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 
 
 class UpdateSettingsRequest(BaseModel):
-    """บันทึกค่าตั้งหลายรายการพร้อมกัน — ส่งมาเฉพาะคีย์ที่แก้จริง"""
+    # บันทึกค่าตั้งหลายรายการพร้อมกัน — ส่งมาเฉพาะคีย์ที่แก้จริง
 
     values: dict[str, str] = Field(default_factory=dict)
 
@@ -11,7 +11,7 @@ class UpdateSettingsRequest(BaseModel):
 
 
 class RotateRedisAdminPasswordRequest(BaseModel):
-    """เปลี่ยนรหัส Redis ของ user ที่ central ใช้ (บัญชี admin) — ไม่ใช่การ "บันทึกค่า" """
+    # เปลี่ยนรหัส Redis ของ user ที่ central ใช้ (บัญชี admin) — ไม่ใช่การ "บันทึกค่า"
 
     password: str = Field(default="", max_length=256)
 

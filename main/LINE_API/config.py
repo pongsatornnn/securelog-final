@@ -1,4 +1,4 @@
-"""ค่า config ของ LINE Messaging API — ตั้งได้จากหน้า System Settings (`/settings`)"""
+# ค่า config ของ LINE Messaging API — ตั้งได้จากหน้า System Settings (`/settings`)
 
 import os
 
@@ -18,7 +18,7 @@ def channel_secret() -> str:
 
 
 def oa_id() -> str:
-    """Basic ID ของ OA (เช่น @123abcd) — ใช้สร้างลิงก์แอดเพื่อน ไม่ได้ใช้เรียก API"""
+    # Basic ID ของ OA (เช่น @123abcd) — ใช้สร้างลิงก์แอดเพื่อน ไม่ได้ใช้เรียก API
     return get_setting("line_oa_id")
 
 
@@ -38,5 +38,5 @@ NOTIFY_DEDUP_KEY_PREFIX = "line_notified:"
 
 
 def is_configured() -> bool:
-    """ครบทั้ง token (ไว้ push) และ secret (ไว้ตรวจลายเซ็น webhook) ถึงจะถือว่าตั้งค่าแล้ว"""
+    # ครบทั้ง token (ไว้ push) และ secret (ไว้ตรวจลายเซ็น webhook) ถึงจะถือว่าตั้งค่าแล้ว
     return bool(channel_access_token() and channel_secret())

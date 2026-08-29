@@ -1,4 +1,4 @@
-"""Agent auth cache — verify token ของ agent โดยเช็ค Redis cache ก่อน (TTL 60s)"""
+# Agent auth cache — verify token ของ agent โดยเช็ค Redis cache ก่อน (TTL 60s)
 
 import time
 import hmac
@@ -96,7 +96,7 @@ async def verify_agent_ip(
     reported_ip: str | None,
     ip_interface: str | None = None,
 ) -> bool:
-    """ตรวจว่า IP ที่ agent รายงานมาตรงกับที่ผูกไว้กับ agent_id นี้หรือไม่"""
+    # ตรวจว่า IP ที่ agent รายงานมาตรงกับที่ผูกไว้กับ agent_id นี้หรือไม่
     if not reported_ip:
         return True
 

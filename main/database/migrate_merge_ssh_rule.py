@@ -1,4 +1,4 @@
-"""Migration ครั้งเดียว: รวม ssh_brute_force_fast + ssh_brute_force_slow เป็น ssh_brute_force"""
+# Migration ครั้งเดียว: รวม ssh_brute_force_fast + ssh_brute_force_slow เป็น ssh_brute_force
 
 import asyncio
 

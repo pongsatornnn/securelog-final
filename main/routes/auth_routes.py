@@ -1,4 +1,4 @@
-"""เส้นทางล็อกอิน/ล็อกเอาต์ + หน้าแรกที่ redirect ตามสถานะ login"""
+# เส้นทางล็อกอิน/ล็อกเอาต์ + หน้าแรกที่ redirect ตามสถานะ login
 
 import os
 
@@ -26,7 +26,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
 
 def locked_message(retry_after: int) -> str:
-    """แปลงวินาทีที่เหลือเป็นข้อความไทยบอกให้รอ"""
+    # แปลงวินาทีที่เหลือเป็นข้อความไทยบอกให้รอ
     minutes = (retry_after + 59) // 60
     if minutes >= 1:
         return f"บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผิดหลายครั้ง กรุณาลองใหม่ในอีก {minutes} นาที"
@@ -189,7 +189,7 @@ async def do_change_password(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """เปลี่ยนรหัสผ่านของตัวเอง — เปลี่ยนสำเร็จแล้ว ออก JWT cookie ใหม่ทันที"""
+    # เปลี่ยนรหัสผ่านของตัวเอง — เปลี่ยนสำเร็จแล้ว ออก JWT cookie ใหม่ทันที
     db_user = await get_user(db, user["username"])
 
     if not db_user:
@@ -225,7 +225,7 @@ async def profile_page(
     user=Depends(require_login_page),
     db: AsyncSession = Depends(get_db),
 ):
-    """หน้า Profile Setting — แก้ชื่อที่แสดง (name) + ปุ่มเปลี่ยนรหัสผ่านที่เด้งเป็น popup"""
+    # หน้า Profile Setting — แก้ชื่อที่แสดง (name) + ปุ่มเปลี่ยนรหัสผ่านที่เด้งเป็น popup
     db_user = await get_user(db, user["username"])
     return templates.TemplateResponse(
         request=request,
@@ -245,7 +245,7 @@ async def update_profile_name(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """แก้ชื่อที่แสดงของบัญชีตัวเอง (self-service) — ทุก role ทำได้เหมือน change-password"""
+    # แก้ชื่อที่แสดงของบัญชีตัวเอง (self-service) — ทุก role ทำได้เหมือน change-password
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="กรุณากรอกชื่อ")

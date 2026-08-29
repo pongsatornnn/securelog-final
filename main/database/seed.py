@@ -1,4 +1,4 @@
-"""Seed ค่าเริ่มต้นลง DB ตอน start (เรียกจาก `main.py` lifespan ครั้งเดียวต่อการ start)"""
+# Seed ค่าเริ่มต้นลง DB ตอน start (เรียกจาก `main.py` lifespan ครั้งเดียวต่อการ start)
 
 from database.connection import AsyncSessionLocal
 from database.crud import (
@@ -32,14 +32,14 @@ LOG_PREFIX = "SEED"
 
 
 def _merged_keys(section: str, code_defaults) -> list[str]:
-    """key ทั้งหมดที่ต้อง seed = ของใน snapshot (มาก่อน คงลำดับตามไฟล์) + ของในโค้ดที่ snapshot ไม่มี"""
+    # key ทั้งหมดที่ต้อง seed = ของใน snapshot (มาก่อน คงลำดับตามไฟล์) + ของในโค้ดที่ snapshot ไม่มี
     keys = list(snapshot_section(section).keys())
     keys += [k for k in code_defaults if k not in keys]
     return keys
 
 
 async def seed_detection_rules(db) -> int:
-    """threshold/window ของ detector แต่ละตัว — เดิมถูก seed แบบ lazy ตอน detector เจอ log ตัวแรก"""
+    # threshold/window ของ detector แต่ละตัว — เดิมถูก seed แบบ lazy ตอน detector เจอ log ตัวแรก
     created = 0
 
     for rule_key in _merged_keys("detection_rules", DEFAULT_RULES):
@@ -71,7 +71,7 @@ async def seed_detection_rules(db) -> int:
 
 
 async def seed_blacklist_ttl(db) -> int:
-    """ระยะเวลา block ต่อ detection_type (ttl_seconds = None คือถาวร)"""
+    # ระยะเวลา block ต่อ detection_type (ttl_seconds = None คือถาวร)
     created = 0
 
     for detection_type in _merged_keys("blacklist_ttl", BASE_TTL_SECONDS):
@@ -100,7 +100,7 @@ async def seed_blacklist_ttl(db) -> int:
 
 
 async def seed_alert_severity(db) -> int:
-    """ระดับความรุนแรงของ alert ต่อ severity_key"""
+    # ระดับความรุนแรงของ alert ต่อ severity_key
     created = 0
 
     for severity_key in _merged_keys("alert_severity", DEFAULT_SEVERITY):
@@ -128,7 +128,7 @@ async def seed_alert_severity(db) -> int:
 
 
 async def seed_detection_signatures(db) -> int:
-    """regex ของ signature-based detector — seed "ทั้งชนิด" เฉพาะชนิดที่ยังไม่มีสักแถวเลย"""
+    # regex ของ signature-based detector — seed "ทั้งชนิด" เฉพาะชนิดที่ยังไม่มีสักแถวเลย
     created = 0
 
     for detection_type in _merged_keys("detection_signatures", DEFAULT_SIGNATURES):
@@ -173,7 +173,7 @@ async def seed_detection_signatures(db) -> int:
 
 
 async def seed_admin_user(db) -> bool:
-    """สร้าง admin/admin ตอน users ว่างเปล่าเท่านั้น (เครื่อง deploy ใหม่ที่ยังไม่เคยมี user เลย)"""
+    # สร้าง admin/admin ตอน users ว่างเปล่าเท่านั้น (เครื่อง deploy ใหม่ที่ยังไม่เคยมี user เลย)
     # import ตรงนี้เพื่อไม่ให้ database/ ผูกกับ auth ตอน import module (auth ใช้แค่ตอน seed จริง)
     from auth import hash_password
 
@@ -189,7 +189,7 @@ async def seed_admin_user(db) -> bool:
 
 
 async def seed_defaults() -> None:
-    """เรียกจาก lifespan ตอน start — เงียบถ้าไม่มีอะไรต้องเติม"""
+    # เรียกจาก lifespan ตอน start — เงียบถ้าไม่มีอะไรต้องเติม
     async with AsyncSessionLocal() as db:
         rules = await seed_detection_rules(db)
         ttls = await seed_blacklist_ttl(db)

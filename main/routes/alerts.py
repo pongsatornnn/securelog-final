@@ -1,4 +1,4 @@
-"""เส้นทาง Security Alert สำหรับ dashboard: list ล่าสุด, ดูรายละเอียด, SSE stream"""
+# เส้นทาง Security Alert สำหรับ dashboard: list ล่าสุด, ดูรายละเอียด, SSE stream
 
 import asyncio
 from datetime import datetime, timezone
@@ -51,7 +51,7 @@ MAX_PER_PAGE = 200
 
 
 def parse_filter_time(value: str | None, field: str) -> datetime | None:
-    """แปลงเวลาที่ browser ส่งมาเป็น datetime แบบ naive-UTC ให้ตรงกับที่ DB เก็บ"""
+    # แปลงเวลาที่ browser ส่งมาเป็น datetime แบบ naive-UTC ให้ตรงกับที่ DB เก็บ
     if not value:
         return None
 
@@ -67,7 +67,7 @@ def parse_filter_time(value: str | None, field: str) -> datetime | None:
 
 
 async def detection_types_by_severity(db: AsyncSession, severity: str) -> list[str]:
-    """detection_type ทั้งหมดที่ระดับความรุนแรงตรงกับที่เลือก"""
+    # detection_type ทั้งหมดที่ระดับความรุนแรงตรงกับที่เลือก
     facets = await get_alert_filter_facets(db)
 
     matched = []
@@ -90,7 +90,7 @@ async def api_get_alerts(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """หนึ่งหน้าของตาราง Alerts พร้อมจำนวนรวม — คืนเป็น object ไม่ใช่ list เปล่า"""
+    # หนึ่งหน้าของตาราง Alerts พร้อมจำนวนรวม — คืนเป็น object ไม่ใช่ list เปล่า
     if severity and severity not in VALID_SEVERITIES:
         raise HTTPException(status_code=400, detail=f"ไม่รู้จักระดับความรุนแรง: {severity}")
 
@@ -150,7 +150,7 @@ async def api_get_alerts_filter_options(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """ตัวเลือกของ dropdown ตัวกรองหน้า Alerts (เครื่อง / ประเภทการโจมตี / ความรุนแรง)"""
+    # ตัวเลือกของ dropdown ตัวกรองหน้า Alerts (เครื่อง / ประเภทการโจมตี / ความรุนแรง)
     facets = await get_alert_filter_facets(db)
 
     agents = await get_agents_by_agent_ids(db, facets["agent_ids"])
@@ -190,7 +190,7 @@ async def api_get_alerts_unread_count(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """จำนวน alert ที่ใหม่กว่า id ที่ผู้ใช้เห็นล่าสุด — ใช้ทำ badge "ยังไม่ได้อ่าน" ที่เมนู Alerts"""
+    # จำนวน alert ที่ใหม่กว่า id ที่ผู้ใช้เห็นล่าสุด — ใช้ทำ badge "ยังไม่ได้อ่าน" ที่เมนู Alerts
     last_seen_id = await get_user_last_seen_alert_id(db, user["id"])
 
     count, latest_id = await count_security_alerts_since(db, last_seen_id or 0)
@@ -207,7 +207,7 @@ async def api_get_alerts_read_state(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """id ของ alert ที่บัญชีนี้กดดูรายละเอียดไปแล้ว — browser เอาไปวาดจุด "ยังไม่ได้อ่าน" หน้าแถว"""
+    # id ของ alert ที่บัญชีนี้กดดูรายละเอียดไปแล้ว — browser เอาไปวาดจุด "ยังไม่ได้อ่าน" หน้าแถว
     return {"opened_ids": await get_alert_read_ids(db, user["id"])}
 
 
@@ -217,7 +217,7 @@ async def api_update_alerts_read_state(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """บันทึกสถานะ "อ่านแล้ว" ของบัญชีที่กำลัง login — เครื่องอื่นที่ login อยู่จะเห็นตรงกันรอบถัดไป"""
+    # บันทึกสถานะ "อ่านแล้ว" ของบัญชีที่กำลัง login — เครื่องอื่นที่ login อยู่จะเห็นตรงกันรอบถัดไป
     if payload.opened_ids:
         await mark_alerts_read(db, user["id"], payload.opened_ids)
 
@@ -248,7 +248,7 @@ async def api_get_alert_severity(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """ระดับความรุนแรง (LOW/MEDIUM/HIGH/CRITICAL) ต่อประเภทการโจมตี — seed default ครบก่อนคืนค่า"""
+    # ระดับความรุนแรง (LOW/MEDIUM/HIGH/CRITICAL) ต่อประเภทการโจมตี — seed default ครบก่อนคืนค่า
     for severity_key in DEFAULT_SEVERITY:
         detection_type, _, mode = severity_key.partition(":")
         await get_severity(detection_type, mode or None)
@@ -295,7 +295,7 @@ async def api_generate_alert_ai_summary(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    """วิเคราะห์ log ของ alert นี้ด้วย AI — เรียกตอนผู้ใช้ที่ login แล้ว (admin หรือ user) กดปุ่มเท่านั้น"""
+    # วิเคราะห์ log ของ alert นี้ด้วย AI — เรียกตอนผู้ใช้ที่ login แล้ว (admin หรือ user) กดปุ่มเท่านั้น
     alert = await get_security_alert_by_id(db, alert_id)
 
     if not alert:

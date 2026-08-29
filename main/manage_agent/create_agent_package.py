@@ -41,7 +41,7 @@ def now_thai():
 
 
 def central_address() -> tuple[str, str]:
-    """ที่อยู่ + พอร์ต Redis ของ central ที่ agent ต้องต่อกลับมา — มาจาก `.env` ไม่ใช่หน้าเว็บ"""
+    # ที่อยู่ + พอร์ต Redis ของ central ที่ agent ต้องต่อกลับมา — มาจาก `.env` ไม่ใช่หน้าเว็บ
     host = (os.getenv("AGENT_CENTRAL_HOST") or os.getenv("REDIS_HOST") or "").strip()
     port = (os.getenv("AGENT_CENTRAL_REDIS_PORT") or os.getenv("REDIS_PORT") or "").strip()
 
@@ -49,7 +49,7 @@ def central_address() -> tuple[str, str]:
 
 
 async def build_site_conf() -> str:
-    """สร้างเนื้อไฟล์ site.conf ที่จะฝังไปกับ zip"""
+    # สร้างเนื้อไฟล์ site.conf ที่จะฝังไปกับ zip
     host, port = central_address()
     username = (await get_setting_async("agent_redis_username")).strip()
     password = await get_setting_async("agent_redis_password")
@@ -93,7 +93,7 @@ def run_cmd(cmd: list[str]):
 
 
 def agent_file_paths(agent_id: str) -> tuple[str, str]:
-    """โฟลเดอร์ cert + ไฟล์ zip ของ agent ตัวนี้ — ที่เดียวที่ประกอบ path สองอันนี้"""
+    # โฟลเดอร์ cert + ไฟล์ zip ของ agent ตัวนี้ — ที่เดียวที่ประกอบ path สองอันนี้
     return (
         os.path.join(AGENT_CERT_DIR, agent_id),
         os.path.join(PACKAGE_DIR, f"{agent_id}.zip"),
@@ -101,7 +101,7 @@ def agent_file_paths(agent_id: str) -> tuple[str, str]:
 
 
 def discard_agent_files(agent_id: str) -> None:
-    """ลบ cert + zip ของ agent_id ทิ้ง"""
+    # ลบ cert + zip ของ agent_id ทิ้ง
     agent_dir, zip_path = agent_file_paths(agent_id)
 
     if os.path.isdir(agent_dir):
@@ -235,7 +235,7 @@ async def create_agent_package(
     hostname: str | None = None,
     description: str | None = None,
 ):
-    """สร้าง agent ใหม่ + cert + zip"""
+    # สร้าง agent ใหม่ + cert + zip
     current_time = now_thai()
 
     secret_token = generate_token()

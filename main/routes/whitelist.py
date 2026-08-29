@@ -1,4 +1,4 @@
-"""เส้นทางจัดการ IP Whitelist"""
+# เส้นทางจัดการ IP Whitelist
 
 import ipaddress
 

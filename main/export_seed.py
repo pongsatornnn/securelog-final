@@ -1,4 +1,4 @@
-"""Export ค่า config ปัจจุบันใน DB ออกเป็น snapshot (`database/seed_data.json`)"""
+# Export ค่า config ปัจจุบันใน DB ออกเป็น snapshot (`database/seed_data.json`)
 
 import asyncio
 import json
@@ -27,7 +27,7 @@ SECTION_LABELS = {
 
 
 async def collect() -> dict:
-    """อ่าน config ทั้ง 4 ตารางจาก DB ปัจจุบัน แล้วจัดรูปเป็น dict พร้อมเขียนเป็น JSON"""
+    # อ่าน config ทั้ง 4 ตารางจาก DB ปัจจุบัน แล้วจัดรูปเป็น dict พร้อมเขียนเป็น JSON
     async with AsyncSessionLocal() as db:
         rules = await get_all_detection_rules(db)
         severities = await get_all_alert_severity(db)
@@ -75,7 +75,7 @@ async def collect() -> dict:
 
 
 def load_previous() -> dict:
-    """snapshot เดิม (ถ้ามี) ไว้เทียบว่ารอบนี้เปลี่ยนอะไรบ้าง"""
+    # snapshot เดิม (ถ้ามี) ไว้เทียบว่ารอบนี้เปลี่ยนอะไรบ้าง
     if not SEED_DATA_PATH.exists():
         return {}
 
@@ -87,7 +87,7 @@ def load_previous() -> dict:
 
 
 def print_diff(old: dict, new: dict) -> bool:
-    """print สิ่งที่ต่างจาก snapshot เดิมทีละ section — คืน True ถ้ามีอะไรเปลี่ยน"""
+    # print สิ่งที่ต่างจาก snapshot เดิมทีละ section — คืน True ถ้ามีอะไรเปลี่ยน
     changed = False
 
     for section, label in SECTION_LABELS.items():

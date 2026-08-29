@@ -1,4 +1,4 @@
-"""Migration ครั้งเดียว: เพิ่มคอลัมน์สำหรับผูก IP เข้ากับ Agent"""
+# Migration ครั้งเดียว: เพิ่มคอลัมน์สำหรับผูก IP เข้ากับ Agent
 
 import asyncio
 

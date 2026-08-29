@@ -1,4 +1,4 @@
-"""Cache + DB layer สำหรับ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)"""
+# Cache + DB layer สำหรับ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)
 
 from datetime import datetime, timedelta
 
@@ -30,7 +30,7 @@ def ttl_cache_key(detection_type: str) -> str:
 
 
 async def load_ttl_from_db(detection_type: str) -> dict:
-    """อ่าน TTL จาก DB; ถ้ายังไม่มีแถวนี้ seed ค่า default (จาก blacklist_policy) ลง DB ก่อน"""
+    # อ่าน TTL จาก DB; ถ้ายังไม่มีแถวนี้ seed ค่า default (จาก blacklist_policy) ลง DB ก่อน
     async with AsyncSessionLocal() as db:
         row = await get_blacklist_ttl(db, detection_type)
 
@@ -64,7 +64,7 @@ async def load_ttl_from_db(detection_type: str) -> dict:
 
 
 async def get_ttl(detection_type: str) -> dict:
-    """Entry point: คืน {'detection_type', 'ttl_seconds'} (ttl_seconds=None -> ถาวร)"""
+    # Entry point: คืน {'detection_type', 'ttl_seconds'} (ttl_seconds=None -> ถาวร)
     cached = cache_get_json(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
     if cached is not None:
         return cached
@@ -72,7 +72,7 @@ async def get_ttl(detection_type: str) -> dict:
 
 
 async def update_ttl(detection_type: str, ttl_seconds: int | None) -> dict:
-    """แก้ TTL (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)"""
+    # แก้ TTL (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)
     async with AsyncSessionLocal() as db:
         row = await upsert_blacklist_ttl(db, detection_type, ttl_seconds=ttl_seconds)
         result = {
@@ -87,7 +87,7 @@ async def update_ttl(detection_type: str, ttl_seconds: int | None) -> dict:
 
 
 async def get_escalation_policy() -> dict:
-    """นโยบาย escalation ที่ใช้จริงตอนรัน — อ่านจาก app_settings (cache-first เหมือนค่าอื่น)"""
+    # นโยบาย escalation ที่ใช้จริงตอนรัน — อ่านจาก app_settings (cache-first เหมือนค่าอื่น)
     return {
         "multiplier": await get_int_setting_async(ESCALATION_MULTIPLIER_KEY, minimum=1),
         "max_block_count": await get_int_setting_async(ESCALATION_MAX_BLOCK_COUNT_KEY, minimum=1),
@@ -95,7 +95,7 @@ async def get_escalation_policy() -> dict:
 
 
 async def compute_expiry(detection_type: str | None, block_count: int) -> datetime | None:
-    """คำนวณ expires_at จาก detection_type + block_count โดยดึง base TTL จาก DB/cache"""
+    # คำนวณ expires_at จาก detection_type + block_count โดยดึง base TTL จาก DB/cache
     if not detection_type or detection_type == MANUAL_EVENT:
         return None
 

@@ -1,4 +1,4 @@
-"""Detector: Firewall behavior/rate-based จาก normalized firewall log (UFW/iptables)"""
+# Detector: Firewall behavior/rate-based จาก normalized firewall log (UFW/iptables)
 
 import asyncio
 import ipaddress
@@ -56,7 +56,7 @@ def clear_fw_count(key: str) -> None:
 # ============================================================
 
 def is_ipv4(ip: str | None) -> bool:
-    """True เฉพาะเมื่อ ip เป็น IPv4 ที่ถูกต้อง — ใช้กรอง IPv6/SRC ผิดรูปตามนโยบาย IPv4-only"""
+    # True เฉพาะเมื่อ ip เป็น IPv4 ที่ถูกต้อง — ใช้กรอง IPv6/SRC ผิดรูปตามนโยบาย IPv4-only
     if not ip:
         return False
     try:
@@ -66,7 +66,7 @@ def is_ipv4(ip: str | None) -> bool:
 
 
 def count_for_type(detection_type: str, window_events: list[dict]) -> int:
-    """แปลง event ในหน้าต่างเวลาเป็น "count" ตามความหมายของแต่ละ detection_type"""
+    # แปลง event ในหน้าต่างเวลาเป็น "count" ตามความหมายของแต่ละ detection_type
     if detection_type == "port_scan":
         return len({
             e["destination_port"]

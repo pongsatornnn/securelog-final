@@ -116,7 +116,7 @@ class Ip_white_list(Base):
 
 
 class SecurityAlert(Base):
-    """เก็บเหตุการณ์ที่ detector (auth/web/firewall) ตรวจจับได้ว่าเข้าเงื่อนไข threshold"""
+    # เก็บเหตุการณ์ที่ detector (auth/web/firewall) ตรวจจับได้ว่าเข้าเงื่อนไข threshold
 
     __tablename__ = "security_alerts"
 
@@ -160,7 +160,7 @@ class SecurityAlert(Base):
 
 
 class AlertRead(Base):
-    """บันทึกว่า user คนไหนกด "ดูรายละเอียด" alert ตัวไหนไปแล้ว — หนึ่งแถว = หนึ่งคู่ (user, alert)"""
+    # บันทึกว่า user คนไหนกด "ดูรายละเอียด" alert ตัวไหนไปแล้ว — หนึ่งแถว = หนึ่งคู่ (user, alert)
 
     __tablename__ = "alert_reads"
 
@@ -182,7 +182,7 @@ class AlertRead(Base):
 
 
 class DetectionRule(Base):
-    """ค่า threshold/window ของแต่ละ detector เก็บใน DB แทน hardcode"""
+    # ค่า threshold/window ของแต่ละ detector เก็บใน DB แทน hardcode
 
     __tablename__ = "detection_rules"
 
@@ -205,7 +205,7 @@ class DetectionRule(Base):
 
 
 class AlertSeverity(Base):
-    """ระดับความรุนแรง (LOW/MEDIUM/HIGH/CRITICAL) ของ alert ต่อ severity_key — เก็บใน DB แทน hardcode"""
+    # ระดับความรุนแรง (LOW/MEDIUM/HIGH/CRITICAL) ของ alert ต่อ severity_key — เก็บใน DB แทน hardcode
 
     __tablename__ = "alert_severity"
 
@@ -219,7 +219,7 @@ class AlertSeverity(Base):
 
 
 class BlacklistTtl(Base):
-    """ระยะเวลา (TTL) ที่ IP จะถูก block ก่อนหมดอายุ ต่อ detection_type — เก็บใน DB แทน hardcode"""
+    # ระยะเวลา (TTL) ที่ IP จะถูก block ก่อนหมดอายุ ต่อ detection_type — เก็บใน DB แทน hardcode
 
     __tablename__ = "blacklist_ttl"
 
@@ -233,7 +233,7 @@ class BlacklistTtl(Base):
 
 
 class DetectionSignature(Base):
-    """เก็บ signature (regex) ของ Signature-based detector แทน hardcode ในโค้ด"""
+    # เก็บ signature (regex) ของ Signature-based detector แทน hardcode ในโค้ด
 
     __tablename__ = "detection_signatures"
 
@@ -259,7 +259,7 @@ class DetectionSignature(Base):
 
 
 class LineRecipient(Base):
-    """ผู้รับแจ้งเตือนทาง LINE — คนที่แอด OA จะถูก webhook บันทึกเป็น status=pending"""
+    # ผู้รับแจ้งเตือนทาง LINE — คนที่แอด OA จะถูก webhook บันทึกเป็น status=pending
 
     __tablename__ = "line_recipients"
 
@@ -282,7 +282,7 @@ class LineRecipient(Base):
     approved_at = Column(DateTime, nullable=True)
 
 class AppSetting(Base):
-    """ค่าตั้งของระบบที่แก้ได้ตอนรัน ผ่านหน้า System Settings (ไม่ต้องแก้ .env + restart)"""
+    # ค่าตั้งของระบบที่แก้ได้ตอนรัน ผ่านหน้า System Settings (ไม่ต้องแก้ .env + restart)
 
     __tablename__ = "app_settings"
 
@@ -298,7 +298,7 @@ class AppSetting(Base):
 
 
 class AppSettingChange(Base):
-    """ประวัติการแก้ค่าตั้ง — ตอบว่า "คีย์นี้ใครเป็นคนแก้ เมื่อไหร่ จากค่าอะไรเป็นอะไร" """
+    # ประวัติการแก้ค่าตั้ง — ตอบว่า "คีย์นี้ใครเป็นคนแก้ เมื่อไหร่ จากค่าอะไรเป็นอะไร"
 
     __tablename__ = "app_setting_changes"
 

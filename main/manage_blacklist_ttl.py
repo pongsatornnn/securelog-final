@@ -1,4 +1,4 @@
-"""CLI ดู/แก้ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)"""
+# CLI ดู/แก้ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)
 
 import sys
 import asyncio

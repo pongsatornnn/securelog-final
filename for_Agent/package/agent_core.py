@@ -25,7 +25,7 @@ _DEFAULT_CONFIG = {
 
 
 def _read_kv_file(path: Path) -> dict:
-    """อ่านไฟล์ KEY=VALUE (agent_info.txt) — ไฟล์ไม่มี/บรรทัดเสีย ข้ามเงียบ ๆ"""
+    # อ่านไฟล์ KEY=VALUE (agent_info.txt) — ไฟล์ไม่มี/บรรทัดเสีย ข้ามเงียบ ๆ
     info = {}
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -51,7 +51,7 @@ def _load_config() -> dict:
 
 
 def _find_cert(filename: str) -> str:
-    """หาไฟล์ cert: cert/ ก่อน (โครงหลัง setup.sh) แล้วค่อยข้างไฟล์นี้ (โครงจาก zip ดิบ)"""
+    # หาไฟล์ cert: cert/ ก่อน (โครงหลัง setup.sh) แล้วค่อยข้างไฟล์นี้ (โครงจาก zip ดิบ)
     for candidate in (BASE_DIR / "cert" / filename, BASE_DIR / filename):
         if candidate.exists():
             return str(candidate)
@@ -113,7 +113,7 @@ for _entry in ALWAYS_NEVER_BLOCK_CIDRS + NEVER_BLOCK_CIDRS:
 
 
 def list_interface_ips() -> dict[str, str]:
-    """{ชื่อ interface: IPv4} ของทุก interface ที่มี IPv4 (ข้าม loopback)"""
+    # {ชื่อ interface: IPv4} ของทุก interface ที่มี IPv4 (ข้าม loopback)
     result = {}
 
     for name, addrs in psutil.net_if_addrs().items():
@@ -129,7 +129,7 @@ def list_interface_ips() -> dict[str, str]:
 
 
 def detect_outbound_ip() -> str | None:
-    """IP ของ interface ที่ใช้ออกไปหา central จริง — ใช้เป็น fallback ตอนไม่ได้ระบุ interface ไว้"""
+    # IP ของ interface ที่ใช้ออกไปหา central จริง — ใช้เป็น fallback ตอนไม่ได้ระบุ interface ไว้
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
@@ -142,7 +142,7 @@ def detect_outbound_ip() -> str | None:
 
 
 def get_host_ip() -> str | None:
-    """IP ปัจจุบันของเครื่องนี้ตาม interface ที่เลือกไว้ — None ถ้าหาไม่ได้"""
+    # IP ปัจจุบันของเครื่องนี้ตาม interface ที่เลือกไว้ — None ถ้าหาไม่ได้
     if HOST_IFACE:
         # ระบุ interface ไว้แล้วต้องใช้ตัวนั้นเท่านั้น — สายหลุด/ยังไม่ได้ IP แล้วเงียบ ๆ ไป
         return list_interface_ips().get(HOST_IFACE)
@@ -154,7 +154,7 @@ _host_ip_cache = {"ip": None, "at": 0.0}
 
 
 def get_host_ip_cached() -> str | None:
-    """เหมือน get_host_ip() แต่ไม่อ่านซ้ำถี่กว่า HOST_IP_REFRESH_SECONDS"""
+    # เหมือน get_host_ip() แต่ไม่อ่านซ้ำถี่กว่า HOST_IP_REFRESH_SECONDS
     now = time.time()
 
     if now - _host_ip_cache["at"] >= HOST_IP_REFRESH_SECONDS:
@@ -185,7 +185,7 @@ def ensure_managed_dir():
 
 
 def _read_ip_file(path: str, label: str) -> set[str]:
-    """อ่านไฟล์ JSON list ของ IP เป็น set — ไฟล์ไม่มี/เสีย คืน set ว่าง ไม่ crash"""
+    # อ่านไฟล์ JSON list ของ IP เป็น set — ไฟล์ไม่มี/เสีย คืน set ว่าง ไม่ crash
     try:
         ensure_managed_dir()
 
@@ -237,7 +237,7 @@ def save_synced_whitelist(ips: set[str]):
 
 
 def load_managed_ips() -> set[str]:
-    """อ่าน IP ที่ระบบ sync ของ Central เคยจัดการไว้เท่านั้น"""
+    # อ่าน IP ที่ระบบ sync ของ Central เคยจัดการไว้เท่านั้น
     return _read_ip_file(MANAGED_BLACKLIST_FILE, "SYNC STATE")
 
 
@@ -266,7 +266,7 @@ def remove_managed_ip(ip: str):
 # ---------------------------------------------------------------------------
 
 def is_never_block(ip: str) -> bool:
-    """เช็คว่า ip ห้าม block ไหม จาก 3 แหล่ง:"""
+    # เช็คว่า ip ห้าม block ไหม จาก 3 แหล่ง:
     if not ip:
         return False
 
@@ -306,7 +306,7 @@ def normalize_ip_list(items) -> set[str]:
 # ---------------------------------------------------------------------------
 
 def drop_conntrack(ip):
-    """ล้าง connection ที่เปิดค้างอยู่ของ IP นี้ทิ้ง (ทั้งขาที่ IP เป็นต้นทางและปลายทาง)"""
+    # ล้าง connection ที่เปิดค้างอยู่ของ IP นี้ทิ้ง (ทั้งขาที่ IP เป็นต้นทางและปลายทาง)
     for direction in ("-s", "-d"):
         try:
             subprocess.run(
@@ -385,7 +385,7 @@ def sync_unblock_ip(ip: str) -> bool:
 
 
 def sync_blacklist_desired_state(central_items):
-    """sync แบบไม่กระทบของเดิม"""
+    # sync แบบไม่กระทบของเดิม
     central_desired_ips = normalize_ip_list(central_items)
     managed_ips = load_managed_ips()
 
@@ -442,7 +442,7 @@ def parse_command_message(message) -> dict | None:
 
 
 def handle_hello_command(data: dict):
-    """hello จาก Central ตอน agent กลับมา online"""
+    # hello จาก Central ตอน agent กลับมา online
     text = data.get("message", "hello")
     ip_blacklist = data.get("ip_blacklist", [])
 
@@ -462,7 +462,7 @@ def handle_hello_command(data: dict):
 
 
 def handle_block_ip_command(data: dict):
-    """block ตามคำสั่งเดี่ยว + บันทึก managed state ให้รอบ sync ถัดไปรู้ว่ามาจาก Central"""
+    # block ตามคำสั่งเดี่ยว + บันทึก managed state ให้รอบ sync ถัดไปรู้ว่ามาจาก Central
     ip = extract_ip(data.get("ip") or data.get("ip_address"))
 
     if not ip:
@@ -474,7 +474,7 @@ def handle_block_ip_command(data: dict):
 
 
 def handle_unblock_ip_command(data: dict):
-    """unblock ตามคำสั่งเดี่ยว + ลบออกจาก managed state"""
+    # unblock ตามคำสั่งเดี่ยว + ลบออกจาก managed state
     ip = extract_ip(data.get("ip") or data.get("ip_address"))
 
     if not ip:
@@ -492,7 +492,7 @@ def handle_sync_blacklist_command(data: dict):
 
 
 def handle_sync_whitelist_command(data: dict):
-    """รับ whitelist ปัจจุบันจาก Central มาเก็บไว้ (desired state)"""
+    # รับ whitelist ปัจจุบันจาก Central มาเก็บไว้ (desired state)
     ips = normalize_ip_list(data.get("ips", []))
     save_synced_whitelist(ips)
     print(f"[WHITELIST] ได้รับ whitelist จาก Central {len(ips)} รายการ -> อัปเดต never-block แล้ว")
@@ -519,7 +519,7 @@ def handle_command(data: dict):
 # ---------------------------------------------------------------------------
 
 def run_with_reconnect(label: str, worker):
-    """เปิด Redis connection แล้วส่งให้ worker ทำงานยาว ๆ"""
+    # เปิด Redis connection แล้วส่งให้ worker ทำงานยาว ๆ
     while True:
         r = None
 

@@ -1,4 +1,4 @@
-"""CLI สร้าง Agent + package (ทางเลือกแทนการกดผ่านหน้า Agents บน dashboard)"""
+# CLI สร้าง Agent + package (ทางเลือกแทนการกดผ่านหน้า Agents บน dashboard)
 
 import sys
 import asyncio

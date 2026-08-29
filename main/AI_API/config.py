@@ -1,4 +1,4 @@
-"""ค่า config ของ Gemini (AI สรุป log ใน alert) — API key/model ตั้งได้จากหน้า System Settings (`/settings`)"""
+# ค่า config ของ Gemini (AI สรุป log ใน alert) — API key/model ตั้งได้จากหน้า System Settings (`/settings`)
 
 import os
 
@@ -13,7 +13,7 @@ def api_key() -> str:
 
 
 def model() -> str:
-    """โมเดลที่ใช้สรุป log — เลือกจาก dropdown ในหน้า Settings (รายชื่อดึงจากคีย์ตัวที่ตั้งไว้)"""
+    # โมเดลที่ใช้สรุป log — เลือกจาก dropdown ในหน้า Settings (รายชื่อดึงจากคีย์ตัวที่ตั้งไว้)
     return get_setting("gemini_model")
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
@@ -29,7 +29,7 @@ FALLBACK_TIMEOUT_SEC = 120
 
 
 def timeout_sec() -> int:
-    """เวลารอ Google ตอบกลับ — **ตั้งจากหน้า System Settings ได้** เพราะโมเดลแต่ละตัวช้าไม่เท่ากันมาก"""
+    # เวลารอ Google ตอบกลับ — **ตั้งจากหน้า System Settings ได้** เพราะโมเดลแต่ละตัวช้าไม่เท่ากันมาก
     try:
         value = int(get_setting("gemini_timeout_sec"))
     except (TypeError, ValueError):

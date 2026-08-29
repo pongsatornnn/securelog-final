@@ -1,4 +1,4 @@
-"""LINE Messaging API client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency"""
+# LINE Messaging API client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency
 
 import base64
 import hashlib
@@ -11,7 +11,7 @@ from LINE_API import config
 
 
 def verify_signature(body: bytes, signature: str | None) -> bool:
-    """ตรวจว่า request มาจาก LINE จริง — HMAC-SHA256(channel_secret, raw_body) base64"""
+    # ตรวจว่า request มาจาก LINE จริง — HMAC-SHA256(channel_secret, raw_body) base64
     if not signature or not config.channel_secret():
         return False
 
@@ -48,7 +48,7 @@ def _post(url: str, payload: dict, timeout: int = 10) -> tuple[int, str]:
 
 
 def get_profile(user_id: str, timeout: int = 10) -> dict | None:
-    """ดึง profile ({displayName, userId, ...}) — คืน None ถ้าไม่สำเร็จ"""
+    # ดึง profile ({displayName, userId, ...}) — คืน None ถ้าไม่สำเร็จ
     if not config.channel_access_token():
         return None
 
@@ -67,7 +67,7 @@ def get_profile(user_id: str, timeout: int = 10) -> dict | None:
 
 
 def get_bot_info(timeout: int = 10) -> tuple[int, dict]:
-    """ข้อมูลของ OA ตัวเอง — ใช้เช็คว่า channel access token ที่ตั้งไว้ใช้ได้จริงไหม"""
+    # ข้อมูลของ OA ตัวเอง — ใช้เช็คว่า channel access token ที่ตั้งไว้ใช้ได้จริงไหม
     req = urllib.request.Request(
         config.BOT_INFO_URL,
         method="GET",
@@ -89,7 +89,7 @@ def get_bot_info(timeout: int = 10) -> tuple[int, dict]:
 
 
 def push_text(user_id: str, text: str) -> bool:
-    """ส่งข้อความ text หา userId เดียว"""
+    # ส่งข้อความ text หา userId เดียว
     status, body = _post(
         config.PUSH_URL,
         {"to": user_id, "messages": [{"type": "text", "text": text}]},
@@ -101,7 +101,7 @@ def push_text(user_id: str, text: str) -> bool:
 
 
 def multicast_text(user_ids: list[str], text: str) -> bool:
-    """ส่งข้อความ text หาหลาย userId (สูงสุด 500/ครั้ง — แบ่ง batch ให้เอง)"""
+    # ส่งข้อความ text หาหลาย userId (สูงสุด 500/ครั้ง — แบ่ง batch ให้เอง)
     if not user_ids:
         return True
 

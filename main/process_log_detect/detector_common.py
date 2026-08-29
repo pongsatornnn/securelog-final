@@ -1,4 +1,4 @@
-"""โค้ดกลางที่ detector ทุกตัว (auth / web / firewall) ใช้ร่วมกัน"""
+# โค้ดกลางที่ detector ทุกตัว (auth / web / firewall) ใช้ร่วมกัน
 
 import json
 import time
@@ -52,7 +52,7 @@ def safe_json_loads(raw: Any, log_prefix: str = "DETECT") -> dict | None:
 
 
 def parse_agent_time_to_epoch(log: dict) -> float:
-    """ใช้เวลา log ฝั่ง Agent เป็นหลักในการนับ window"""
+    # ใช้เวลา log ฝั่ง Agent เป็นหลักในการนับ window
     value = log.get("agent_event_time_thai")
 
     if not value:
@@ -74,7 +74,7 @@ def prune_old_events(
     window_seconds: int,
     max_events: int,
 ) -> None:
-    """ตัด event ที่พ้น window + cap จำนวนสูงสุดกัน memory โตไม่จำกัด"""
+    # ตัด event ที่พ้น window + cap จำนวนสูงสุดกัน memory โตไม่จำกัด
     while events and now_ts - events[0]["ts"] > window_seconds:
         events.popleft()
 
@@ -102,7 +102,7 @@ async def save_alert_to_db(
     source_ip: str | None = None,
     username: str | None = None,
 ) -> None:
-    """เขียน alert ลง DB — merge เข้าแถวเดิมของเหตุการณ์เดียวกันที่ยัง active ใน cooldown"""
+    # เขียน alert ลง DB — merge เข้าแถวเดิมของเหตุการณ์เดียวกันที่ยัง active ใน cooldown
     try:
         first_event_at = None
         last_event_at = None
@@ -173,7 +173,7 @@ async def save_alert_to_db(
 # ============================================================
 
 def seed_rules(loop: asyncio.AbstractEventLoop, rule_keys, log_prefix: str) -> None:
-    """เรียก get_rule ครั้งแรกของแต่ละ rule เพื่อ seed ค่า default ลง DB"""
+    # เรียก get_rule ครั้งแรกของแต่ละ rule เพื่อ seed ค่า default ลง DB
     for rule_key in rule_keys:
         try:
             loop.run_until_complete(get_rule(rule_key))
@@ -188,7 +188,7 @@ def run_detector_loop(
     startup_messages: tuple[str, ...] = (),
     on_start: Callable[[asyncio.AbstractEventLoop], None] | None = None,
 ) -> None:
-    """โครง worker มาตรฐานของ detector: blpop จาก queue -> decode -> process_log(log, loop)"""
+    # โครง worker มาตรฐานของ detector: blpop จาก queue -> decode -> process_log(log, loop)
     r = get_redis()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

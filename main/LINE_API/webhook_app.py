@@ -1,4 +1,4 @@
-"""App เล็กที่มี "เฉพาะ" endpoint /line/webhook — เอาไว้เปิด public ผ่าน tunnel"""
+# App เล็กที่มี "เฉพาะ" endpoint /line/webhook — เอาไว้เปิด public ผ่าน tunnel
 
 from fastapi import FastAPI
 

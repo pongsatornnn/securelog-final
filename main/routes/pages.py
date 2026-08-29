@@ -1,4 +1,4 @@
-"""เส้นทางหน้าเว็บที่ต้อง login (render HTML template อย่างเดียว ไม่มี logic ทางธุรกิจ)"""
+# เส้นทางหน้าเว็บที่ต้อง login (render HTML template อย่างเดียว ไม่มี logic ทางธุรกิจ)
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse

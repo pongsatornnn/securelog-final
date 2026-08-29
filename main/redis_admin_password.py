@@ -1,4 +1,4 @@
-"""เปลี่ยนรหัสผ่าน Redis ของจริงจากหน้า System Settings — ทั้งบัญชีของ central และของ agent"""
+# เปลี่ยนรหัสผ่าน Redis ของจริงจากหน้า System Settings — ทั้งบัญชีของ central และของ agent
 
 import os
 import re
@@ -36,7 +36,7 @@ class RotationError(RuntimeError):
 # ── ยืนยันรหัสเดิม ────────────────────────────────────────────────────────
 
 def verify_current_password(typed: str) -> None:
-    """ให้แอดมินยืนยันรหัสที่ใช้อยู่ก่อนเปลี่ยน — กันการกดพลาดและกันคนที่ยืม session ที่เปิดค้างไว้"""
+    # ให้แอดมินยืนยันรหัสที่ใช้อยู่ก่อนเปลี่ยน — กันการกดพลาดและกันคนที่ยืม session ที่เปิดค้างไว้
     current = REDIS_CONFIG.get("password") or ""
 
     if not hmac.compare_digest(typed.encode("utf-8"), current.encode("utf-8")):
@@ -54,7 +54,7 @@ def _read_text(path: str, what: str) -> str:
 
 
 def _require_writable(path: str, what: str) -> None:
-    """เช็คสิทธิ์เขียนตั้งแต่ตอน pre-flight — ไม่งั้นจะไปพังตอนเขียน .env ซึ่งเป็นจังหวะที่"""
+    # เช็คสิทธิ์เขียนตั้งแต่ตอน pre-flight — ไม่งั้นจะไปพังตอนเขียน .env ซึ่งเป็นจังหวะที่
     if not os.access(path, os.W_OK):
         raise RotationError(f"เขียน{what} ({path}) ไม่ได้ — process นี้ไม่มีสิทธิ์เขียนไฟล์")
 
@@ -64,7 +64,7 @@ def _require_writable(path: str, what: str) -> None:
 
 
 def _write_atomic(path: str, content: str) -> None:
-    """เขียนทับแบบ atomic (temp ในโฟลเดอร์เดียวกัน -> os.replace) — ไฟล์ปลายทางจะไม่มีสถานะ"""
+    # เขียนทับแบบ atomic (temp ในโฟลเดอร์เดียวกัน -> os.replace) — ไฟล์ปลายทางจะไม่มีสถานะ
     folder = os.path.dirname(path) or "."
     mode = os.stat(path).st_mode & 0o777
 
@@ -86,7 +86,7 @@ def _write_atomic(path: str, content: str) -> None:
 
 
 def _backup(path: str) -> str:
-    """สำเนาไฟล์เดิมไว้ข้าง ๆ ก่อนแก้ — ชื่อลงท้ายด้วยเวลา เหมือน users.acl.bak.* ที่เคยทำด้วยมือ"""
+    # สำเนาไฟล์เดิมไว้ข้าง ๆ ก่อนแก้ — ชื่อลงท้ายด้วยเวลา เหมือน users.acl.bak.* ที่เคยทำด้วยมือ
     dest = f"{path}.bak.{datetime.now():%Y%m%d%H%M%S}"
     shutil.copy2(path, dest)
     return dest
@@ -99,7 +99,7 @@ def _restore(backup_path: str, path: str) -> None:
 # ── จัดการบรรทัดใน users.acl ─────────────────────────────────────────────
 
 def _find_user_line(lines: list[str], username: str) -> int:
-    """หา index ของบรรทัด `user <username> ...` — คืน -1 ถ้าไม่เจอ"""
+    # หา index ของบรรทัด `user <username> ...` — คืน -1 ถ้าไม่เจอ
     found = [i for i, raw in enumerate(lines)
              if (parts := raw.split()) and len(parts) >= 2 and parts[0] == "user" and parts[1] == username]
 
@@ -111,14 +111,14 @@ def _find_user_line(lines: list[str], username: str) -> int:
 
 
 def _is_password_token(token: str, index: int) -> bool:
-    """token ที่เกี่ยวกับรหัสผ่านของ ACL: `>รหัส` (เพิ่ม) · `<รหัส` (ลบ) · `#hash` · `nopass`"""
+    # token ที่เกี่ยวกับรหัสผ่านของ ACL: `>รหัส` (เพิ่ม) · `<รหัส` (ลบ) · `#hash` · `nopass`
     if index < 2:
         return False
     return token.startswith((">", "<", "#")) or token == "nopass"
 
 
 def _rewrite_acl_line(line: str, new_password: str) -> str:
-    """แทน token รหัสตัวแรกด้วย `>รหัสใหม่` แล้วทิ้ง token รหัสอื่นที่เหลือ (ถ้ามีหลายรหัส)"""
+    # แทน token รหัสตัวแรกด้วย `>รหัสใหม่` แล้วทิ้ง token รหัสอื่นที่เหลือ (ถ้ามีหลายรหัส)
     parts = line.split()
     out: list[str] = []
     replaced = False
@@ -147,7 +147,7 @@ def _env_key_pattern(key: str) -> re.Pattern:
 
 
 def _replace_env_value(text: str, key: str, value: str) -> str:
-    """แทนค่าในบรรทัดของ key นั้น โดยคงบรรทัดอื่นทั้งไฟล์ไว้เหมือนเดิมทุกตัวอักษร"""
+    # แทนค่าในบรรทัดของ key นั้น โดยคงบรรทัดอื่นทั้งไฟล์ไว้เหมือนเดิมทุกตัวอักษร
     lines = text.splitlines(keepends=True)
     pattern = _env_key_pattern(key)
 
@@ -168,7 +168,7 @@ def _has_env_key(text: str, key: str) -> bool:
 # ── การเชื่อมต่อ ─────────────────────────────────────────────────────────
 
 def _connect(password: str, username: str | None = None) -> redis.Redis:
-    """client ชั่วคราวของงานนี้เท่านั้น — ไม่ใช้ตัวกลางจาก redis_client เพราะ"""
+    # client ชั่วคราวของงานนี้เท่านั้น — ไม่ใช้ตัวกลางจาก redis_client เพราะ
     config = {
         **REDIS_CONFIG,
         "password": password,
@@ -184,7 +184,7 @@ def _connect(password: str, username: str | None = None) -> redis.Redis:
 
 
 def _acl_path(client: redis.Redis) -> str:
-    """ถาม Redis เองว่า aclfile ชี้ไปไฟล์ไหน — ตรงกว่าเดาจาก path ในโปรเจกต์"""
+    # ถาม Redis เองว่า aclfile ชี้ไปไฟล์ไหน — ตรงกว่าเดาจาก path ในโปรเจกต์
     try:
         value = (client.config_get("aclfile") or {}).get("aclfile", "")
     except redis.exceptions.RedisError:
@@ -202,7 +202,7 @@ def _acl_path(client: redis.Redis) -> str:
 
 
 def _reload_acl(password: str) -> bool:
-    """สั่ง ACL LOAD ด้วย connection ใหม่ — ใช้ตอน rollback (คืนไฟล์แล้วดันของในหน่วยความจำกลับ)"""
+    # สั่ง ACL LOAD ด้วย connection ใหม่ — ใช้ตอน rollback (คืนไฟล์แล้วดันของในหน่วยความจำกลับ)
     try:
         _connect(password).execute_command("ACL", "LOAD")
         return True
@@ -214,7 +214,7 @@ def _reload_acl(password: str) -> bool:
 # ── ตรวจความพร้อมก่อนให้กดปุ่ม ───────────────────────────────────────────
 
 def preflight() -> dict:
-    """เช็คว่าเปลี่ยนรหัสผ่านหน้าเว็บได้ไหม โดย **ไม่แตะอะไรเลย** — หน้าเว็บเรียกตอนโหลด"""
+    # เช็คว่าเปลี่ยนรหัสผ่านหน้าเว็บได้ไหม โดย **ไม่แตะอะไรเลย** — หน้าเว็บเรียกตอนโหลด
     username = REDIS_CONFIG.get("username") or "default"
     info = {"username": username, "acl_path": "", "env_path": ENV_PATH, "ok": False, "problem": ""}
 
@@ -250,7 +250,7 @@ def preflight() -> dict:
 # ── ตัวจริง ──────────────────────────────────────────────────────────────
 
 def rotate_admin_password(new_password: str, typed_current: str) -> dict:
-    """เปลี่ยนรหัสของ user admin ให้ครบวงจร — เป็นฟังก์ชัน sync (มี blocking IO) ให้ route"""
+    # เปลี่ยนรหัสของ user admin ให้ครบวงจร — เป็นฟังก์ชัน sync (มี blocking IO) ให้ route
     username = REDIS_CONFIG.get("username") or "default"
     current_password = REDIS_CONFIG.get("password") or ""
 
@@ -378,13 +378,13 @@ FILEBEAT_USER = "default"
 
 
 def agent_acl_users() -> list[str]:
-    """ผู้ใช้ที่ต้องถูกเปลี่ยนรหัสพร้อมกัน — ชื่อของ agent_core ตั้งได้จากหน้า System Settings"""
+    # ผู้ใช้ที่ต้องถูกเปลี่ยนรหัสพร้อมกัน — ชื่อของ agent_core ตั้งได้จากหน้า System Settings
     agent_user = get_setting("agent_redis_username") or "agent_node"
     return [agent_user] if agent_user == FILEBEAT_USER else [agent_user, FILEBEAT_USER]
 
 
 def apply_agent_password(new_password: str) -> dict:
-    """เขียนรหัสใหม่ลงบรรทัดของ agent ใน users.acl **ทั้งสองบัญชี** แล้วสั่ง ACL LOAD ให้เลย"""
+    # เขียนรหัสใหม่ลงบรรทัดของ agent ใน users.acl **ทั้งสองบัญชี** แล้วสั่ง ACL LOAD ให้เลย
     validate_password(new_password)
 
     admin_password = REDIS_CONFIG.get("password") or ""
@@ -460,7 +460,7 @@ def apply_agent_password(new_password: str) -> dict:
 
 
 def restore_agent_acl(acl_path: str, acl_backup: str) -> bool:
-    """คืนไฟล์ ACL จากไฟล์สำรองแล้วสั่ง ACL LOAD — ใช้ตอนขั้นตอนหลัง apply_agent_password พัง"""
+    # คืนไฟล์ ACL จากไฟล์สำรองแล้วสั่ง ACL LOAD — ใช้ตอนขั้นตอนหลัง apply_agent_password พัง
     try:
         _restore(acl_backup, acl_path)
     except OSError as e:

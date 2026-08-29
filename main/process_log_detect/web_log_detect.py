@@ -1,4 +1,4 @@
-"""Detector: Web attack จาก normalized web access log — 2 แบบใน worker เดียว"""
+# Detector: Web attack จาก normalized web access log — 2 แบบใน worker เดียว
 
 import re
 import time
@@ -62,7 +62,7 @@ _last_signature_reload: float = 0.0
 
 
 def compile_patterns(patterns: list[str]) -> re.Pattern | None:
-    """compile pattern ทั้งหมดของชนิดหนึ่งรวมเป็น regex เดียว (IGNORECASE)"""
+    # compile pattern ทั้งหมดของชนิดหนึ่งรวมเป็น regex เดียว (IGNORECASE)
     valid: list[str] = []
 
     for pattern in patterns:
@@ -79,7 +79,7 @@ def compile_patterns(patterns: list[str]) -> re.Pattern | None:
 
 
 def reload_signatures(loop: asyncio.AbstractEventLoop, force: bool = False) -> None:
-    """โหลด pattern จาก DB/cache มา compile เก็บใน memory"""
+    # โหลด pattern จาก DB/cache มา compile เก็บใน memory
     global _last_signature_reload
 
     now_ts = time.time()
@@ -109,7 +109,7 @@ def clear_web_count(key: str) -> None:
 # ============================================================
 
 def decode_url(value: str) -> str:
-    """decode URL-encoding สองชั้น เพื่อดัก payload ที่ encode มา (เช่น %2e%2e%2f, %253c)"""
+    # decode URL-encoding สองชั้น เพื่อดัก payload ที่ encode มา (เช่น %2e%2e%2f, %253c)
     try:
         once = unquote_plus(value)
         twice = unquote_plus(once)
@@ -119,7 +119,7 @@ def decode_url(value: str) -> str:
 
 
 def build_haystack(log: dict) -> str:
-    """รวมทุกจุดที่ payload อาจซ่อนอยู่ (path ดิบ + path decode + user_agent + raw)"""
+    # รวมทุกจุดที่ payload อาจซ่อนอยู่ (path ดิบ + path decode + user_agent + raw)
     path = str(log.get("path") or "")
     user_agent = str(log.get("user_agent") or "")
     raw_message = str(log.get("raw_message") or "")
@@ -134,7 +134,7 @@ def build_haystack(log: dict) -> str:
 
 
 def detect_attack_types(haystack: str) -> list[tuple[str, str]]:
-    """คืน list ของ (detection_type, signature ที่ match) เรียงตามความสำคัญ"""
+    # คืน list ของ (detection_type, signature ที่ match) เรียงตามความสำคัญ
     matches: list[tuple[str, str]] = []
 
     for detection_type in ATTACK_PRIORITY:
@@ -209,7 +209,7 @@ def process_http_flood(
     now_ts: float,
     loop: asyncio.AbstractEventLoop,
 ) -> None:
-    """App-level DoS: นับจำนวน request "ทั้งหมด" ต่อ source_ip ใน sliding window"""
+    # App-level DoS: นับจำนวน request "ทั้งหมด" ต่อ source_ip ใน sliding window
     if not source_ip:
         return
 
@@ -352,7 +352,7 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
 # ============================================================
 
 def prepare_web_detector(loop: asyncio.AbstractEventLoop) -> None:
-    """seed rule ลง DB + โหลด signature ครั้งแรกให้พร้อมก่อนรับ log"""
+    # seed rule ลง DB + โหลด signature ครั้งแรกให้พร้อมก่อนรับ log
     seed_rules(loop, RULE_KEY_BY_TYPE.values(), LOG_PREFIX)
     reload_signatures(loop, force=True)
     total = sum(1 for p in _compiled_signatures.values() if p is not None)

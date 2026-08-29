@@ -1,4 +1,4 @@
-"""CSRF protection แบบ signed double-submit cookie — ครอบ "ทุก" endpoint ที่เปลี่ยนข้อมูล"""
+# CSRF protection แบบ signed double-submit cookie — ครอบ "ทุก" endpoint ที่เปลี่ยนข้อมูล
 
 import os
 import hmac
@@ -44,7 +44,7 @@ def _is_exempt(path: str) -> bool:
 
 
 def _csrf_set_cookie_header(token: str) -> tuple[bytes, bytes]:
-    """สร้าง header ('set-cookie', ...) สำหรับ cookie csrf_token โดยยืม logic ของ Response.set_cookie"""
+    # สร้าง header ('set-cookie', ...) สำหรับ cookie csrf_token โดยยืม logic ของ Response.set_cookie
     tmp = Response()
     tmp.set_cookie(
         key=CSRF_COOKIE_NAME,

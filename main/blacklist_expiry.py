@@ -1,4 +1,4 @@
-"""Blacklist expiry sweeper (background worker)"""
+# Blacklist expiry sweeper (background worker)
 
 import asyncio
 from datetime import datetime

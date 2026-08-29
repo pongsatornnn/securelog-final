@@ -1,4 +1,4 @@
-"""Gemini REST client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency"""
+# Gemini REST client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency
 
 import json
 import re
@@ -13,7 +13,7 @@ _MODEL_VERSION_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)")
 
 
 class GeminiError(Exception):
-    """error ที่รู้ที่มา — เก็บทั้งข้อความไทยที่สรุปแล้ว และคำตอบดิบจาก Google ไว้ด้วยกัน"""
+    # error ที่รู้ที่มา — เก็บทั้งข้อความไทยที่สรุปแล้ว และคำตอบดิบจาก Google ไว้ด้วยกัน
 
     def __init__(self, summary: str, *, http_code=None, api_status=None, api_message=None):
         self.summary = summary
@@ -24,14 +24,14 @@ class GeminiError(Exception):
 
     @property
     def full_message(self) -> str:
-        """ข้อความที่เอาไปโชว์ให้แอดมินได้เลย — สรุปไทยบรรทัดแรก ต้นฉบับจาก Google บรรทัดถัดไป"""
+        # ข้อความที่เอาไปโชว์ให้แอดมินได้เลย — สรุปไทยบรรทัดแรก ต้นฉบับจาก Google บรรทัดถัดไป
         if not self.api_message:
             return self.summary
         return f"{self.summary}\nGoogle ตอบกลับ: {self.api_message}"
 
 
 def _http_error(e: urllib.error.HTTPError) -> GeminiError:
-    """แปลง HTTPError เป็น GeminiError — อ่าน body ให้จบก่อนเสมอ ไม่งั้นข้อความจริงหายไป"""
+    # แปลง HTTPError เป็น GeminiError — อ่าน body ให้จบก่อนเสมอ ไม่งั้นข้อความจริงหายไป
     body = e.read().decode("utf-8", "replace")
     api_message = None
     api_status = None
@@ -64,7 +64,7 @@ def _http_error(e: urllib.error.HTTPError) -> GeminiError:
 
 
 def _request(url: str, payload: dict | None = None) -> dict:
-    """ยิงไป Gemini API แล้วคืน body ที่ parse แล้ว — ผิดพลาดโยน GeminiError ที่มีข้อความจาก Google"""
+    # ยิงไป Gemini API แล้วคืน body ที่ parse แล้ว — ผิดพลาดโยน GeminiError ที่มีข้อความจาก Google
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
 
     headers = {"x-goog-api-key": config.api_key()}
@@ -98,7 +98,7 @@ def _request(url: str, payload: dict | None = None) -> dict:
 
 
 def _thinking_config() -> dict | None:
-    """รุ่น 2.5 คุมการคิดด้วย `thinkingBudget` (จำนวน token) — รุ่น 3 ขึ้นไปเปลี่ยนเป็น"""
+    # รุ่น 2.5 คุมการคิดด้วย `thinkingBudget` (จำนวน token) — รุ่น 3 ขึ้นไปเปลี่ยนเป็น
     match = _MODEL_VERSION_RE.match(config.model().strip())
     if not match:
         return None
@@ -127,7 +127,7 @@ def _payload(prompt: str, thinking: dict | None) -> dict:
 
 
 def _generate_content(prompt: str) -> dict:
-    """ยิง generateContent ด้วยค่าที่ตั้งไว้ — ถ้าโมเดลไม่รับ thinkingConfig (400) ลองใหม่แบบไม่ส่ง"""
+    # ยิง generateContent ด้วยค่าที่ตั้งไว้ — ถ้าโมเดลไม่รับ thinkingConfig (400) ลองใหม่แบบไม่ส่ง
     thinking = _thinking_config()
 
     try:
@@ -141,7 +141,7 @@ def _generate_content(prompt: str) -> dict:
 
 
 def _extract_text(data: dict) -> str:
-    """ดึงข้อความจาก response ของ generateContent (candidates[0].content.parts[*].text)"""
+    # ดึงข้อความจาก response ของ generateContent (candidates[0].content.parts[*].text)
     candidates = data.get("candidates") or []
 
     if not candidates:
@@ -167,7 +167,7 @@ def _extract_text(data: dict) -> str:
 
 
 def generate(prompt: str) -> tuple[bool, str]:
-    """ส่ง prompt ไป Gemini — คืน (True, ข้อความสรุป) หรือ (False, ข้อความ error ที่อ่านรู้เรื่อง)"""
+    # ส่ง prompt ไป Gemini — คืน (True, ข้อความสรุป) หรือ (False, ข้อความ error ที่อ่านรู้เรื่อง)
     if not config.is_configured():
         return False, "ยังไม่ได้ตั้งค่า API Key ของ Gemini — ตั้งได้ที่หน้า System Settings"
 
@@ -185,7 +185,7 @@ def generate(prompt: str) -> tuple[bool, str]:
 
 
 def list_models() -> tuple[bool, list[dict] | str]:
-    """โมเดลที่ **คีย์ปัจจุบัน** เรียกได้จริง — หน้า Settings เอาไปทำตัวเลือกใน dropdown"""
+    # โมเดลที่ **คีย์ปัจจุบัน** เรียกได้จริง — หน้า Settings เอาไปทำตัวเลือกใน dropdown
     if not config.is_configured():
         return False, "ยังไม่ได้ตั้ง API Key — ตั้งคีย์แล้วบันทึกก่อนถึงจะดึงรายชื่อได้"
 
@@ -214,7 +214,7 @@ def list_models() -> tuple[bool, list[dict] | str]:
 
 
 def test_connection() -> dict:
-    """ยิงของจริงหนึ่งครั้งด้วยคีย์+โมเดลที่ตั้งอยู่ตอนนี้ — คืนผลที่หน้า Settings แสดงได้เลย"""
+    # ยิงของจริงหนึ่งครั้งด้วยคีย์+โมเดลที่ตั้งอยู่ตอนนี้ — คืนผลที่หน้า Settings แสดงได้เลย
     if not config.is_configured():
         return {"ok": False, "message": "ยังไม่ได้ตั้ง API Key"}
 

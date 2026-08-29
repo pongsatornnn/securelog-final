@@ -1,4 +1,4 @@
-"""ตัวกลางแปลง SecurityAlert (DB model) ให้เป็น dict ที่ dashboard.html ใช้แสดงผล"""
+# ตัวกลางแปลง SecurityAlert (DB model) ให้เป็น dict ที่ dashboard.html ใช้แสดงผล
 
 from shared import iso_utc
 from severity_cache import get_severity
@@ -32,7 +32,7 @@ def get_attack_type_label(detection_type: str, mode: str | None) -> str:
 
 
 async def build_alert_summary(alert, agent=None) -> dict:
-    """ใช้กับตารางหลัก (/api/alerts) และ SSE stream (/api/stream/alerts)"""
+    # ใช้กับตารางหลัก (/api/alerts) และ SSE stream (/api/stream/alerts)
     updated_at = alert.updated_at or alert.created_at
 
     return {
@@ -53,7 +53,7 @@ async def build_alert_summary(alert, agent=None) -> dict:
 
 
 async def build_alert_detail(alert, agent=None) -> dict:
-    """ใช้กับหน้ารายละเอียด (/api/alerts/{id}) เพิ่ม window_sec + raw_logs จาก related_logs"""
+    # ใช้กับหน้ารายละเอียด (/api/alerts/{id}) เพิ่ม window_sec + raw_logs จาก related_logs
     detail = await build_alert_summary(alert, agent)
 
     raw_logs = [
