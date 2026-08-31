@@ -320,12 +320,15 @@ async def add_signature(
             result = _to_dict(existing)
             result["duplicated"] = True
         else:
+            # pattern ที่อยู่ในชุด default ของระบบ ต้องติดป้าย "ของระบบ" ไม่ใช่ "เพิ่มเอง"
+            # (เคสจริง: ลบตัว default ทิ้งแล้วเพิ่มกลับเอง)
             signature = await create_detection_signature(
                 db,
                 detection_type=detection_type,
                 pattern=pattern,
                 category=category,
                 description=description,
+                is_default=pattern in set(default_signature_patterns(detection_type)),
             )
             result = _to_dict(signature)
             result["duplicated"] = False

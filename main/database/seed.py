@@ -162,6 +162,8 @@ async def seed_detection_signatures(db) -> int:
                 category=row.get("category") or CATEGORY_BY_TYPE.get(detection_type, "web"),
                 description=row.get("description"),
                 is_active=row.get("is_active", True),
+                # แถวชุดนี้คือ signature ของระบบ ไม่ใช่ของที่แอดมินเพิ่มเอง
+                is_default=True,
             )
             added += 1
 
