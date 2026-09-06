@@ -91,9 +91,29 @@ def clear_legacy_cookies(request: Request, response: Response):
         )
 
 
+def clear_shadow_cookies(request: Request, response: Response):
+    # ใบ "ชื่อเดียวกับที่ใช้อยู่" แต่ค้างที่ราก — เกิดตอนย้าย ROOT_PATH (เคยเสิร์ฟที่ราก -> ย้ายมาใต้ prefix)
+    # browser ส่งมาให้ทั้งสองใบ แล้ว starlette อ่านใบท้ายสุดชนะ = ใบเก่าที่รากบังใบใหม่
+    # อาการที่เจอ: กด logout แล้วไม่ออก (ลบได้เฉพาะใบใต้ prefix) และ CSRF อาจไม่ตรงกัน
+    path = cookie_path_for(request)
+    if path == LEGACY_COOKIE_PATH:
+        return
+    for base in (AUTH_COOKIE_BASE, CSRF_COOKIE_BASE):
+        name = cookie_name_for(request, base)
+        if name == base:
+            continue  # ชื่อกลาง ๆ ไม่มี suffix = อาจเป็นของ service อื่นบนโฮสต์เดียวกัน ห้ามแตะ
+        response.delete_cookie(
+            key=name,
+            path=LEGACY_COOKIE_PATH,
+            samesite="lax",
+            secure=COOKIE_SECURE,
+        )
+
+
 def set_auth_cookie(request: Request, response: Response, token: str):
     response.set_cookie(value=token, **auth_cookie_config(request))
     clear_legacy_cookies(request, response)
+    clear_shadow_cookies(request, response)
 
 
 def clear_auth_cookie(request: Request, response: Response):
@@ -105,6 +125,7 @@ def clear_auth_cookie(request: Request, response: Response):
         secure=COOKIE_SECURE,
     )
     clear_legacy_cookies(request, response)
+    clear_shadow_cookies(request, response)
 
 
 @router.get("/")
@@ -143,6 +164,7 @@ async def login_page(request: Request):
         context={},
     )
     clear_legacy_cookies(request, response)
+    clear_shadow_cookies(request, response)
     return response
 
 
