@@ -241,7 +241,7 @@ valid_redis_pass() {
 GENERATED_PASSWORDS=""
 WEAK_SECRETS=""   # รหัสที่อยู่ใน .env อยู่แล้วแต่ไม่ผ่านกติกา (เตือนซ้ำตอนจบ ไม่ขวางการทำงาน)
 ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญชี" ["รหัสเดิม"]
-    local var="$1" what="$2" def="${3:-}" cur ans hint
+    local var="$1" what="$2" def="${3:-}" cur ans ans2 choice mode
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
     if [ -n "$cur" ]; then
         if ! valid_redis_pass "$cur"; then
@@ -266,25 +266,60 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
         eval "$var=\$def"; ok "$var = ****** (unchanged, no tty)"; return
     fi
 
-    if [ -n "$def" ]; then hint="Enter = keep the current one, type 'new' = generate a new one"
-    else                   hint="Enter = generate"; fi
+    # ให้เลือกเป็นข้อ ๆ ว่าจะเอารหัสแบบไหน (ของเดิมต้องรู้เองว่า Enter = ใช้ค่าเดิม, พิมพ์ new = สุ่ม)
+    echo ""
+    echo "  Redis password for $what"
+    if [ -n "$def" ]; then
+        echo "    1) Keep the one it uses now   <- default"
+        echo "    2) Generate a strong one for me"
+        echo "    3) Type it myself"
+    else
+        echo "    1) Generate a strong one for me   <- default"
+        echo "    2) Type it myself"
+    fi
 
     while :; do
-        read -rsp "  Redis password for $what ($hint): " ans; echo
-        if [ -z "$ans" ] && [ -n "$def" ]; then
-            ans="$def"
-            ok "Kept the password this account already uses"
-            break
+        read -rp "  Pick a number [1]: " choice
+        choice="${choice:-1}"
+        if [ -n "$def" ]; then
+            case "$choice" in
+                1)  # ใช้ของเดิม — ถ้าของเดิมอ่อนก็เตือนไว้ (แต่ไม่ขวาง คนเลือกเองว่าจะเก็บไว้)
+                    if ! valid_redis_pass "$def"; then
+                        warn "The current $var does not meet the rules (min 12 chars) - keeping it as you asked"
+                        WEAK_SECRETS="$WEAK_SECRETS $var"
+                    fi
+                    eval "$var=\$def"
+                    ok "Kept the password this account already uses"
+                    return ;;
+                2) mode=generate; break ;;
+                3) mode=type; break ;;
+                *) echo "    !! No option '$choice' in the list (1-3) - try again" ;;
+            esac
+        else
+            case "$choice" in
+                1) mode=generate; break ;;
+                2) mode=type; break ;;
+                *) echo "    !! No option '$choice' in the list (1-2) - try again" ;;
+            esac
         fi
-        if [ -z "$ans" ] || [ "$ans" = "new" ]; then
-            ans="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
-            GENERATED_PASSWORDS="$GENERATED_PASSWORDS$var=$ans"$'\n'
-            ok "Password generated (shown at the end - save it)"
-            break
-        fi
-        valid_redis_pass "$ans" && break
-        err "Must be at least 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/ - try again"
     done
+
+    if [ "$mode" = "generate" ]; then
+        ans="$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')"
+        GENERATED_PASSWORDS="$GENERATED_PASSWORDS$var=$ans"$'\n'
+        ok "Password generated (shown at the end - save it)"
+    else
+        while :; do
+            read -rsp "  Type the password (12+ chars; A-Z a-z 0-9 _-.~@%+=:,/): " ans; echo
+            if ! valid_redis_pass "$ans"; then
+                err "Must be at least 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/ - try again"
+                continue
+            fi
+            read -rsp "  Type it again: " ans2; echo
+            [ "$ans" = "$ans2" ] && break
+            err "The two do not match - try again"
+        done
+    fi
     eval "$var=\$ans"
 }
 
@@ -397,14 +432,15 @@ norm_root_path() {  # "xxx" / "/xxx/" / "//a//b//" -> "/xxx", "/a/b" · "/" ห�
     [ -n "$v" ] && printf '/%s' "$v" || printf ''
 }
 
-# ค่าเดิม: ว่างใน .env = อยู่ที่ราก -> เสนอ "/" เป็นค่าตั้งต้นให้อ่านง่าย
-ROOT_PATH_DEFAULT="${ENV_DEFAULT[ROOT_PATH]:-${OLD_ROOT_PATH:-/}}"
+# ค่าตั้งต้นของคำถาม: ค่าที่ส่งมาทาง env > ค่าที่อยู่ใน .env ตอนนี้ > "/" (อยู่ที่ราก)
+# ใช้ OLD_ROOT_PATH เป็นหลักเพราะอ่านจาก .env ตั้งแต่ก่อนโหมด "ตั้งค่าใหม่ทั้งหมด" จะ unset ตัวแปรทิ้ง
+ROOT_PATH_DEFAULT="${ROOT_PATH:-${OLD_ROOT_PATH:-/}}"
 [ -n "$ROOT_PATH_DEFAULT" ] || ROOT_PATH_DEFAULT="/"
 
 # มีคนนั่งตอบอยู่ = ถามทุกครั้ง โดยเอาค่าที่ใช้อยู่เป็นค่าตั้งต้น (ไม่งั้นแก้ root path ไม่ได้เลย)
 if [ -t 0 ]; then
     case "$FROM_ENV_FILE" in
-        *" ROOT_PATH "*) ROOT_PATH_DEFAULT="${ROOT_PATH:-/}"; unset ROOT_PATH ;;
+        *" ROOT_PATH "*) unset ROOT_PATH ;;
     esac
 fi
 
