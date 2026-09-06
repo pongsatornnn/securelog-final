@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from shared import templates
+from base_path import strip_base, RELATIVE_URLS
 
 
 logger = logging.getLogger("securelog.errors")
@@ -18,7 +19,7 @@ INTERNAL_ERROR_DETAIL = "ระบบทำงานผิดพลาดระ�
 
 def _wants_html(request: Request) -> bool:
     # หน้าเว็บ (browser navigation) รับ HTML ส่วน fetch ของ frontend เรียกแต่ /api/* และรับ JSON
-    path = request.url.path
+    path = strip_base(request.url.path)
 
     if path.startswith("/api/") or path.startswith("/line/webhook"):
         return False
@@ -26,12 +27,21 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in request.headers.get("accept", "")
 
 
+def _asset_prefix(request: Request) -> str:
+    # โหมด relative: หน้า error โผล่ที่ path ลึกแค่ไหนก็ได้ (เช่น /a/b/c ที่ไม่มีจริง)
+    # ต้องถอยขึ้นให้ static ชี้ถูก ไม่งั้นหน้า error จะโหลด css ไม่ขึ้น
+    if not RELATIVE_URLS:
+        return ""
+    depth = max(len([s for s in request.url.path.split("/") if s]) - 1, 0)
+    return "../" * depth
+
+
 def _render_error(request: Request, status_code: int):
     # หน้า error แสดงแค่หมายเลข status — ไม่บอกสาเหตุหรือคำแนะนำใด ๆ ออกไปฝั่งผู้ใช้
     return templates.TemplateResponse(
         request,
         "error.html",
-        {"status_code": status_code},
+        {"status_code": status_code, "asset_prefix": _asset_prefix(request)},
         status_code=status_code,
     )
 

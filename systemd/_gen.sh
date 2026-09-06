@@ -33,6 +33,17 @@ if [ "${ASK_HOSTS:-0}" != "1" ]; then
     WEBHOOK_BIND_HOST="${WEBHOOK_BIND_HOST:-$(env_get WEBHOOK_BIND_HOST "$ENV_FILE")}"
 fi
 
+# ---- reverse proxy หน้า dashboard (nginx ฯลฯ) ----
+# มี proxy คั่น = socket ที่ uvicorn เห็นเป็นของ proxy ไม่ใช่ของ client -> login lockout กับ rate limit
+# ที่นับตาม IP จะรวมทุกคนเป็นก้อนเดียว (คนเดียวใส่รหัสผิดจนล็อก = ล็อกทุกคน)
+# ใส่ IP ของ proxy ที่เชื่อได้ (คั่นด้วย ,) แล้ว uvicorn จะอ่าน IP จริงจาก X-Forwarded-For ให้
+# ว่าง = ไม่มี proxy ไม่ต้องใส่ flag (ค่าเดิมของระบบ)
+FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-$(env_get FORWARDED_ALLOW_IPS "$ENV_FILE")}"
+PROXY_FLAGS=""
+if [ -n "$FORWARDED_ALLOW_IPS" ]; then
+    PROXY_FLAGS=" --proxy-headers --forwarded-allow-ips $FORWARDED_ALLOW_IPS"
+fi
+
 # ค่าตั้งต้นของ dashboard ไล่จาก "ของจริงที่สุด" ลงไป:
 WEB_DEFAULT="${BIND_HOST:-}"
 [ -n "$WEB_DEFAULT" ] || WEB_DEFAULT="$(installed_bind_host securelog-web.service)"
@@ -139,7 +150,7 @@ EOF
 
 # ตัวเว็บมีบล็อกเสริมเรื่องเวลาปิด — ดูคำอธิบายในบล็อกนั้น
 gen securelog-web "Web Dashboard (HTTPS)" \
-    "$UVICORN main:app --host $WEB_BIND_HOST --port 8000 --ssl-certfile $DASH_CERT --ssl-keyfile $DASH_KEY --timeout-graceful-shutdown 5" \
+    "$UVICORN main:app --host $WEB_BIND_HOST --port 8000 --ssl-certfile $DASH_CERT --ssl-keyfile $DASH_KEY --timeout-graceful-shutdown 5$PROXY_FLAGS" \
 '
 # ⚠️ ค่านี้กับ --timeout-graceful-shutdown ใน ExecStart คือตัวที่ทำให้ `systemctl restart` ไม่ค้าง — ห้ามลบ
 TimeoutStopSec=20

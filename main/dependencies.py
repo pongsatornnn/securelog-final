@@ -3,35 +3,36 @@ from fastapi import Request, HTTPException, status, Depends
 from auth import decode_token
 from database.connection import AsyncSessionLocal
 from database.crud import get_user
+from base_path import strip_base, rel_url, cookie_name_for, AUTH_COOKIE_BASE
 
 
-def _redirect_login() -> HTTPException:
+def _redirect_login(request: Request) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_303_SEE_OTHER,
-        headers={"Location": "/login"},
+        headers={"Location": rel_url(request, "/login")},
     )
 
 
 async def require_login(request: Request):
     # ยืนยันตัวตนจาก JWT cookie แล้ว "โหลดสถานะสดจาก DB" ทุก request — ไม่เชื่อค่า role/is_active/
-    token = request.cookies.get("access_token")
+    token = request.cookies.get(cookie_name_for(request, AUTH_COOKIE_BASE))
     if not token:
-        raise _redirect_login()
+        raise _redirect_login(request)
 
     payload = decode_token(token)
     if not payload:
-        raise _redirect_login()
+        raise _redirect_login(request)
 
     username = payload.get("sub")
     if not username:
-        raise _redirect_login()
+        raise _redirect_login(request)
 
     async with AsyncSessionLocal() as db:
         user = await get_user(db, username)
 
     # ถูกลบออกจากระบบ หรือถูกปิดใช้งาน -> session ตายทันที เด้งไปหน้า login
     if not user or not user.is_active:
-        raise _redirect_login()
+        raise _redirect_login(request)
 
     return {
         # id ไว้ให้ endpoint ที่เก็บสถานะรายบัญชี (เช่น สถานะอ่านแล้วของ alert) อ้างถึง user
@@ -46,10 +47,10 @@ async def require_login(request: Request):
 
 async def require_login_page(request: Request, user=Depends(require_login)):
     # ใช้กับ page route (render HTML) — เหมือน require_login แต่เพิ่ม redirect ไป /change-password
-    if user["must_change_password"] and request.url.path != "/change-password":
+    if user["must_change_password"] and strip_base(request.url.path) != "/change-password":
         raise HTTPException(
             status_code=status.HTTP_303_SEE_OTHER,
-            headers={"Location": "/change-password"},
+            headers={"Location": rel_url(request, "/change-password")},
         )
     return user
 

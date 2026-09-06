@@ -1,0 +1,22 @@
+/* ย้ายมาจาก templates/error.html (บล็อก <style> เดิม) */
+/* หน้านี้ไม่ extends base.html เพราะต้องแสดงได้ทั้งตอนล็อกอินอยู่และตอนยังไม่ล็อกอิน
+   (base.html ต้องมีตัวแปร user เสมอ) — แสดงแค่หมายเลข status ไม่บอกรายละเอียดอะไรเพิ่ม */
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.error-code {
+  font-size: 96px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--border-strong);
+}
+
+.error-code.is-server {
+  color: var(--danger);
+}

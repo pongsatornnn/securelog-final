@@ -5,162 +5,8 @@
 {% block topbar_title %}Manage Users{% endblock %}
 
 {% block head %}
-<style>
-  /* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
-     หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
-  .modal { --modal-width: 440px; }
-  .user-name {
-    font-weight: 700;
-    color: var(--text-main);
-  }
-
-  /* ─── ตารางผู้ใช้ ───
-     table-layout: fixed ให้ความกว้างมาจาก colgroup อย่างเดียว ไม่ขึ้นกับความยาวของ username
-     หรือปุ่มที่โผล่/หายตามสิทธิ์ของแต่ละแถว (แถว admin ที่ป้องกันไว้ไม่มีปุ่มปิดใช้งาน/ลบ) */
-  .user-table {
-    table-layout: fixed;
-  }
-
-  /* ความกว้างเป็น % ให้ทุกคอลัมน์ยืดหดพร้อมกัน ระยะห่างจึงสมดุลเท่ากันทุกขนาดจอ
-     (ถ้าใช้ px คอลัมน์แรกจะกินที่ว่างที่เหลือทั้งหมดคนเดียวเวลาจอกว้าง) */
-  .user-table .col-user    { width: 22%; }
-  .user-table .col-role    { width: 13%; }
-  .user-table .col-status  { width: 14%; }
-  .user-table .col-pwd     { width: 15%; }
-  .user-table .col-created { width: 18%; }
-  .user-table .col-action  { width: 18%; }
-
-  /* หัวคอลัมน์กับค่าข้างล่างจัดกึ่งกลางทั้งคู่ — ค่าในตารางนี้เป็นของสั้น ๆ (badge, วันที่,
-     dropdown) ที่สั้นกว่าความกว้างคอลัมน์มาก ถ้าชิดซ้ายจะลอยห่างจากหัวคอลัมน์ของตัวเอง */
-  .user-table th,
-  .user-table td {
-    text-align: center;
-  }
-
-  /* ยกเว้น Username — เป็นข้อความยาวไม่เท่ากันทุกแถว ชิดซ้ายแล้วชื่อเริ่มตรงกันทุกแถว
-     กวาดตาหาคนที่ต้องการได้เร็วกว่าแบบกึ่งกลางที่ขอบซ้ายของชื่อไม่ตรงกันสักแถว */
-  .user-table th:first-child,
-  .user-table td.stack-head {
-    text-align: left;
-  }
-
-  .user-table td {
-    overflow-wrap: anywhere;
-  }
-
-  /* ปุ่มใน Action ต้องไม่ตัดคำขึ้นบรรทัดใหม่กลางปุ่ม
-     (การจัดกึ่งกลางย้ายไปเป็นค่าตั้งต้นของ .row-actions ใน app.css แล้ว) */
-  .user-table .row-actions button {
-    white-space: nowrap;
-  }
-
-  /* ตั้งแต่แท็บเล็ตขึ้นไป: ตรึงความกว้างขั้นต่ำไว้ให้ทุกคอลัมน์พอกับเนื้อหา แล้วให้กรอบ
-     เลื่อนแนวนอนเองถ้าจอแคบกว่านั้น (.table-wrap ปกติเป็น overflow: hidden = โดนตัดหาย)
-     — ต่ำกว่า 640px ไม่แตะ เพราะตารางพับเป็นการ์ดด้วย .stack-table แล้ว */
-  @media (min-width: 641px) {
-    .table-wrap {
-      overflow-x: auto;
-    }
-
-    .user-table {
-      min-width: 1040px;
-    }
-  }
-
-  .badge-pending {
-    background: var(--warning-soft);
-    color: var(--warning);
-    border: 1px solid var(--warning-border);
-  }
-
-  .badge-ok {
-    background: var(--bg-raised);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-  }
-
-  .btn-delete {
-    background: transparent;
-    border: 1px solid var(--danger-border);
-    border-radius: var(--radius);
-    padding: 7px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--danger);
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .btn-delete:hover {
-    border-color: var(--danger);
-    background: var(--danger-soft);
-    color: var(--danger);
-  }
-
-  .btn-danger:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .role-select {
-    width: 100%;
-    text-align: center;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text-main);
-    background: var(--bg-raised);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 3px 8px;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .role-select:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 1px var(--primary);
-  }
-
-  .role-select:disabled {
-    background: var(--bg-main);
-    color: var(--text-dim);
-    cursor: not-allowed;
-  }
-
-  .btn-toggle {
-    background: transparent;
-    border: 1px solid var(--warning-border);
-    border-radius: var(--radius);
-    padding: 7px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--warning);
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .btn-toggle:hover {
-    border-color: var(--warning);
-    background: var(--warning-soft);
-    color: var(--warning);
-  }
-
-  .form-group {
-    margin-bottom: 16px;
-  }
-
-  .error-box {
-    margin-top: 12px;
-    background: var(--danger-soft);
-    border: 1px solid var(--danger-border);
-    color: var(--danger);
-    border-radius: var(--radius);
-    padding: 12px;
-    font-size: 13px;
-    line-height: 1.5;
-    font-weight: 600;
-  }
-</style>
+  <link rel="stylesheet" href="{{ static_url('css/manage_users.css') }}">
+<link rel="stylesheet" href="{{ static_url('css/password_policy.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -283,7 +129,15 @@
       <div class="form-group">
         <label class="form-label">Password</label>
         <input class="form-input" type="password" x-model="createForm.password" :disabled="creating">
-        <div class="form-hint">อย่างน้อย 8 ตัวอักษร</div>
+        <div class="pw-check-title">รหัสผ่านต้องผ่านทุกข้อ</div>
+        <ul class="pw-check">
+          <template x-for="c in createChecks()" :key="c.id">
+            <li :class="c.passed ? 'ok' : 'bad'">
+              <span class="mark" x-text="c.passed ? '✓' : '✗'"></span>
+              <span x-text="c.label"></span>
+            </li>
+          </template>
+        </ul>
       </div>
 
       <div class="form-group">
@@ -319,12 +173,20 @@
       <div class="form-group">
         <label class="form-label">รหัสผ่านใหม่</label>
         <input class="form-input" type="password" x-model="resetForm.newPassword" :disabled="resetting">
-        <div class="form-hint">อย่างน้อย 8 ตัวอักษร</div>
+        <div class="pw-check-title">รหัสผ่านต้องผ่านทุกข้อ</div>
+        <ul class="pw-check">
+          <template x-for="c in resetChecks()" :key="c.id">
+            <li :class="c.passed ? 'ok' : 'bad'">
+              <span class="mark" x-text="c.passed ? '✓' : '✗'"></span>
+              <span x-text="c.label"></span>
+            </li>
+          </template>
+        </ul>
       </div>
 
       <div class="modal-actions">
         <button class="btn-secondary" @click="closeResetModal()" :disabled="resetting">ยกเลิก</button>
-        <button class="btn-primary" @click="resetPassword()" :disabled="resetting || resetForm.newPassword.length < 8">
+        <button class="btn-primary" @click="resetPassword()" :disabled="resetting || !canReset()">
           <span x-show="!resetting">บันทึก</span>
           <span x-show="resetting">กำลังบันทึก...</span>
         </button>
@@ -365,237 +227,9 @@
 
 {% block scripts %}
 <script>
-  function manageUsersApp() {
-    return {
-      users: [],
-
-      // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
-      loading: true,
-      loadError: '',
-
-      showCreateModal: false,
-      creating: false,
-      createError: '',
-      createForm: { username: '', password: '', role: 'user' },
-
-      showResetModal: false,
-      resetting: false,
-      resetError: '',
-      resetTarget: null,
-      resetForm: { newPassword: '' },
-
-      currentUsername: "{{ user.username }}",
-
-      showDeleteModal: false,
-      deleting: false,
-      deleteError: '',
-      deleteTarget: null,
-
-      async loadUsers() {
-        this.loading = true
-
-        try {
-          const res = await fetch('/api/users')
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            throw new Error(data.detail || `เซิร์ฟเวอร์ตอบกลับ ${res.status}`)
-          }
-          this.users = await res.json()
-          this.loadError = ''
-        } catch (err) {
-          this.loadError = err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'
-          console.error('โหลด users ไม่สำเร็จ', err)
-        } finally {
-          this.loading = false
-        }
-      },
-
-      openCreateModal() {
-        this.createError = ''
-        this.createForm = { username: '', password: '', role: 'user' }
-        this.showCreateModal = true
-      },
-
-      closeCreateModal() {
-        if (this.creating) return
-        this.showCreateModal = false
-      },
-
-      canCreate() {
-        return this.createForm.username.trim().length >= 3
-          && this.createForm.password.length >= 8
-          && this.createForm.role.trim()
-      },
-
-      async createUser() {
-        this.createError = ''
-        this.creating = true
-
-        try {
-          const res = await fetch('/api/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              username: this.createForm.username.trim(),
-              password: this.createForm.password,
-              role: this.createForm.role.trim(),
-            }),
-          })
-
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.detail || 'สร้าง user ไม่สำเร็จ')
-
-          await this.loadUsers()
-          this.showCreateModal = false
-        } catch (err) {
-          this.createError = err.message
-        } finally {
-          this.creating = false
-        }
-      },
-
-      openResetModal(u) {
-        this.resetError = ''
-        this.resetTarget = u
-        this.resetForm = { newPassword: '' }
-        this.showResetModal = true
-      },
-
-      closeResetModal() {
-        if (this.resetting) return
-        this.showResetModal = false
-        this.resetTarget = null
-      },
-
-      async resetPassword() {
-        if (!this.resetTarget) return
-
-        this.resetError = ''
-        this.resetting = true
-
-        try {
-          const res = await fetch(`/api/users/${this.resetTarget.id}/reset-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ new_password: this.resetForm.newPassword }),
-          })
-
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.detail || 'ตั้งรหัสผ่านใหม่ไม่สำเร็จ')
-
-          await this.loadUsers()
-          this.showResetModal = false
-        } catch (err) {
-          this.resetError = err.message
-        } finally {
-          this.resetting = false
-        }
-      },
-
-      openDeleteModal(u) {
-        this.deleteError = ''
-        this.deleteTarget = u
-        this.showDeleteModal = true
-      },
-
-      closeDeleteModal() {
-        if (this.deleting) return
-        this.showDeleteModal = false
-        this.deleteTarget = null
-      },
-
-      async deleteUser() {
-        if (!this.deleteTarget) return
-
-        this.deleteError = ''
-        this.deleting = true
-
-        try {
-          const res = await fetch(`/api/users/${this.deleteTarget.id}`, {
-            method: 'DELETE',
-          })
-
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.detail || 'ลบ user ไม่สำเร็จ')
-
-          await this.loadUsers()
-          this.showDeleteModal = false
-          this.deleteTarget = null
-        } catch (err) {
-          this.deleteError = err.message
-        } finally {
-          this.deleting = false
-        }
-      },
-
-      async changeRole(u, newRole) {
-        if (newRole === u.role) return
-
-        const ok = await this.$store.ui.confirm({
-          title: 'เปลี่ยนสิทธิ์ผู้ใช้',
-          message: newRole === 'admin'
-            ? 'ผู้ใช้คนนี้จะได้สิทธิ์ทั้งหมดในระบบ'
-            : 'ผู้ใช้คนนี้จะเสียสิทธิ์ admin ทันที ',
-          detail: `${u.username}: ${u.role} → ${newRole}`,
-          confirmText: 'เปลี่ยนสิทธิ์',
-          danger: newRole !== 'admin',
-        })
-
-        if (!ok) {
-          await this.loadUsers()   // ยกเลิก -> รีเซ็ต dropdown กลับค่าเดิม
-          return
-        }
-
-        try {
-          const res = await fetch(`/api/users/${u.id}/set-role`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ role: newRole }),
-          })
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.detail || 'เปลี่ยน role ไม่สำเร็จ')
-
-          this.$store.ui.success(`เปลี่ยน ${u.username} เป็น ${newRole} แล้ว`)
-        } catch (err) {
-          this.$store.ui.error(err.message)
-        } finally {
-          await this.loadUsers()
-        }
-      },
-
-      async toggleActive(u) {
-        const next = !u.is_active
-
-        if (!next) {
-          const ok = await this.$store.ui.confirm({
-            title: 'ปิดใช้งานบัญชี',
-            message: 'ผู้ใช้จะถูกเด้งออกจากระบบทันทีในคำขอถัดไป และเข้าสู่ระบบใหม่ไม่ได้จนกว่าจะเปิดใช้งานอีกครั้ง',
-            detail: u.username,
-            confirmText: 'ปิดใช้งาน',
-            danger: true,
-          })
-          if (!ok) return
-        }
-
-        try {
-          const res = await fetch(`/api/users/${u.id}/set-active`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ is_active: next }),
-          })
-          const data = await res.json()
-          if (!res.ok) throw new Error(data.detail || 'อัปเดตสถานะไม่สำเร็จ')
-
-          this.$store.ui.success(
-            (next ? 'เปิดใช้งาน' : 'ปิดใช้งาน') + ` ${u.username} แล้ว`
-          )
-        } catch (err) {
-          this.$store.ui.error(err.message)
-        } finally {
-          await this.loadUsers()
-        }
-      },
-    }
-  }
+  // ค่าจาก server ที่ js ต้องใช้ — ประกาศไว้ตรงนี้ที่เดียว ที่เหลืออยู่ในไฟล์ static
+  window.PAGE_DATA = { username: {{ user.username | tojson }} };
 </script>
+<script src="{{ static_url('js/password_policy.js') }}"></script>
+<script src="{{ static_url('js/manage_users.js') }}"></script>
 {% endblock %}

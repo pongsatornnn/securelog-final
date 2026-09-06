@@ -1,0 +1,100 @@
+/* ย้ายมาจาก templates/signatures.html (บล็อก <style> เดิม) */
+/* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
+   หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
+.modal { --modal-width: 520px; }
+.pattern-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--text-main);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  /* ตัดเฉพาะตอนที่ยาวเกินคอลัมน์จริง ๆ — break-all จะตัดทุกจุดที่ชนขอบ ทำให้ regex
+     อ่านยากกว่าเดิม (ชุดอักขระอย่าง (?:...) หรือ [a-z]{2,} ขาดกลางคำ) */
+  overflow-wrap: anywhere;
+  display: inline-block;
+  max-width: 100%;
+}
+
+tr.is-off td .pattern-code {
+  color: var(--text-dim);
+  background: var(--bg-main);
+}
+
+/* ─── ตาราง signature ของทุกหมวด — แนวเดียวกับหน้า Detection Rules ───
+   แต่ละหมวดเป็นคนละ <table> ถ้าปล่อยให้กว้างตามเนื้อหา คอลัมน์จะเยื้องกันทุกหมวด
+   เพราะความยาว pattern ไม่เท่ากัน — ตรึงด้วย colgroup ชุดเดียวกันทุกตาราง */
+.sig-table {
+  table-layout: fixed;
+}
+
+.sig-table .col-status { width: 120px; }
+.sig-table .col-action { width: 250px; }   /* 3 ปุ่ม: เปิด/ปิด · แก้ไข · ลบ */
+
+/* คำอธิบายของ pattern — ตัวเล็กใต้ regex ไม่ต้องเพิ่มคอลัมน์ให้ตารางแน่นขึ้น
+   (แถวไหนไม่มีคำอธิบายก็ไม่กินที่เลย) */
+.sig-desc {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+tr.is-off td .sig-desc {
+  color: var(--text-dim);
+}
+
+.sig-table td {
+  overflow-wrap: anywhere;
+}
+
+/* หัวข้อของหมวด + ปุ่มคืนค่าอยู่บรรทัดเดียวกัน ปุ่มชิดขวา */
+.sig-subtitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ป้ายบอกว่าแถวนี้แอดมินเพิ่มเอง (ปุ่มคืนค่า default ไม่แตะ) */
+.sig-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+/* จอแคบ (แท็บเล็ต): ปล่อยให้ .table-wrap เลื่อนแนวนอนแทนการบีบคอลัมน์จนอ่านไม่ออก
+   (710 = Status 120 + Action 250 + เหลือให้ pattern ~340)
+   — ต่ำกว่านั้นเป็นมือถือ ตารางพับเป็นการ์ดด้วย .stack-table แทนการเลื่อน */
+@media (min-width: 641px) and (max-width: 900px) {
+  .sig-table {
+    min-width: 710px;
+  }
+}
+
+/* Modal */
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+textarea.form-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 72px;
+}
+
+.form-error {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--danger);
+  font-weight: 600;
+}

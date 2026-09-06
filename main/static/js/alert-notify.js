@@ -1,7 +1,8 @@
 // แจ้งเตือน alert ใหม่: popup มุมขวาล่าง + ตัวเลข "ยังไม่ได้อ่าน" ที่เมนู Alerts
 (function () {
-  var READ_STATE_URL = '/api/alerts_read_state'
-  var UNREAD_COUNT_URL = '/api/alerts_unread_count'
+  var BASE = window.APP_BASE || ''
+  var READ_STATE_URL = BASE + '/api/alerts_read_state'
+  var UNREAD_COUNT_URL = BASE + '/api/alerts_unread_count'
 
   // key ของ cache ใน localStorage — สองตัวนี้คนละความหมายกัน:
   var READ_KEY = 'securelog.alerts.lastReadId'
@@ -263,7 +264,7 @@
       },
 
       open(id) {
-        window.location.href = '/alerts?focus=' + id
+        window.location.href = window.APP_BASE + '/alerts?focus=' + id
       },
     })
 

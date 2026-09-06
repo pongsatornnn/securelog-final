@@ -5,7 +5,8 @@ VALID_ROLES = ("admin", "user")
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
-    password: str = Field(min_length=8, max_length=100)
+    # ความยาว/ความรัดกุมจริงตรวจด้วย password_policy (ตอบเป็นข้อความไทยบอกว่าตกข้อไหน)
+    password: str = Field(min_length=1, max_length=128)
     role: str = "user"
 
     @field_validator("role")
@@ -18,13 +19,13 @@ class CreateUserRequest(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    new_password: str = Field(min_length=8, max_length=100)
+    new_password: str = Field(min_length=1, max_length=128)
 
 
 class ChangePasswordRequest(BaseModel):
     # optional: บัญชีที่ถูกบังคับเปลี่ยนรหัส (login ครั้งแรก / โดน admin reset) ไม่ต้องส่งรหัสเดิม
     current_password: str | None = None
-    new_password: str = Field(min_length=8, max_length=100)
+    new_password: str = Field(min_length=1, max_length=128)
 
 
 class UpdateProfileRequest(BaseModel):

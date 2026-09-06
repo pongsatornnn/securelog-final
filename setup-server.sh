@@ -119,6 +119,12 @@ preload_env DB_PORT          DB_PORT
 preload_env REDIS_USER       REDIS_USER
 preload_env REDIS_PASS       REDIS_PASS           1
 preload_env AGENT_REDIS_PASS AGENT_REDIS_PASSWORD 1
+preload_env ROOT_PATH            ROOT_PATH
+preload_env FORWARDED_ALLOW_IPS  FORWARDED_ALLOW_IPS
+
+# ---- ทางเข้าเว็บ: ค่าที่ระบบใช้อยู่ตอนนี้ (ไว้เป็นค่าตั้งต้นของคำถาม/ของการรันซ้ำ) ----
+OLD_ROOT_PATH="$(env_get ROOT_PATH "$ENV_FILE")"
+OLD_FORWARDED_ALLOW="$(env_get FORWARDED_ALLOW_IPS "$ENV_FILE")"
 
 # ที่อยู่ของ central ที่ระบบใช้อยู่ "ตอนนี้" — ไว้เทียบว่ารอบนี้ IP เปลี่ยนไหม
 CURRENT_BIND_HOST="$(env_get REDIS_HOST "$ENV_FILE")"
@@ -185,7 +191,7 @@ reask() {  # reask VAR
     unset "$var"
 }
 if [ "$RECONFIGURE" = "1" ]; then
-    for _v in DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD REDIS_USER REDIS_PASS AGENT_REDIS_PASS; do
+    for _v in DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD REDIS_USER REDIS_PASS AGENT_REDIS_PASS ROOT_PATH; do
         reask "$_v"
     done
     warn "Setting everything up again - pressing Enter on a question keeps the value it has now"
@@ -343,6 +349,15 @@ DEFAULT_USER="$INSTALLED_APP_USER"
 
 ask        APP_USER   "User the services will run as (User=)" "$DEFAULT_USER"
 
+# ตอบเป็นตัวเลข = systemd กับ chown ตีเป็น uid เงียบ ๆ (พิมพ์ 3 = บริการไปรันเป็น 'sys' ทั้งชุด
+# และโปรเจกต์ทั้งโฟลเดอร์ถูก chown ตามไปด้วย) — เจอมาแล้วตอนทดสอบ จึงกันไว้ตรงนี้
+case "$APP_USER" in
+    *[!0-9]*) ;;
+    *) err "APP_USER='$APP_USER' is a number - systemd would read it as a uid; type the user NAME"; exit 1 ;;
+esac
+getent passwd "$APP_USER" >/dev/null 2>&1 \
+    || { err "There is no user '$APP_USER' on this machine - create it first, or answer with an existing one"; exit 1; }
+
 # ---- IP 3 ช่อง ถามแยกกัน (ความหมายต่างกัน — อ่านหัวไฟล์ systemd/_hosts.sh) ----
 if [ ! -t 0 ] && [ -z "${BIND_HOST:-}" ] && [ -z "$CURRENT_BIND_HOST" ]; then
     err "No tty and BIND_HOST was not preset"; exit 1
@@ -359,9 +374,75 @@ ask_port REDIS_PORT \
     "Port the Redis of this central listens on (mTLS - agents connect to it)" \
     "${OLD_REDIS_PORT:-6380}"
 
+# ---- root path ของเว็บ + ความพร้อมสำหรับ reverse proxy ----
+# ฝั่งนี้ทำแค่ "ระบบ" ให้พร้อม — ใครจะเอา nginx/HAProxy/Apache มาครอบทีหลังก็ทำได้เลย
+norm_root_path() {  # "xxx" / "/xxx/" / "//a//b//" -> "/xxx", "/a/b" · "/" หรือว่าง = อยู่ที่ราก
+    local v="$1"
+    v="${v//\"/}"; v="${v//\'/}"
+    v="$(printf '%s' "$v" | tr -s '/' | sed 's#^[[:space:]]*##; s#[[:space:]]*$##; s#^/*##; s#/*$##')"
+    [ -n "$v" ] && printf '/%s' "$v" || printf ''
+}
+
+# ค่าเดิม: ว่างใน .env = อยู่ที่ราก -> เสนอ "/" เป็นค่าตั้งต้นให้อ่านง่าย
+ROOT_PATH_DEFAULT="${ENV_DEFAULT[ROOT_PATH]:-${OLD_ROOT_PATH:-/}}"
+[ -n "$ROOT_PATH_DEFAULT" ] || ROOT_PATH_DEFAULT="/"
+
+# มีคนนั่งตอบอยู่ = ถามทุกครั้ง โดยเอาค่าที่ใช้อยู่เป็นค่าตั้งต้น (ไม่งั้นแก้ root path ไม่ได้เลย)
+if [ -t 0 ]; then
+    case "$FROM_ENV_FILE" in
+        *" ROOT_PATH "*) ROOT_PATH_DEFAULT="${ROOT_PATH:-/}"; unset ROOT_PATH ;;
+    esac
+fi
+
+# รันซ้ำแบบไม่มี tty และไม่ได้สั่งอะไรมา = คงค่าเดิมไว้ (ไม่ต้องเดา)
+if [ -z "${ROOT_PATH:-}" ] && [ ! -t 0 ] && [ "$ENV_EXISTED" = "1" ]; then
+    ROOT_PATH="$OLD_ROOT_PATH"
+    ok "ROOT_PATH = ${ROOT_PATH:-/} (from .env)"
+else
+    ask ROOT_PATH "Root path of the dashboard - / for the whole site, or a sub-path like /securelog" \
+        "$ROOT_PATH_DEFAULT"
+fi
+ROOT_PATH="$(norm_root_path "$ROOT_PATH")"
+if [ -n "$ROOT_PATH" ]; then
+    printf '%s' "$ROOT_PATH" | grep -qE '^(/[A-Za-z0-9._~-]+)+$' \
+        || { err "Root path '$ROOT_PATH' has characters that do not belong in a URL path"; exit 1; }
+    ok "The dashboard will live under $ROOT_PATH/ (cookies get tied to that path too)"
+else
+    ok "The dashboard will live at / (the way it has always been)"
+fi
+
+# ---- เตรียมพร้อมสำหรับ reverse proxy เสมอ (ไม่ต้องถาม) ----
+# ตั้ง FORWARDED_ALLOW_IPS ไว้ตั้งแต่แรก = วันไหนเอา nginx/HAProxy มาครอบก็ใช้ได้ทันที ไม่ต้องรื้อ
+# ไม่มี proxy ก็ไม่เสียอะไร: uvicorn เชื่อ X-Forwarded-For เฉพาะที่มาจาก IP ในรายการนี้เท่านั้น
+# request ที่วิ่งตรงมาจากเครือข่ายยังถูกอ่าน IP จาก TCP ตามปกติ
+FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-${OLD_FORWARDED_ALLOW:-127.0.0.1}}"
+printf '%s' "$FORWARDED_ALLOW_IPS" | grep -qE '^[0-9A-Fa-f.:*,[:space:]-]+$' \
+    || { err "FORWARDED_ALLOW_IPS='$FORWARDED_ALLOW_IPS' should be IP addresses separated by commas"; exit 1; }
+
+PROXY_IS_LOCAL=1
+case "$FORWARDED_ALLOW_IPS" in
+    127.0.0.1|localhost|::1) ;;
+    *) PROXY_IS_LOCAL=0 ;;
+esac
+if [ "$PROXY_IS_LOCAL" = "1" ]; then
+    ok "Ready for a reverse proxy on this host (trusts X-Forwarded-For from $FORWARDED_ALLOW_IPS)"
+else
+    ok "Ready for a reverse proxy at $FORWARDED_ALLOW_IPS (trusts X-Forwarded-For from there)"
+fi
+
+# ---- IP ที่ dashboard ฟัง (คำถามเดิม) ----
+_web_default="${WEB_DEFAULT:-$BIND_HOST}"
 pick_bind_host WEB_BIND_HOST \
-    "dashboard (HTTPS :8000) - which IP to listen on" "${WEB_DEFAULT:-$BIND_HOST}" 1 \
-    "One IP = other networks on this host cannot reach it; 0.0.0.0 = all interfaces"
+    "dashboard (HTTPS :8000) - which IP to listen on" "$_web_default" 1 \
+    "127.0.0.1 = only a proxy running on this host can reach it; 0.0.0.0 = all interfaces"
+
+# proxy อยู่คนละเครื่องแต่ฟังแค่ loopback = proxy ต่อไม่ถึงตลอดกาล
+if [ "$PROXY_IS_LOCAL" = "0" ] && [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
+    err "The proxy at $FORWARDED_ALLOW_IPS is not on this host, but the dashboard would listen on 127.0.0.1 only"
+    err "  it could never reach it - bind the dashboard to an IP that $FORWARDED_ALLOW_IPS can dial"
+    exit 1
+fi
+
 pick_bind_host WEBHOOK_BIND_HOST \
     "LINE webhook (HTTP :8080) - which IP to listen on" "${HOOK_DEFAULT:-0.0.0.0}" 1 \
     "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 is fine"
@@ -899,6 +980,10 @@ if [ "$ENV_EXISTED" = "1" ]; then
     env_sync WEB_BIND_HOST     "$WEB_BIND_HOST"
     env_sync WEBHOOK_BIND_HOST "$WEBHOOK_BIND_HOST"
 
+    # ทางเข้าเว็บ: prefix ของ URL + proxy ที่เชื่อได้ (systemd/_gen.sh อ่าน FORWARDED_ALLOW_IPS ไปใส่ unit)
+    env_sync ROOT_PATH           "$ROOT_PATH"
+    env_sync FORWARDED_ALLOW_IPS "$FORWARDED_ALLOW_IPS"
+
     # กลุ่ม agent: AGENT_CENTRAL_* คือค่าที่ชุดติดตั้ง agent ใช้จริง (build_site_conf อ่านจากที่นี่)
     env_sync AGENT_CENTRAL_HOST       "$BIND_HOST"
     env_sync AGENT_CENTRAL_REDIS_PORT "$REDIS_PORT"
@@ -940,6 +1025,13 @@ ALGORITHM=HS256
 # After editing, re-run sudo systemd/install.sh for the change to take effect
 WEB_BIND_HOST=$WEB_BIND_HOST
 WEBHOOK_BIND_HOST=$WEBHOOK_BIND_HOST
+
+# URL prefix of the whole dashboard - empty = served at /
+# (change it by re-running this script; cookie names follow it automatically)
+ROOT_PATH=$ROOT_PATH
+# Trust X-Forwarded-For only from these IPs - the installer sets 127.0.0.1 so a local proxy works.
+# Empty with a proxy in front = login lockout and rate limit count every user as one.
+FORWARDED_ALLOW_IPS=$FORWARDED_ALLOW_IPS
 
 LINE_CHANNEL_ACCESS_TOKEN=
 LINE_CHANNEL_SECRET=
@@ -1108,6 +1200,24 @@ acl_pass_of() {  # acl_pass_of USER FILE — รหัส (token ที่ขึ
         }' "$2" 2>/dev/null || true
 }
 
+# สิทธิ์ของบัญชี agent — เก็บไว้ที่เดียว ใช้ทั้งตอนเขียนไฟล์และตอนตรวจว่าไฟล์เดิมล้าสมัย
+#   ราก: ส่ง log (+lpush ~raw_logs_queue) · ฟังคำสั่ง (+subscribe ช่องคำสั่ง) · ping — ไม่มี +publish
+#   selector: เปิด +publish เฉพาะช่อง agent_metrics ที่ agent ต้องรายงานสถานะจริง ๆ
+# เหตุผล: ช่อง global_commands / agent_commands:* คือช่องที่ central ใช้สั่งงาน agent ทุกตัว
+# ถ้า agent publish ลงช่องนั้นได้ ใครยึดเครื่อง agent ได้เครื่องเดียว (รหัสเป็นรหัสร่วมทุกเครื่อง)
+# ก็สั่ง block_ip / unblock_ip / sync_blacklist ทั้งฟลีตได้เหมือน central
+ACL_AGENT_PERMS="-@all +ping +lpush +subscribe ~raw_logs_queue resetchannels &global_commands &agent_commands:* (+publish &agent_metrics)"
+
+acl_perms_of() {  # acl_perms_of USER FILE — เอาเฉพาะส่วนสิทธิ์ (ตัด user/ชื่อ/on/รหัส ทิ้ง)
+    [ -f "$2" ] || return 0
+    awk -v u="$1" '
+        $1 == "user" && $2 == u {
+            out = ""
+            for (i = 5; i <= NF; i++) out = out (out == "" ? "" : " ") $i
+            print out; exit
+        }' "$2" 2>/dev/null || true
+}
+
 # หาให้ได้ก่อนว่า "รหัส agent ตัวจริง" รอบนี้คือตัวไหน — ทั้ง users.acl (ขั้นนี้) และ site.conf
 ACL_AGENT_PASS="$AGENT_REDIS_PASS"
 if [ "$AGENT_PASS_CHANGED" != "1" ] && [ "${FORCE_ACL:-0}" != "1" ]; then
@@ -1120,6 +1230,12 @@ if [ "$AGENT_PASS_CHANGED" != "1" ] && [ "${FORCE_ACL:-0}" != "1" ]; then
         warn "  (that is the one the agents actually use; it was most likely changed from the web UI)"
         warn "  To push .env's value in instead: sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
     fi
+fi
+
+# ไฟล์เดิมถือสิทธิ์รุ่นเก่าอยู่ (เช่น agent ยัง publish ลงช่องคำสั่งได้) = ต้องเขียนใหม่ให้ตรงนโยบาย
+if [ -f "$ACL_FILE" ] && [ "$(acl_perms_of agent_node "$ACL_FILE")" != "$ACL_AGENT_PERMS" ]; then
+    REDIS_ACL_CHANGED=1
+    warn "users.acl: agent_node carries an older permission set - rewriting it (the passwords are kept)"
 fi
 
 # เขียนใหม่เมื่อ: ยังไม่มีไฟล์ / ยังเป็นรหัส placeholder / สั่ง FORCE_ACL=1 /
@@ -1135,7 +1251,7 @@ if [ ! -f "$ACL_FILE" ] || grep -q '>123 ' "$ACL_FILE" || [ "${FORCE_ACL:-0}" = 
     [ -f "$ACL_FILE" ] && cp -p "$ACL_FILE" "$ACL_FILE.bak.$(date +%Y%m%d%H%M%S)"
     cat > "$ACL_FILE" <<EOF
 user $REDIS_USER on >$REDIS_PASS +@all ~* &*
-user agent_node on >$ACL_AGENT_PASS -@all +ping +lpush +publish +subscribe ~raw_logs_queue resetchannels &global_commands &agent_commands:* &agent_status &agent_metrics
+user agent_node on >$ACL_AGENT_PASS $ACL_AGENT_PERMS
 user default on >$ACL_AGENT_PASS -@all +ping +info +select +rpush +lpush ~raw_logs_queue resetchannels
 EOF
     chmod 600 "$ACL_FILE"
@@ -1392,9 +1508,17 @@ case "$FW_KIND" in
         fi
 
         if [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
-            warn "dashboard binds 127.0.0.1 - 8000/tcp left closed (local access only)"
+            # ฟังแค่ loopback = rule ของ 8000 ไม่มีความหมายแล้ว ถอนเฉพาะที่สคริปต์นี้เปิดไว้เอง
+            fw_close_old_port 8000
+            ok "dashboard binds 127.0.0.1 - reachable only from this host (a local proxy, for example)"
         else
             fw_allow 8000 "dashboard HTTPS"
+            if [ "$PROXY_IS_LOCAL" = "0" ]; then
+                warn "The dashboard is open at :8000 to the whole network while it trusts X-Forwarded-For"
+                warn "  from $FORWARDED_ALLOW_IPS - anyone able to reach :8000 directly can fake a client IP. Lock it down:"
+                warn "    sudo ufw delete allow 8000/tcp"
+                warn "    sudo ufw allow from $FORWARDED_ALLOW_IPS to any port 8000 proto tcp"
+            fi
         fi
 
         if [ "$WEBHOOK_BIND_HOST" = "127.0.0.1" ]; then
@@ -1471,7 +1595,14 @@ echo "  Runs as user  : $APP_USER"
 echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:$REDIS_PORT)"
 # เว็บ bind IP เดียว = ต้องเข้าด้วย IP นั้นเท่านั้น (0.0.0.0 ค่อยใช้ที่อยู่ของ central เป็นตัวแทน)
 if [ "$WEB_BIND_HOST" = "0.0.0.0" ]; then WEB_URL_HOST="$BIND_HOST"; else WEB_URL_HOST="$WEB_BIND_HOST"; fi
-echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$WEB_URL_HOST:8000"
+echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$WEB_URL_HOST:8000$ROOT_PATH/"
+echo "  root path     : ${ROOT_PATH:-/}${ROOT_PATH:+   (cookies are tied to this path)}"
+echo "  proxy ready   : trusts X-Forwarded-For from $FORWARDED_ALLOW_IPS"
+echo "                  put any proxy in front of https://$WEB_URL_HOST:8000$ROOT_PATH/ - keep the whole path"
+echo "                  sample nginx block + the traps to avoid: REVERSE_PROXY.md"
+if [ "$PROXY_IS_LOCAL" = "1" ]; then
+    echo "                  proxy on another host? re-run with FORWARDED_ALLOW_IPS=<its ip>"
+fi
 echo "  LINE webhook  : bind $WEBHOOK_BIND_HOST:8080"
 echo "  database      : $DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT${DB_STATE:+  [$DB_STATE]}"
 echo "  firewall      : $FW_SUMMARY"

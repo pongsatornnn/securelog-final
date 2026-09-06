@@ -1,7 +1,8 @@
 // เด้งกลับหน้า login อัตโนมัติเมื่อ session หมดอายุ/ถูกเพิกถอน แทนที่จะปล่อยให้หน้าค้าง
 (function () {
   // endpoint ที่ 401 = "ข้อมูลที่กรอกไม่ถูกต้อง" ไม่ใช่ session หมดอายุ ห้ามเด้ง
-  var AUTH_ENDPOINTS = ['/api/login', '/api/change-password'];
+  var BASE = window.APP_BASE || '';
+  var AUTH_ENDPOINTS = [BASE + '/api/login', BASE + '/api/change-password'];
 
   var origFetch = window.fetch;
   if (!origFetch) return;
@@ -26,9 +27,9 @@
 
   function goLogin() {
     // อยู่หน้า login อยู่แล้วไม่ต้องเด้ง (กันลูป) และเด้งครั้งเดียวพอถึงจะมีหลาย request พร้อมกัน
-    if (redirecting || window.location.pathname === '/login') return false;
+    if (redirecting || window.location.pathname === BASE + '/login') return false;
     redirecting = true;
-    window.location.href = '/login';
+    window.location.href = BASE + '/login';
     return true;
   }
 
@@ -39,7 +40,7 @@
     return origFetch.apply(this, arguments).then(function (res) {
       if (isAuthEndpoint(url)) return res;
 
-      var bouncedToLogin = res.redirected && pathOf(res.url) === '/login';
+      var bouncedToLogin = res.redirected && pathOf(res.url) === BASE + '/login';
 
       if (bouncedToLogin || res.status === 401) {
         if (goLogin()) {

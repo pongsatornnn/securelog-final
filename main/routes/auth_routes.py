@@ -11,12 +11,28 @@ from slowapi.util import get_remote_address
 
 from database.connection import get_db
 from database.crud import get_user, set_user_password, set_user_name
-from auth import authenticate_user_db, create_access_token, decode_token, hash_password, verify_password
+from auth import (
+    authenticate_user_db,
+    create_access_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 from login_lockout import check_locked, record_failure, reset_failures
 from dependencies import require_login, require_login_page
 from shared import templates, limiter
+from base_path import (
+    rel_url,
+    cookie_name_for,
+    cookie_path_for,
+    LEGACY_COOKIE_PATH,
+    AUTH_COOKIE_BASE,
+    CSRF_COOKIE_BASE,
+)
+from csrf import verify_csrf
 
 from schemas.user_schema import ChangePasswordRequest, UpdateProfileRequest
+import password_policy
 
 
 router = APIRouter()
@@ -32,59 +48,102 @@ def locked_message(retry_after: int) -> str:
         return f"บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผิดหลายครั้ง กรุณาลองใหม่ในอีก {minutes} นาที"
     return "บัญชีถูกล็อกชั่วคราวเนื่องจากใส่รหัสผิดหลายครั้ง กรุณาลองใหม่ในอีกสักครู่"
 
-COOKIE_CONFIG = {
-    "key": "access_token",
-    "httponly": True,
-    "samesite": "lax",
-    "max_age": SESSION_EXPIRE_MIN * 60,
-    "secure": COOKIE_SECURE,
-}
+def auth_cookie_config(request) -> dict:
+    # ชื่อ + path ของ cookie ผูกกับ prefix ของ request นี้ — ไม่หลุดไปหา service อื่นที่อยู่
+    # โฮสต์+พอร์ตเดียวกัน และไม่ถูก cookie ชื่อซ้ำของ service นั้นทับ
+    return {
+        "key": cookie_name_for(request, AUTH_COOKIE_BASE),
+        "httponly": True,
+        "samesite": "lax",
+        "max_age": SESSION_EXPIRE_MIN * 60,
+        "secure": COOKIE_SECURE,
+        "path": cookie_path_for(request),
+    }
+
+# cookie ชุดที่เวอร์ชันก่อนหน้าตั้งไว้ที่ราก ("/") ด้วยชื่อเดิม — ถ้าไม่ล้างทิ้ง browser จะส่งมา
+# ทั้งใบเก่าและใบใหม่ (ชื่อซ้ำ คนละ path) แล้วฝั่ง server อ่านใบท้ายสุดซึ่งอาจเป็นใบเก่า
+LEGACY_COOKIE_NAMES = (AUTH_COOKIE_BASE, CSRF_COOKIE_BASE)
 
 
-def clear_auth_cookie(response: Response):
+def _is_our_cookie(name: str, value: str) -> bool:
+    # ใบของเราเซ็นด้วยกุญแจของระบบนี้ — ของ service อื่นที่ชื่อบังเอิญซ้ำจะไม่ผ่านด่านนี้
+    if name == AUTH_COOKIE_BASE:
+        return decode_token(value) is not None
+    if name == CSRF_COOKIE_BASE:
+        return verify_csrf(value)
+    return False
+
+
+def clear_legacy_cookies(request: Request, response: Response):
+    for name in LEGACY_COOKIE_NAMES:
+        if cookie_name_for(request, name) == name and cookie_path_for(request) == LEGACY_COOKIE_PATH:
+            continue  # ไม่ได้ใช้ prefix/suffix = ใบที่ใช้อยู่กับใบเก่าเป็นใบเดียวกัน ห้ามลบ
+
+        value = request.cookies.get(name)
+        if not value or not _is_our_cookie(name, value):
+            continue  # ไม่มีของค้าง หรือเป็นของ service อื่นที่แชร์โฮสต์+พอร์ตกัน — ห้ามแตะ
+
+        response.delete_cookie(
+            key=name,
+            path=LEGACY_COOKIE_PATH,
+            samesite="lax",
+            secure=COOKIE_SECURE,
+        )
+
+
+def set_auth_cookie(request: Request, response: Response, token: str):
+    response.set_cookie(value=token, **auth_cookie_config(request))
+    clear_legacy_cookies(request, response)
+
+
+def clear_auth_cookie(request: Request, response: Response):
     response.delete_cookie(
-        key="access_token",
+        key=cookie_name_for(request, AUTH_COOKIE_BASE),
+        path=cookie_path_for(request),
         httponly=True,
         samesite="lax",
         secure=COOKIE_SECURE,
     )
+    clear_legacy_cookies(request, response)
 
 
 @router.get("/")
 async def root(request: Request):
-    token = request.cookies.get("access_token")
+    token = request.cookies.get(cookie_name_for(request, AUTH_COOKIE_BASE))
 
     if token:
         payload = decode_token(token)
         if payload and payload.get("sub"):
-            return RedirectResponse(url="/dashboard", status_code=302)
+            return RedirectResponse(url=rel_url(request, "/dashboard"), status_code=302)
 
-    return RedirectResponse(url="/login", status_code=302)
+    return RedirectResponse(url=rel_url(request, "/login"), status_code=302)
 
 
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    token = request.cookies.get("access_token")
+    token = request.cookies.get(cookie_name_for(request, AUTH_COOKIE_BASE))
 
     if token:
         payload = decode_token(token)
 
         if payload and payload.get("sub"):
-            return RedirectResponse(url="/dashboard", status_code=302)
+            return RedirectResponse(url=rel_url(request, "/dashboard"), status_code=302)
 
         response = templates.TemplateResponse(
             request=request,
             name="login.html",
             context={},
         )
-        clear_auth_cookie(response)
+        clear_auth_cookie(request, response)
         return response
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="login.html",
         context={},
     )
+    clear_legacy_cookies(request, response)
+    return response
 
 
 @router.post("/api/login")
@@ -147,22 +206,25 @@ async def do_login(
         }
     )
 
-    response.set_cookie(
-        value=token,
-        **COOKIE_CONFIG,
-    )
+    set_auth_cookie(request, response, token)
 
     return {"status": "ok"}
 
 
 @router.post("/api/logout")
-async def logout():
+async def logout(request: Request):
     response = RedirectResponse(
-        url="/login",
+        url=rel_url(request, "/login"),
         status_code=302,
     )
-    clear_auth_cookie(response)
+    clear_auth_cookie(request, response)
     return response
+
+
+@router.get("/api/password-policy")
+async def api_password_policy(user=Depends(require_login)):
+    # หน้าเว็บดึงกฎไปทำ checklist สด ๆ ตอนผู้ใช้พิมพ์ — กฎชุดเดียวกับที่ server บังคับ
+    return password_policy.policy_for_client()
 
 
 @router.get("/change-password", response_class=HTMLResponse)
@@ -172,7 +234,7 @@ async def change_password_page(
 ):
     # หน้านี้ใช้เฉพาะเคส "ถูกบังคับเปลี่ยนรหัส" (login ครั้งแรก / โดน admin reset) — ตั้งรหัสใหม่
     if not user["must_change_password"]:
-        return RedirectResponse(url="/profile", status_code=303)
+        return RedirectResponse(url=rel_url(request, "/profile"), status_code=303)
     return templates.TemplateResponse(
         request=request,
         name="change_password.html",
@@ -204,6 +266,15 @@ async def do_change_password(
         if payload.new_password == payload.current_password:
             raise HTTPException(status_code=400, detail="รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสเดิม")
 
+    # นโยบายรหัสผ่าน — ตรวจด้วยกฎชุดเดียวกับที่หน้าเว็บใช้ทำ checklist
+    failed = password_policy.failed_rules(payload.new_password)
+    if failed:
+        raise HTTPException(
+            status_code=400,
+            detail=password_policy.error_detail(failed),
+            headers={"X-Password-Policy-Failed": ",".join(r["id"] for r in failed)},
+        )
+
     await set_user_password(db, db_user, hash_password(payload.new_password), must_change_password=False)
 
     token = create_access_token(
@@ -214,7 +285,7 @@ async def do_change_password(
             "name": db_user.name,
         }
     )
-    response.set_cookie(value=token, **COOKIE_CONFIG)
+    set_auth_cookie(request, response, token)
 
     return {"status": "ok"}
 
@@ -240,6 +311,7 @@ async def profile_page(
 
 @router.post("/api/profile/name")
 async def update_profile_name(
+    request: Request,
     payload: UpdateProfileRequest,
     response: Response,
     user=Depends(require_login),
@@ -264,6 +336,6 @@ async def update_profile_name(
             "name": db_user.name,
         }
     )
-    response.set_cookie(value=token, **COOKIE_CONFIG)
+    set_auth_cookie(request, response, token)
 
     return {"status": "ok", "name": name}

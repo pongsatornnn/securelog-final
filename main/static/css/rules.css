@@ -1,0 +1,176 @@
+/* ย้ายมาจาก templates/rules.html (บล็อก <style> เดิม) */
+/* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
+   หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
+.modal { --modal-width: 480px; }
+.rule-name {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* ─── ตาราง rule ของทั้ง 4 หมวด (Auth / Firewall / Dashboard Login / Web Access) ───
+   table-layout: fixed ทำให้ความกว้างมาจาก colgroup อย่างเดียว ไม่ขึ้นกับความยาว
+   ของชื่อ rule ในหมวดนั้น — ทุกตารางจึงมีเส้นคอลัมน์ตรงกัน
+   ค่าที่ใช้อิงจากหมวด Auth Log ซึ่งมีชื่อ rule ยาวสุด (Sudo Authentication Failure) */
+.rule-table {
+  table-layout: fixed;
+}
+
+.rule-table .col-window    { width: 130px; }
+.rule-table .col-threshold { width: 130px; }
+.rule-table .col-status    { width: 120px; }
+.rule-table .col-updated   { width: 190px; }
+.rule-table .col-action    { width: 100px; }
+
+/* ชื่อ rule ที่ยาวเกินคอลัมน์ต้องขึ้นบรรทัดใหม่ ไม่ใช่ล้นทับคอลัมน์ถัดไป
+   (table-layout: fixed ไม่ขยายคอลัมน์ให้เองแล้ว) */
+.rule-table td {
+  overflow-wrap: anywhere;
+}
+
+/* จอแคบ (แท็บเล็ต): ปล่อยให้ .table-wrap เลื่อนแนวนอนแทนการบีบคอลัมน์จนอ่านไม่ออก
+   — ต่ำกว่านั้นเป็นมือถือ ตารางพับเป็นการ์ดด้วย .stack-table แทนการเลื่อน จึงไม่ตรึงความกว้าง */
+@media (min-width: 641px) and (max-width: 900px) {
+  .rule-table {
+    min-width: 860px;
+  }
+}
+
+/* Modal */
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* .tabs / .tab / .tab-count / .section-subtitle ย้ายไป app.css แล้ว
+   (หน้า Detection Signatures ใช้ชุดเดียวกัน) */
+
+.ttl-value {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.ttl-value.permanent {
+  color: var(--danger);
+}
+
+/* ช่องกรอกระยะเวลา Block ใช้ .duration-* จาก app.css ร่วมกับหน้า Blacklist/Whitelist แล้ว */
+
+/* ─── ตารางความรุนแรง + ระยะเวลา Block ───
+   ตรึงความกว้างด้วย colgroup เหมือน .rule-table เพื่อให้คอลัมน์ค่าไม่ขยับตามความยาว
+   ของชื่อประเภทการโจมตี (ยาวสุดคือ HTTP Flood (App-level DoS)) */
+.policy-table {
+  table-layout: fixed;
+}
+
+.policy-table .col-severity { width: 170px; }
+.policy-table .col-ttl      { width: 180px; }
+.policy-table .col-updated  { width: 190px; }
+.policy-table .col-action   { width: 100px; }
+
+.policy-table td {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+  .policy-table {
+    min-width: 780px;
+  }
+}
+
+/* ประเภทที่มีค่าอยู่ฝั่งเดียว (ปกติไม่เกิด — เกิดได้ถ้าเพิ่ม detection type ใหม่ในโค้ด
+   ฝั่งใดฝั่งหนึ่งแล้วลืมอีกฝั่ง) แสดงเป็นขีดจาง ๆ ให้เห็นว่าค่าฝั่งนั้นยังไม่มี */
+.policy-missing {
+  color: var(--text-muted);
+}
+
+/* ─── การ์ดนโยบาย escalation ───
+   เป็นค่า "ตัวเดียวใช้กับทุกประเภท" จึงอยู่นอกตาราง (ตารางเป็นค่าต่อประเภท)
+   วางไว้เหนือตารางเพราะเป็นตัวคูณที่กระทำกับค่าในตารางนั้นอีกที */
+.esc-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  margin-bottom: 18px;
+}
+
+.esc-title {
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 4px;
+}
+
+.esc-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+/* กริด 3 แถวคงที่: label / ช่องกรอก / hint — ทุกคอลัมน์ใช้แถวชุดเดียวกัน
+   ปุ่มบันทึกจึงวางลงแถวกลางได้ตรงแนวช่องกรอกพอดี
+   (ถ้าใช้ flex + align-items: flex-end ปุ่มจะไปเสมอกับบรรทัด hint ซึ่งต่ำกว่าช่องกรอกลงมาหนึ่งบรรทัด) */
+.esc-fields {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  gap: 6px 14px;
+  align-items: start;
+}
+
+/* ยุบตัว wrapper ทิ้ง ให้ label/ช่องกรอก/hint เป็นสมาชิกของกริดใหญ่โดยตรง
+   แถวจึงตรงกันเองแม้ hint ของช่องใดช่องหนึ่งจะตัดขึ้นสองบรรทัด */
+.esc-field {
+  display: contents;
+}
+
+.esc-field .form-input {
+  width: 100%;
+}
+
+/* คอลัมน์ที่ 3 (คอลัมน์ implicit — ถ้าไม่ใช่ admin ปุ่มไม่ถูก render กริดก็เหลือ 2 คอลัมน์พอดี)
+   แถวกลาง = แถวเดียวกับช่องกรอก และ stretch ให้สูงเท่าช่องกรอก */
+.esc-save {
+  grid-column: 3;
+  grid-row: 2;
+  align-self: stretch;
+}
+
+/* แถวตัวอย่าง: โชว์ผลของค่าที่กำลังกรอกก่อนกดบันทึก จะได้ไม่ต้องเดาว่า ×2 แปลว่าอะไร */
+.esc-preview {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.9;
+}
+
+.esc-step {
+  display: inline-block;
+  margin-right: 14px;
+  white-space: nowrap;
+}
+
+.esc-step b { color: var(--text-main); }
+.esc-step.permanent b { color: var(--danger); }
+
+/* จอแคบ: เรียงลงล่างเป็นชั้นเดียวตามเดิม (กริดคอลัมน์เดียวไม่มีอะไรให้จัดแนวแล้ว)
+   ปุ่มยืดเต็มความกว้างเพื่อให้กดง่ายบนมือถือ */
+@media (max-width: 640px) {
+  .esc-fields {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .esc-field { display: block; }
+  .esc-save { align-self: stretch; }
+}

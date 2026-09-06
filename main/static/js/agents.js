@@ -53,7 +53,7 @@ function agentsApp() {
 
       async loadAgents() {
         try {
-          const res = await fetch('/api/agents', {
+          const res = await fetch(window.APP_BASE + '/api/agents', {
             headers: {
               'Accept': 'application/json'
             },
@@ -200,7 +200,7 @@ function agentsApp() {
 
       buildFullDownloadUrl(url) {
         if (!url) return ''
-        return new URL(url, window.location.origin).href
+        return new URL(url, window.location.href).href
       },
 
       buildLinuxDownloadCommand(url) {
@@ -253,7 +253,7 @@ function agentsApp() {
         this.creating = true
 
         try {
-          const res = await fetch('/api/agents', {
+          const res = await fetch(window.APP_BASE + '/api/agents', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -317,7 +317,7 @@ function agentsApp() {
         this.savingEdit = true
 
         try {
-          const res = await fetch(`/api/agents/${encodeURIComponent(this.editAgentId)}`, {
+          const res = await fetch(window.APP_BASE + `/api/agents/${encodeURIComponent(this.editAgentId)}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -358,7 +358,7 @@ function agentsApp() {
         this.showRegenModal = true
 
         try {
-          const res = await fetch(`/api/agents/${encodeURIComponent(agent.agent_id)}/regen-download`, {
+          const res = await fetch(window.APP_BASE + `/api/agents/${encodeURIComponent(agent.agent_id)}/regen-download`, {
             method: 'POST'
           })
 
@@ -391,7 +391,7 @@ function agentsApp() {
         if (!ok) return
 
         try {
-          const res = await fetch(`/api/agents/${encodeURIComponent(agent.agent_id)}`, {
+          const res = await fetch(window.APP_BASE + `/api/agents/${encodeURIComponent(agent.agent_id)}`, {
             method: 'DELETE'
           })
 

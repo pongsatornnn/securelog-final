@@ -24,7 +24,7 @@
     var sameOrigin = url.indexOf('/') === 0 || url.indexOf(window.location.origin) === 0;
 
     if (UNSAFE[method] && sameOrigin) {
-      var token = getCookie('csrf_token');
+      var token = getCookie(window.CSRF_COOKIE || 'csrf_token');
       if (token) {
         var headers = new Headers(init.headers || (isReqObj ? input.headers : null) || {});
         if (!headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);

@@ -1,0 +1,346 @@
+/* ย้ายมาจาก templates/settings.html (บล็อก <style> เดิม) */
+.page-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
+/* กล่องเตือนหัวหน้า — บอกเส้นแบ่งว่าอะไรตั้งที่นี่ได้ อะไรต้องไปแก้ที่ .env */
+.scope-note {
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-sub, var(--text-muted));
+}
+
+.scope-note b { color: var(--text-main); }
+
+.set-group {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+
+.set-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.set-group-title {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 15px;
+}
+
+/* ปุ่มทดสอบอยู่ขวาสุดของหัวกลุ่ม — ทดสอบทีละบริการ ไม่ใช่ทั้งหน้า */
+.set-group-head .btn-mini { margin-left: auto; }
+
+.set-row {
+  padding: 12px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.set-row:first-of-type { border-top: 0; padding-top: 0; }
+
+.set-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.set-hint {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-top: 6px;
+}
+
+.set-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.set-input-row .form-input { flex: 1; min-width: 0; }
+
+/* ป้ายสถานะของแต่ละค่า: มาจาก .env / ตั้งเองแล้ว / ยังไม่ได้ตั้ง */
+.set-tag {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.set-tag.env {
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.set-tag.saved {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.set-tag.empty {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+/* ผลการทดสอบเชื่อมต่อ — โผล่ใต้หัวกลุ่ม */
+.test-result {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ข้อความ error มีต้นฉบับจากปลายทางต่อท้ายอีกบรรทัด — ต้องขึ้นบรรทัดใหม่ตาม \n จริง
+   และตัดคำได้ เพราะข้อความของ Google เป็นประโยคยาวไม่มีเว้นวรรคให้ตัด
+   (ใส่ที่ตัวข้อความเท่านั้น ถ้าใส่ที่กล่อง การเว้นบรรทัดในไฟล์ HTML จะกลายเป็นช่องว่างจริง) */
+.test-result-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.test-result.ok {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.test-result.fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+/* แถบบันทึกลอยอยู่ล่างสุด โผล่เฉพาะตอนมีอะไรเปลี่ยน — กันกดบันทึกทั้งที่ไม่ได้แก้อะไร */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  margin-top: 4px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.10);
+}
+
+.save-bar-text {
+  font-size: 13px;
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.save-bar .btn-primary,
+.save-bar .btn-secondary { margin-left: auto; }
+.save-bar .btn-primary { margin-left: 0; }
+
+/* ── กลุ่ม Redis ของ central ──
+   ขอบสีเตือนเพราะไม่ใช่ "ค่าที่บันทึกไว้" เหมือนกลุ่มอื่น แต่กดแล้วไปแก้ users.acl + .env
+   ของเครื่องจริง กระทบทุก service ทันที */
+.redis-group { border-left: 3px solid var(--warning); }
+
+/* เลือกวิธีได้รหัสใหม่ (กรอกเอง / ให้สุ่ม) — อยู่ใน popup */
+.redis-modes {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.redis-mode {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+/* ค่าที่สุ่มได้/รหัสที่เพิ่งตั้ง — ตัวหนังสือ monospace ตัดบรรทัดได้ กันอ่านผิดตอนคัดลอกด้วยมือ */
+.redis-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  margin-top: 10px;
+}
+
+.redis-value code {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  word-break: break-all;
+  color: var(--text-main);
+}
+
+/* บรรทัด "แก้ล่าสุดโดยใคร" — อยู่เหนือ hint ปกติ ตัวเล็กกว่าและจางกว่าเนื้อหาหลัก */
+.set-audit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ตารางประวัติใน popup — คอลัมน์ค่าเก่า/ใหม่ยาวได้ ให้ตัดบรรทัดแทนดันตารางบาน */
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.history-table th,
+.history-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.history-table th { color: var(--text-dim); font-weight: 600; }
+.history-table td.val { font-family: monospace; font-size: 12px; }
+.history-empty { color: var(--text-dim); padding: 14px 2px; }
+
+/* ── popup เปลี่ยนรหัส (โครงเดียวกับ popup เปลี่ยนรหัสผ่านในหน้า Profile) ──
+   .modal* / .btn-close / .form-input มาจาก app.css แล้ว เหลือเฉพาะที่หน้านี้ต่างจริง */
+.modal { --modal-width: 460px; }
+
+.form-group { margin-bottom: 18px; }
+
+/* ค่าที่แก้ผ่าน popup — แสดงค่าที่ mask ไว้แทนช่องกรอก ให้รู้ว่ามีค่าอยู่แล้วแต่พิมพ์ทับตรงนี้ไม่ได้ */
+.set-masked {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-main);
+  color: var(--text-dim);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-input:disabled {
+  opacity: 0.7;
+  background: var(--bg-main);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+/* คำเตือน "เปลี่ยนแล้วต้องตามไปทำอะไรต่อ" — อยู่บนสุดของ popup ให้อ่านก่อนกรอก
+   ไม่ใช่หลังกดยืนยัน เพราะสิ่งที่ต้องทำต่อคือสิ่งที่ต้องเตรียมไว้ก่อน */
+.modal-warn {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-main);
+}
+
+.modal-warn b { color: var(--text-main); }
+
+.modal-warn ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.success-box {
+  margin-top: 12px;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
+  color: var(--success);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.error-box {
+  margin-top: 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* ข้อความบอกว่ากรอกไม่เข้าเงื่อนไข — อยู่ใต้ช่องกรอกที่มีปัญหา ไม่ใช่ toast ที่หายไปเอง
+   เพราะผู้ใช้ต้องอ่านไปพิมพ์แก้ไปพร้อมกัน */
+.field-invalid {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 6px;
+}
+
+/* ── แถบเตือน "ยังไม่ได้รีสตาร์ต" ──
+   อยู่บนสุดของหน้าไม่ใช่ในกล่อง Redis เพราะเป็นเรื่องของ .env ทั้งไฟล์ (แก้ค่าไหนด้วยมือ
+   แล้วลืมรีสตาร์ตก็ขึ้นอันนี้) และต้องเห็นทันทีที่เปิดหน้า ไม่ต้องเลื่อนหา */
+.restart-banner {
+  background: var(--warning-soft);
+  border: 1px solid var(--warning-border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-main);
+}
+
+.restart-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.restart-banner-title { font-weight: 700; flex: 1; }
+
+.restart-list {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--text-dim);
+}
+
+.restart-ok {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}

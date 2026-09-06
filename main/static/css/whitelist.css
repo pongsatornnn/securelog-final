@@ -1,0 +1,106 @@
+/* ย้ายมาจาก templates/whitelist.html (บล็อก <style> เดิม) */
+/* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
+   หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
+.modal { --modal-width: 760px; }
+.btn-remove {
+  background: transparent;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-remove:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #1d1e24;
+}
+
+/* ย้ายไป Blacklist = เอาออกจาก Whitelist + สั่งบล็อกตามเวลาที่เลือกในคลิกเดียว
+   ใช้สีเตือน (warning) ให้ต่างจากปุ่ม Remove ที่เป็นสีอันตราย จะได้ไม่กดสลับกัน */
+.btn-move {
+  background: transparent;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--warning);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.btn-move:hover {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #1d1e24;
+}
+
+.btn-move:disabled,
+.btn-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-actions {
+    justify-content: flex-end;
+  }
+
+  .modal {
+    max-width: 96vw;
+    padding: 22px;
+  }
+
+  .modal-header {
+    margin-bottom: 16px;
+  }
+
+  .bulk-row-head {
+    display: none;
+  }
+
+  .bulk-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+  }
+
+  .bulk-field,
+  .bulk-action {
+    min-height: auto;
+  }
+
+  .btn-row-remove {
+    width: 100%;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .modal-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .btn-add-row,
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+    justify-content: center;
+  }
+}

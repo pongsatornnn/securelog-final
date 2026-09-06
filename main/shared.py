@@ -9,6 +9,8 @@ from fastapi.templating import Jinja2Templates
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from base_path import BASE_PATH, with_base, cookie_name, RELATIVE_URLS
+
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,10 +27,27 @@ def static_url(path: str) -> str:
     except OSError:
         version = 0
 
-    return f"/static/{path}?v={version}"
+    if RELATIVE_URLS:
+        # URL สัมพัทธ์กับหน้าที่กำลังเปิดอยู่ — browser เติม prefix ของ proxy ให้เอง
+        return f"static/{path}?v={version}"
+
+    return with_base(f"/static/{path}?v={version}")
+
+
+def url(path: str) -> str:
+    # ลิงก์ที่ template สร้าง — โหมดปกติเติม prefix ให้ · โหมด relative คืนแบบสัมพัทธ์
+    # (หน้าเว็บทุกหน้าอยู่ชั้นเดียวกัน ลิงก์ "dashboard" จาก /xxx/agents จึงได้ /xxx/dashboard)
+    if RELATIVE_URLS:
+        return path.lstrip("/")
+    return with_base(path)
 
 
 templates.env.globals["static_url"] = static_url
+templates.env.globals["url"] = url
+# prefix ของเว็บ (ROOT_PATH) ให้ template เอาไปต่อหน้า URL เอง เช่น href="{{ base_path }}/agents"
+templates.env.globals["base_path"] = BASE_PATH
+# ชื่อ cookie csrf เปลี่ยนตาม prefix — csrf.js ต้องรู้ว่าจะอ่านใบไหน
+templates.env.globals["csrf_cookie_name"] = "" if RELATIVE_URLS else cookie_name("csrf_token")
 
 limiter = Limiter(key_func=get_remote_address)
 

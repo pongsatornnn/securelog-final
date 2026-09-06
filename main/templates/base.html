@@ -10,6 +10,15 @@
   
   <meta name="color-scheme" content="dark">
 
+  <script>
+    // server บอก prefix มา = ใช้ค่านั้น · ไม่บอก (โหมด relative) = ถอดจาก URL ของหน้านี้เอง
+    window.APP_BASE = "{{ base_path }}" || window.location.pathname.replace(/\/[^/]*$/, '');
+    // ชื่อ cookie csrf คิดจาก prefix ด้วยกติกาเดียวกับฝั่ง server (base_path.py::_cookie_suffix)
+    window.CSRF_COOKIE = "{{ csrf_cookie_name }}" || ('csrf_token' + (function (b) {
+      var s = b.replace(/^\/+|\/+$/g, '').replace(/[^A-Za-z0-9_-]/g, '_').replace(/^_+|_+$/g, '');
+      return s ? '_' + s : '';
+    })(window.APP_BASE));
+  </script>
   <script src="{{ static_url('csrf.js') }}"></script>
   <script src="{{ static_url('session.js') }}"></script>
   <script src="{{ static_url('js/common.js') }}"></script>
@@ -25,36 +34,7 @@
 
   <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
 
-  <script>
-    // สถานะของโครงหน้า (เมนูซ้าย) — ไม่เกี่ยวกับข้อมูลของระบบ จึงเก็บที่ browser
-    // ย่อ/กางเมนูค้างไว้ข้ามหน้าได้ (Wazuh ก็จำสถานะนี้ให้เหมือนกัน)
-    function shell() {
-      var KEY = 'securelog.nav.collapsed'
-
-      return {
-        navOpen: false,          // เมนูแบบ off-canvas บนจอมือถือ
-        collapsed: false,        // ย่อเหลือแต่ไอคอนบนจอใหญ่
-
-        init() {
-          try {
-            this.collapsed = window.localStorage.getItem(KEY) === '1'
-          } catch (err) {
-            /* localStorage ใช้ไม่ได้ (private mode) -> ใช้ค่าเริ่มต้น ไม่ต้องพัง */
-          }
-        },
-
-        toggleRail() {
-          this.collapsed = !this.collapsed
-
-          try {
-            window.localStorage.setItem(KEY, this.collapsed ? '1' : '0')
-          } catch (err) {
-            /* จำข้ามหน้าไม่ได้ แต่ยังย่อ/กางในหน้านี้ได้ตามปกติ */
-          }
-        },
-      }
-    }
-  </script>
+<script src="{{ static_url('js/layout.js') }}"></script>
 
   {% block head %}{% endblock %}
 </head>
@@ -151,7 +131,7 @@
     <nav class="sidebar-menu">
       <div class="nav-group">ภาพรวม</div>
 
-      <a href="/dashboard" class="{% if page == 'dashboard' %}active{% endif %}"
+      <a href="{{ url('/dashboard') }}" class="{% if page == 'dashboard' %}active{% endif %}"
          title="Dashboard">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-dashboard"/></svg>
         <span class="nav-label">Dashboard</span>
@@ -159,7 +139,7 @@
 
       <div class="nav-group">ตรวจจับภัยคุกคาม</div>
 
-      <a href="/alerts" class="{% if page == 'alerts' %}active{% endif %}" title="Alerts">
+      <a href="{{ url('/alerts') }}" class="{% if page == 'alerts' %}active{% endif %}" title="Alerts">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-alerts"/></svg>
         <span class="nav-label">Alerts</span>
 
@@ -173,25 +153,25 @@
       <div class="nav-group">ตอบสนองและป้องกัน</div>
 
       {% if user.role == 'admin' %}
-      <a href="/rules" class="{% if page == 'rules' %}active{% endif %}" title="Detection Rules">
+      <a href="{{ url('/rules') }}" class="{% if page == 'rules' %}active{% endif %}" title="Detection Rules">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-rules"/></svg>
         <span class="nav-label">Detection Rules</span>
       </a>
 
-      <a href="/signatures" class="{% if page == 'signatures' %}active{% endif %}"
+      <a href="{{ url('/signatures') }}" class="{% if page == 'signatures' %}active{% endif %}"
          title="Detection Signatures">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-signatures"/></svg>
         <span class="nav-label">Detection Signatures</span>
       </a>
       {% endif %}
 
-      <a href="/ipblacklist" class="{% if page == 'blacklist' %}active{% endif %}"
+      <a href="{{ url('/ipblacklist') }}" class="{% if page == 'blacklist' %}active{% endif %}"
          title="IP Blacklist">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-blacklist"/></svg>
         <span class="nav-label">IP Blacklist</span>
       </a>
 
-      <a href="/whitelist" class="{% if page == 'whitelist' %}active{% endif %}"
+      <a href="{{ url('/whitelist') }}" class="{% if page == 'whitelist' %}active{% endif %}"
          title="IP Whitelist">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-whitelist"/></svg>
         <span class="nav-label">IP Whitelist</span>
@@ -199,32 +179,32 @@
 
       <div class="nav-group">จัดการระบบ</div>
 
-      <a href="/agents" class="{% if page == 'agents' %}active{% endif %}" title="Client Server">
+      <a href="{{ url('/agents') }}" class="{% if page == 'agents' %}active{% endif %}" title="Client Server">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-agents"/></svg>
         <span class="nav-label">Client Server</span>
       </a>
 
       {% if user.role == 'admin' %}
-      <a href="/line-recipients" class="{% if page == 'line_recipients' %}active{% endif %}"
+      <a href="{{ url('/line-recipients') }}" class="{% if page == 'line_recipients' %}active{% endif %}"
          title="LINE Recipients">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-line"/></svg>
         <span class="nav-label">LINE Recipients</span>
       </a>
 
-      <a href="/manage-users" class="{% if page == 'manage_users' %}active{% endif %}"
+      <a href="{{ url('/manage-users') }}" class="{% if page == 'manage_users' %}active{% endif %}"
          title="Manage Users">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-users"/></svg>
         <span class="nav-label">Manage Users</span>
       </a>
 
-      <a href="/settings" class="{% if page == 'settings' %}active{% endif %}"
+      <a href="{{ url('/settings') }}" class="{% if page == 'settings' %}active{% endif %}"
          title="System Settings">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-settings"/></svg>
         <span class="nav-label">System Settings</span>
       </a>
       {% endif %}
 
-      <a href="/profile" class="{% if page == 'profile' %}active{% endif %}"
+      <a href="{{ url('/profile') }}" class="{% if page == 'profile' %}active{% endif %}"
          title="Profile Setting">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-profile"/></svg>
         <span class="nav-label">Profile Setting</span>
@@ -272,7 +252,7 @@
         </span>
 
         <button class="btn-logout" type="button"
-                onclick="fetch('/api/logout', { method: 'POST' }).finally(function () { window.location.href = '/login'; })">
+                onclick="fetch(window.APP_BASE + '/api/logout', { method: 'POST' }).finally(function () { window.location.href = window.APP_BASE + '/login'; })">
           ออกจากระบบ
         </button>
       </div>

@@ -1,0 +1,207 @@
+/* ย้ายมาจาก templates/line_recipients.html (บล็อก <style> เดิม) */
+.page-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
+/* ─── แถบบอก LINE OA ของระบบ ───
+   คนที่จะได้รับแจ้งเตือนต้องแอด OA ตัวนี้ก่อน แอดมินจึงต้องหยิบ ID ไปบอกต่อได้จากหน้านี้เลย
+   (เดิมต้องเข้าไปดูในหน้า System Settings ซึ่งเป็นหน้าตั้งค่า ไม่ใช่หน้าที่เปิดค้างไว้ทำงาน) */
+.oa-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.oa-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.oa-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+}
+
+.oa-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* ยังไม่ได้ตั้งค่า — บอกให้ชัดว่าไปตั้งที่ไหน ไม่ปล่อยให้แถบว่างจนดูเหมือนหน้าพัง */
+.oa-bar.is-unset { border-style: dashed; }
+.oa-unset {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ─── การ์ดผู้รับแจ้งเตือน ───
+   แนวเดียวกับการ์ด agent (กริดยืดตามความกว้างจอ ใบละคน) — ข้อมูลของผู้รับหนึ่งคนมีแค่
+   ชื่อ + LINE user ID + สถานะ ตารางทั้งตารางจึงเป็นที่ว่างเสียเป็นส่วนใหญ่ */
+.rc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+/* สถานะบอก 2 ทางในใบเดียว: แถบสีที่ขอบซ้าย (กวาดตาเห็นทั้งหน้าในทีเดียว)
+   กับป้ายที่มุมขวาบนที่เขียนเป็นคำ (ไม่ต้องเดาว่าสีไหนแปลว่าอะไร) */
+.rc-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.rc-card.pending  { border-left-color: var(--warning); }
+.rc-card.approved { border-left-color: var(--success); }
+.rc-card.rejected { border-left-color: var(--text-dim); }
+
+.rc-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rc-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: var(--radius);
+  background: var(--primary-soft);
+  border: 1px solid rgba(54, 162, 239, 0.35);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ไอคอนตัวเดียวกับเมนูซ้ายหัวข้อ LINE Recipients (#ico-line ใน base.html) */
+.rc-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* รูปโปรไฟล์จาก LINE — วางทับกล่องไอคอนเดิมทั้งใบ ขนาดการ์ดจึงไม่ขยับ
+   ไม่ว่าคนนั้นจะมีรูปหรือไม่มี (คนที่ไม่มีรูป/รูปโหลดไม่ขึ้น = เห็นไอคอนเดิม) */
+.rc-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-color);
+  object-fit: cover;      /* รูป LINE เป็นสี่เหลี่ยมจัตุรัสอยู่แล้ว กันเคสรูปไม่เท่ากันเบี้ยว */
+  background: var(--bg-raised);   /* สีรองระหว่างรูปยังโหลดไม่เสร็จ ไม่ให้เป็นกรอบว่าง */
+}
+
+.rc-name {
+  min-width: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.rc-status {
+  margin-left: auto;
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rc-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.rc-status.pending {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.rc-status.pending .rc-dot {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px var(--warning-soft);
+}
+
+.rc-status.approved {
+  background: var(--success-soft);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.rc-status.approved .rc-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.rc-status.rejected {
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.rc-status.rejected .rc-dot {
+  background: var(--text-dim);
+}
+
+.rc-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* ปุ่มแบ่งความกว้างเท่า ๆ กันเต็มการ์ด — จำนวนปุ่มไม่เท่ากันในแต่ละสถานะ
+   (อนุมัติแล้วไม่มีปุ่มอนุมัติ, ระงับแล้วไม่มีปุ่มระงับ) */
+.rc-actions .btn-mini {
+  flex: 1;
+  padding: 7px 10px;
+}
+
+.uid-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-main);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  word-break: break-all;
+  display: inline-block;
+}
+
+.name-main { font-weight: 700; color: var(--text-main); }
+.muted { color: var(--text-dim); }
+
+.btn-mini.approve:hover {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
+}

@@ -11,6 +11,7 @@ from database.crud import (
 
 from dependencies import require_admin
 from auth import hash_password
+import password_policy
 from shared import iso_utc
 
 from schemas.user_schema import (
@@ -54,6 +55,15 @@ async def api_create_user(
     if exists:
         raise HTTPException(status_code=409, detail="มี username นี้อยู่แล้ว")
 
+    # นโยบายรหัสผ่าน — กฎชุดเดียวกับ checklist ที่หน้าเว็บแสดงตอนพิมพ์
+    failed = password_policy.failed_rules(payload.password)
+    if failed:
+        raise HTTPException(
+            status_code=400,
+            detail=password_policy.error_detail(failed),
+            headers={"X-Password-Policy-Failed": ",".join(r["id"] for r in failed)},
+        )
+
     # admin เป็นคนตั้งรหัสแรกให้ (ไม่ใช่รหัสที่เจ้าของบัญชีตั้งเอง) จึงบังคับเปลี่ยนตอน login
     created = await create_user(
         db, payload.username, hash_password(payload.password),
@@ -78,6 +88,14 @@ async def api_reset_password(
     target = await get_user_by_id(db, user_id)
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
+
+    failed = password_policy.failed_rules(payload.new_password)
+    if failed:
+        raise HTTPException(
+            status_code=400,
+            detail=password_policy.error_detail(failed),
+            headers={"X-Password-Policy-Failed": ",".join(r["id"] for r in failed)},
+        )
 
     await set_user_password(db, target, hash_password(payload.new_password), must_change_password=True)
 

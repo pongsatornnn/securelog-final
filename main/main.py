@@ -4,6 +4,7 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -13,6 +14,7 @@ from database.connection import engine, Base
 import database.models
 
 from shared import limiter
+from base_path import BASE_PATH, STRIPPED_BY_PROXY
 from csrf import CSRFMiddleware
 from errors import register_error_handlers, http_exception_handler
 
@@ -249,3 +251,27 @@ app.include_router(line.router)
 app.include_router(line.webhook_router)
 app.include_router(users.router)
 app.include_router(settings.router)
+
+
+# ---------------------------------------------------------------------------
+# ROOT_PATH: เสิร์ฟทั้งเว็บใต้ path ย่อย เช่น https://<host>:8000/securelog/
+# uvicorn เสิร์ฟเองไม่มี proxy มาตัด prefix ให้ (--root-path เปล่า ๆ จึงใช้ไม่ได้ จะ 404)
+# วิธีที่ใช้คือ mount app จริงไว้ใต้ app ชั้นนอก แล้ว export ชื่อ `app` เป็นตัวชั้นนอกให้ uvicorn เรียก
+#
+# ยกเว้นกรณีมี reverse proxy ตัด prefix ให้แล้ว (ROOT_PATH_STRIPPED=true) — path ที่มาถึงไม่มี prefix
+# จึงไม่ต้อง mount แค่เติม prefix ตอนสร้าง URL ส่งออกไปก็พอ
+if BASE_PATH and not STRIPPED_BY_PROXY:
+    inner_app = app
+
+    # ⚠️ app ที่ถูก mount ไม่ได้รับ lifespan event ของ starlette — ต้องผูก lifespan ไว้กับ app ชั้นนอก
+    # ไม่งั้น create_all / ALTER / seed ค่าเริ่มต้น / โหลด settings cache จะไม่ทำงานเลยตอน start
+    app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
+    app.mount(BASE_PATH, inner_app)
+
+    # เข้ามาที่รากของเครื่อง -> พาไปที่ prefix ให้ ไม่ต้องพิมพ์เอง
+    @app.get("/")
+    async def redirect_to_base():
+        return RedirectResponse(url=BASE_PATH + "/", status_code=302)
+
+    # path นอก prefix (พิมพ์ผิด/สแกนเนอร์) ให้ได้หน้า error หน้าตาเดียวกับข้างใน
+    register_error_handlers(app)

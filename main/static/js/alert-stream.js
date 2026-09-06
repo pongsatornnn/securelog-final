@@ -33,7 +33,7 @@ window.AlertStream = (function () {
 
     setState('connecting')
 
-    source = new EventSource('/api/stream/alerts')
+    source = new EventSource(window.APP_BASE + '/api/stream/alerts')
 
     source.onopen = function () {
       retryMs = BASE_RETRY_MS
@@ -68,7 +68,7 @@ window.AlertStream = (function () {
 
   // EventSource ไม่ได้วิ่งผ่าน window.fetch จึงไม่โดน session guard (static/session.js)
   function probeThenReconnect() {
-    fetch('/api/alerts_unread_count', { cache: 'no-store' })
+    fetch(window.APP_BASE + '/api/alerts_unread_count', { cache: 'no-store' })
       .then(function () {
         connect()
       })

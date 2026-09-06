@@ -1,0 +1,155 @@
+/* ย้ายมาจาก templates/manage_users.html (บล็อก <style> เดิม) */
+/* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
+   หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
+.modal { --modal-width: 440px; }
+.user-name {
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* ─── ตารางผู้ใช้ ───
+   table-layout: fixed ให้ความกว้างมาจาก colgroup อย่างเดียว ไม่ขึ้นกับความยาวของ username
+   หรือปุ่มที่โผล่/หายตามสิทธิ์ของแต่ละแถว (แถว admin ที่ป้องกันไว้ไม่มีปุ่มปิดใช้งาน/ลบ) */
+.user-table {
+  table-layout: fixed;
+}
+
+/* ความกว้างเป็น % ให้ทุกคอลัมน์ยืดหดพร้อมกัน ระยะห่างจึงสมดุลเท่ากันทุกขนาดจอ
+   (ถ้าใช้ px คอลัมน์แรกจะกินที่ว่างที่เหลือทั้งหมดคนเดียวเวลาจอกว้าง) */
+.user-table .col-user    { width: 22%; }
+.user-table .col-role    { width: 13%; }
+.user-table .col-status  { width: 14%; }
+.user-table .col-pwd     { width: 15%; }
+.user-table .col-created { width: 18%; }
+.user-table .col-action  { width: 18%; }
+
+/* หัวคอลัมน์กับค่าข้างล่างจัดกึ่งกลางทั้งคู่ — ค่าในตารางนี้เป็นของสั้น ๆ (badge, วันที่,
+   dropdown) ที่สั้นกว่าความกว้างคอลัมน์มาก ถ้าชิดซ้ายจะลอยห่างจากหัวคอลัมน์ของตัวเอง */
+.user-table th,
+.user-table td {
+  text-align: center;
+}
+
+/* ยกเว้น Username — เป็นข้อความยาวไม่เท่ากันทุกแถว ชิดซ้ายแล้วชื่อเริ่มตรงกันทุกแถว
+   กวาดตาหาคนที่ต้องการได้เร็วกว่าแบบกึ่งกลางที่ขอบซ้ายของชื่อไม่ตรงกันสักแถว */
+.user-table th:first-child,
+.user-table td.stack-head {
+  text-align: left;
+}
+
+.user-table td {
+  overflow-wrap: anywhere;
+}
+
+/* ปุ่มใน Action ต้องไม่ตัดคำขึ้นบรรทัดใหม่กลางปุ่ม
+   (การจัดกึ่งกลางย้ายไปเป็นค่าตั้งต้นของ .row-actions ใน app.css แล้ว) */
+.user-table .row-actions button {
+  white-space: nowrap;
+}
+
+/* ตั้งแต่แท็บเล็ตขึ้นไป: ตรึงความกว้างขั้นต่ำไว้ให้ทุกคอลัมน์พอกับเนื้อหา แล้วให้กรอบ
+   เลื่อนแนวนอนเองถ้าจอแคบกว่านั้น (.table-wrap ปกติเป็น overflow: hidden = โดนตัดหาย)
+   — ต่ำกว่า 640px ไม่แตะ เพราะตารางพับเป็นการ์ดด้วย .stack-table แล้ว */
+@media (min-width: 641px) {
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .user-table {
+    min-width: 1040px;
+  }
+}
+
+.badge-pending {
+  background: var(--warning-soft);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.badge-ok {
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.btn-delete {
+  background: transparent;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-delete:hover {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.role-select {
+  width: 100%;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-main);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 3px 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.role-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.role-select:disabled {
+  background: var(--bg-main);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.btn-toggle {
+  background: transparent;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--warning);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-toggle:hover {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.error-box {
+  margin-top: 12px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+}

@@ -1,0 +1,33 @@
+/* ย้ายมาจาก templates/dashboard.html (บล็อก <style> เดิม) */
+/* .panel / .panel-header / .section-title / .stat-* / .chart-* / .donut* / .bars
+   / .btn-link / table / .badge / .state-box มาจาก app.css แล้ว — ที่นี่เหลือเฉพาะ
+   ของที่ใช้แค่หน้านี้จริง ๆ */
+
+.host-ip-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* .panel มีขอบของตัวเองอยู่แล้ว ตารางข้างในจึงไม่ต้องมีการ์ดซ้อนการ์ดอีกชั้น */
+.panel .table-wrap {
+  border: none;
+  border-radius: var(--radius);
+}
+
+/* พื้นหลังของ .panel เป็นสีการ์ดอยู่แล้ว — เว้น .is-error ไว้ให้ยังเป็นพื้นแดงจาง ๆ ได้ */
+.panel .state-box:not(.is-error) {
+  background: transparent;
+}
+
+/* กล่องสถานะในพาเนลกราฟต้องสูงเท่า ๆ กับกราฟ ไม่งั้นสองพาเนลข้างกันสูงไม่เท่ากัน
+   ตอนที่ฝั่งหนึ่งมีข้อมูลแล้วอีกฝั่งยังโหลดอยู่ */
+.chart-grid .state-box {
+  padding: 0;
+  min-height: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}

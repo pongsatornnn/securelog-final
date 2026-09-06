@@ -13,6 +13,14 @@ from database.models import Agent, AgentDownload
 from manage_agent.token_utils import generate_token, hash_token
 from auth_cache import clear_agent_auth_cache
 from settings_cache import get_setting_async
+from base_path import with_base, RELATIVE_URLS
+
+
+def _download_url(token: str) -> str:
+    # โหมด relative: ปล่อยเป็น URL สัมพัทธ์ ให้หน้าเว็บ (ที่อยู่ชั้นเดียวกัน) ประกอบเอง
+    if RELATIVE_URLS:
+        return f"download-agent/{token}"
+    return with_base(f"/download-agent/{token}")
 
 
 load_dotenv()
@@ -298,7 +306,7 @@ async def create_agent_package(
         "agent_id": agent_id,
         "zip_path": zip_path,
         "download_token": download_token,
-        "download_url": f"/download-agent/{download_token}",
+        "download_url": _download_url(download_token),
     }
 
 
@@ -350,5 +358,5 @@ async def regenerate_agent_package(agent: Agent):
         "agent_id": agent.agent_id,
         "zip_path": zip_path,
         "download_token": download_token,
-        "download_url": f"/download-agent/{download_token}",
+        "download_url": _download_url(download_token),
     }

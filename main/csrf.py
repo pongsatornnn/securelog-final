@@ -7,12 +7,13 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from base_path import strip_base, cookie_name_for, cookie_path_for, CSRF_COOKIE_BASE
+
 
 CSRF_SECRET = os.getenv("CSRF_SECRET")
 if not CSRF_SECRET:
     raise RuntimeError("กรุณากำหนด CSRF_SECRET ในไฟล์ .env")
 
-CSRF_COOKIE_NAME = "csrf_token"
 CSRF_HEADER_NAME = "x-csrf-token"
 CSRF_MAX_AGE = int(os.getenv("JWT_EXPIRE_MIN", "60")) * 60
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
@@ -40,20 +41,21 @@ def verify_csrf(token: str) -> bool:
 
 
 def _is_exempt(path: str) -> bool:
+    path = strip_base(path)
     return any(path.startswith(p) for p in EXEMPT_PREFIXES)
 
 
-def _csrf_set_cookie_header(token: str) -> tuple[bytes, bytes]:
+def _csrf_set_cookie_header(token: str, name: str, path: str) -> tuple[bytes, bytes]:
     # สร้าง header ('set-cookie', ...) สำหรับ cookie csrf_token โดยยืม logic ของ Response.set_cookie
     tmp = Response()
     tmp.set_cookie(
-        key=CSRF_COOKIE_NAME,
+        key=name,
         value=token,
         max_age=CSRF_MAX_AGE,
         httponly=False,
         samesite="lax",
         secure=COOKIE_SECURE,
-        path="/",
+        path=path,
     )
     return (b"set-cookie", tmp.headers["set-cookie"].encode("latin-1"))
 
@@ -70,7 +72,9 @@ class CSRFMiddleware:
         request = Request(scope)
         method = request.method.upper()
         path = request.url.path
-        cookie_token = request.cookies.get(CSRF_COOKIE_NAME, "")
+        # ชื่อ/path ของ cookie ขึ้นกับ prefix ของ request นี้ (โหมด relative prefix มาจาก proxy)
+        cookie_key = cookie_name_for(request, CSRF_COOKIE_BASE)
+        cookie_token = request.cookies.get(cookie_key, "")
 
         # ---- ด่านตรวจ: request ที่เปลี่ยนข้อมูล ต้องมี CSRF token ที่ถูกต้อง ----
         if method not in SAFE_METHODS and not _is_exempt(path):
@@ -104,7 +108,9 @@ class CSRFMiddleware:
             await self.app(scope, receive, send)
             return
 
-        new_cookie_header = _csrf_set_cookie_header(generate_csrf())
+        new_cookie_header = _csrf_set_cookie_header(
+            generate_csrf(), cookie_key, cookie_path_for(request)
+        )
 
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
