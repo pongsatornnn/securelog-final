@@ -239,11 +239,25 @@ valid_redis_pass() {
 
 # ถามรหัส Redis — ยังไม่มีรหัสเดิม: Enter = สุ่มให้ · มีรหัสเดิมอยู่ (โหมดตั้งค่าใหม่): Enter = ใช้ของเดิม
 GENERATED_PASSWORDS=""
+WEAK_SECRETS=""   # รหัสที่อยู่ใน .env อยู่แล้วแต่ไม่ผ่านกติกา (เตือนซ้ำตอนจบ ไม่ขวางการทำงาน)
 ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญชี" ["รหัสเดิม"]
     local var="$1" what="$2" def="${3:-}" cur ans hint
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
     if [ -n "$cur" ]; then
-        valid_redis_pass "$cur" || { err "$var fails the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"; exit 1; }
+        if ! valid_redis_pass "$cur"; then
+            # ค่ามาจาก .env = รหัสที่ระบบ "ใช้อยู่จริง" ตอนนี้ (เครื่องที่ลงไว้ก่อนกติกานี้จะมี)
+            # ถ้าตายตรงนี้ = รันสคริปต์ไม่ได้อีกเลยทั้งที่มาทำเรื่องอื่น เช่นแก้ root path -> เตือนแล้วไปต่อ
+            if [ "$(value_source "$var")" = ".env" ]; then
+                warn "$var in .env does not meet the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"
+                warn "  keeping it - it is the password the running system uses right now"
+                warn "  rotate it when you can:  sudo $var='<a stronger one>' $PROJECT_DIR/setup-server.sh"
+                WEAK_SECRETS="$WEAK_SECRETS $var"
+            else
+                # ค่าที่เพิ่งส่งเข้ามาทาง env = ตั้งใจจะเปลี่ยนรหัส -> ไม่ยอมให้ตั้งรหัสอ่อน
+                err "$var fails the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"
+                exit 1
+            fi
+        fi
         ok "$var = ****** (from $(value_source "$var"))"
         return
     fi
@@ -1660,6 +1674,15 @@ if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_
     else
         ok "Agent machines: nothing they depend on changed - the agents already installed keep working as is"
     fi
+fi
+
+# รหัสที่อ่อนแต่ยังใช้อยู่ — เตือนอีกครั้งตอนจบ จะได้ไม่หลุดสายตาไปกับ log ยาว ๆ
+if [ -n "$WEAK_SECRETS" ]; then
+    echo ""
+    warn "Weak Redis password(s) still in use:$WEAK_SECRETS"
+    warn "  they were set before this script enforced a minimum length, and are kept as they are."
+    warn "  Rotate with:  sudo REDIS_PASS='<12+ chars>' AGENT_REDIS_PASS='<12+ chars>' $PROJECT_DIR/setup-server.sh"
+    warn "  (changing AGENT_REDIS_PASS means every agent machine has to be installed again)"
 fi
 
 # รหัสที่สุ่มให้ไม่เคยถูกแสดงที่อื่นอีก — ต้องโชว์ตรงนี้ครั้งเดียวให้เก็บไว้
