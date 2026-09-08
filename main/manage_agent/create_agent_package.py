@@ -38,9 +38,6 @@ AGENT_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "for_Agent/package")
 
 DOWNLOAD_LINK_TTL = timedelta(minutes=5)
 
-# ไฟล์ในโฟลเดอร์ template ที่ **ไม่** เอาใส่ zip ตรง ๆ
-SKIP_TEMPLATE_FILES = {"site.conf", "site.conf.example"}
-
 TZ = ZoneInfo("Asia/Bangkok")
 
 
@@ -54,6 +51,12 @@ def central_address() -> tuple[str, str]:
     port = (os.getenv("AGENT_CENTRAL_REDIS_PORT") or os.getenv("REDIS_PORT") or "").strip()
 
     return host, port or "6380"
+
+
+def central_candidates() -> str:
+    # ที่อยู่สำรองของ central ที่ฝังไปกับ package — agent ไล่ลองเองเมื่อที่อยู่หลักต่อไม่ได้
+    raw = (os.getenv("AGENT_CENTRAL_CANDIDATES") or "").replace(",", " ").split()
+    return " ".join(dict.fromkeys(raw))
 
 
 async def build_site_conf() -> str:
@@ -93,6 +96,7 @@ async def build_site_conf() -> str:
         f'CENTRAL_REDIS_PORT="{port}"\n'
         f'REDIS_USERNAME="{username}"\n'
         f'REDIS_PASSWORD="{password}"\n'
+        f'CENTRAL_CANDIDATES="{central_candidates()}"\n'
     )
 
 
@@ -229,10 +233,15 @@ def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_con
         zipf.writestr("site.conf", site_conf)
 
         # zipf.write เก็บ file mode ไว้ด้วย — setup.sh ยังเป็น executable หลังแตก zip
+        # ข้าม site.conf ทุกใบ: ตัวจริงสร้างใหม่ทุกครั้งด้านบน ส่วนไฟล์ .bak ที่ setup-server.sh
+        # ทิ้งไว้มีรหัส Redis ของรอบก่อนอยู่ข้างใน ห้ามติดไปกับ zip ที่ส่งให้เครื่อง agent
         for name in sorted(os.listdir(AGENT_TEMPLATE_DIR)):
-            if name.startswith(".") or name in SKIP_TEMPLATE_FILES:
+            path = os.path.join(AGENT_TEMPLATE_DIR, name)
+
+            if name.startswith(".") or name.startswith("site.conf") or not os.path.isfile(path):
                 continue
-            zipf.write(os.path.join(AGENT_TEMPLATE_DIR, name), arcname=name)
+
+            zipf.write(path, arcname=name)
 
     os.chmod(zip_path, 0o600)
     return zip_path

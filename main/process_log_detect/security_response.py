@@ -21,22 +21,41 @@ from redis_client import publish_json
 GLOBAL_COMMAND_CHANNEL = "global_commands"
 
 
-# IP ที่ห้าม block เด็ดขาด — ไม่ใช่ address ของเครื่องจริงสักเครื่อง แต่โผล่ในทราฟฟิก
-NON_BLOCKABLE_IPS = frozenset({
-    "0.0.0.0",
-    "255.255.255.255",
-})
+# ช่วง IP ที่ห้าม block เด็ดขาด ไม่ว่าจะสั่งจากหน้าเว็บหรือ detector สั่งเอง
+#   0.0.0.0          เครื่องที่ยังไม่ได้ IP (ต้นทางของ DHCP DISCOVER) ไม่ใช่เครื่องจริงสักเครื่อง
+#   255.255.255.255  ปลายทาง broadcast ของวง
+#   127.0.0.0/8      loopback ของเครื่องเอง — บล็อกแล้วเท่ากับตัดขาตัวเอง service ในเครื่องคุยกันไม่ได้
+#   ::1              loopback ฝั่ง IPv6 (ระบบเป็น IPv4-only แต่กันไว้ไม่ให้หลุดมาทางไหนก็ตาม)
+NON_BLOCKABLE_NETWORKS = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in ("0.0.0.0/32", "255.255.255.255/32", "127.0.0.0/8", "::1/128")
+)
 
 
 def is_non_blockable_ip(ip: str | None) -> bool:
-    # True ถ้า ip เป็น address พิเศษที่ห้าม block (unspecified/broadcast)
+    # True ถ้า ip อยู่ในช่วงที่ห้าม block (unspecified / broadcast / loopback)
     if not ip:
         return False
 
     try:
-        return str(ipaddress.ip_address(str(ip).strip())) in NON_BLOCKABLE_IPS
+        addr = ipaddress.ip_address(str(ip).strip())
     except ValueError:
         return False
+
+    return any(addr in net for net in NON_BLOCKABLE_NETWORKS)
+
+
+def non_blockable_reason(ip: str | None) -> str:
+    # ข้อความอธิบายว่าทำไม IP นี้บล็อกไม่ได้ — ใช้ตอบกลับหน้าเว็บให้ตรงกับเหตุผลจริง
+    try:
+        addr = ipaddress.ip_address(str(ip).strip())
+    except (ValueError, TypeError):
+        return "ไม่ใช่ IP ที่บล็อกได้"
+
+    if addr.is_loopback:
+        return "เป็น loopback ของเครื่องเอง บล็อกแล้วเท่ากับตัดขาตัวเอง"
+
+    return "เป็น address พิเศษของทราฟฟิก broadcast ไม่ใช่เครื่องจริง"
 
 
 def _severity_rank(ttl_seconds: int | None) -> float:
@@ -126,8 +145,8 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
         return "no_ip"
 
     if is_non_blockable_ip(source_ip):
-        # ทราฟฟิก broadcast ปกติ ไม่ใช่การโจมตีของ host ใด block ไปก็ไม่มีผล
-        print(f"[AUTO-BLOCK] IP {source_ip} เป็น address พิเศษ (broadcast/unspecified) -> ไม่ block (เก็บแค่ alert)")
+        # ไม่ใช่การโจมตีของ host ใด (หรือเป็นตัวเครื่องเอง) block ไปก็ไม่มีผลนอกจากทำตัวเองพัง
+        print(f"[AUTO-BLOCK] IP {source_ip} {non_blockable_reason(source_ip)} -> ไม่ block (เก็บแค่ alert)")
         return "not_blockable"
 
     async with AsyncSessionLocal() as db:

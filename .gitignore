@@ -36,6 +36,7 @@ redis/redis-mtls.conf
 # ไฟล์สำรองที่ระบบเก็บให้เองก่อนเขียนทับ (redis-mtls.conf ตอนเปลี่ยนพอร์ต, users.acl ตอนหมุนรหัส)
 # ข้างในเป็นค่าจริงของเครื่องนั้น รวมถึงรหัสผ่านใน users.acl — ห้ามหลุดขึ้น git เด็ดขาด
 redis/*.bak.*
+for_Agent/package/site.conf.bak.*
 
 # พอร์ตที่ setup-server.sh เปิดไว้เองบน firewalld (ufw ใช้ comment ในตัว rule แทน ไม่ต้องมีไฟล์นี้)
 # เป็นสถานะของเครื่องนั้น ๆ ไม่ใช่ของโปรเจกต์

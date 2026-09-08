@@ -5,7 +5,12 @@ set -euo pipefail
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 ok()   { printf '  \033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m[!]\033[0m %s\n' "$*"; }
-err()  { printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
+SETUP_ERRORS=0
+ENV_WRITTEN=0
+SITE_CONF_WRITTEN=0
+err()  { SETUP_ERRORS=$((SETUP_ERRORS + 1)); printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
+# ข้อความแดงที่ "ไม่ใช่ error" (เป็นสิ่งที่ต้องไปทำต่อ) — ไม่ให้ไปนับรวมกับความล้มเหลวของสคริปต์
+red()  { printf '  \033[1;31m%s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------------------
 STEP_LOG=""
@@ -120,6 +125,8 @@ preload_env REDIS_USER       REDIS_USER
 preload_env REDIS_PASS       REDIS_PASS           1
 preload_env AGENT_REDIS_PASS AGENT_REDIS_PASSWORD 1
 preload_env ROOT_PATH            ROOT_PATH
+AGENT_CENTRAL_CANDIDATES="${AGENT_CENTRAL_CANDIDATES:-}"
+preload_env AGENT_CENTRAL_CANDIDATES AGENT_CENTRAL_CANDIDATES
 preload_env FORWARDED_ALLOW_IPS  FORWARDED_ALLOW_IPS
 
 # ---- ทางเข้าเว็บ: ค่าที่ระบบใช้อยู่ตอนนี้ (ไว้เป็นค่าตั้งต้นของคำถาม/ของการรันซ้ำ) ----
@@ -209,9 +216,16 @@ ask() {  # ask VAR "คำถาม" "ค่า default"
         ok "$var = $def (default, no tty)"
         return
     fi
-    read -rp "  $prompt${def:+ [$def]}: " ans
-    ans="${ans:-$def}"
-    [ -n "$ans" ] || { err "$var must not be empty"; exit 1; }
+    # ตอบว่างแล้วไม่มีค่าตั้งต้น = ถามใหม่ ไม่ใช่จบสคริปต์ (ตอนติดตั้งใหม่ คำถามรหัสฐานข้อมูล
+    # ไม่มีค่าตั้งต้นให้ เผลอกด Enter ทีเดียวเคยต้องเริ่มตอบใหม่ทั้งชุด)
+    # read คืนค่าไม่ใช่ 0 เมื่อเจอ EOF (สคริปต์อื่นป้อนคำตอบมาแล้วหมด) — ตรงนั้นต้องออก ไม่ใช่วนไม่รู้จบ
+    while :; do
+        read -rp "  $prompt${def:+ [$def]}: " ans \
+            || { err "$var must not be empty (no answer left to read)"; exit 1; }
+        ans="${ans:-$def}"
+        [ -n "$ans" ] && break
+        echo "    !! $var must not be empty - type a value"
+    done
     eval "$var=\$ans"
 }
 # ask_secret VAR "คำถาม" ["ค่าเดิม"] — มีค่าเดิม (โหมดตั้งค่าใหม่) กด Enter = ใช้ค่าเดิมต่อ
@@ -223,9 +237,15 @@ ask_secret() {  # ask_secret VAR "คำถาม" ["ค่าเดิม"]
         [ -n "$def" ] || { err "No tty and $var was not preset"; exit 1; }
         eval "$var=\$def"; ok "$var = ****** (unchanged, no tty)"; return
     fi
-    read -rsp "  $prompt${def:+ (Enter = keep the current one)}: " ans; echo
-    ans="${ans:-$def}"
-    [ -n "$ans" ] || { err "$var must not be empty"; exit 1; }
+    # เหตุผลเดียวกับ ask() — ตอบว่างแล้วไม่มีค่าเดิมให้ใช้ ก็ถามใหม่
+    while :; do
+        read -rsp "  $prompt${def:+ (Enter = keep the current one)}: " ans \
+            || { echo; err "$var must not be empty (no answer left to read)"; exit 1; }
+        echo
+        ans="${ans:-$def}"
+        [ -n "$ans" ] && break
+        echo "    !! $var must not be empty - type a value"
+    done
     eval "$var=\$ans"
 }
 
@@ -250,7 +270,7 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
             if [ "$(value_source "$var")" = ".env" ]; then
                 warn "$var in .env does not meet the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"
                 warn "  keeping it - it is the password the running system uses right now"
-                warn "  rotate it when you can:  sudo $var='<a stronger one>' $PROJECT_DIR/setup-server.sh"
+                warn "  rotate it when you can - on the dashboard: System Settings"
                 WEAK_SECRETS="$WEAK_SECRETS $var"
             else
                 # ค่าที่เพิ่งส่งเข้ามาทาง env = ตั้งใจจะเปลี่ยนรหัส -> ไม่ยอมให้ตั้งรหัสอ่อน
@@ -795,6 +815,72 @@ if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# ย้ายที่อยู่ของ central: agent ตามมาเองยังไง
+#
+# agent คุยกับ central ได้ทางเดียวคือผ่าน Redis ของ central เอง — พอที่อยู่เดิมตาย ช่องทางนั้น
+# ตายไปด้วย สั่งอะไรทีหลังไม่มีใครได้ยิน จึงต้องฝากที่อยู่ใหม่ไว้ "ตอนที่ยังคุยกันได้" เท่านั้น
+#
+# สคริปต์นี้ไม่ยุ่งกับการตั้งค่าเครือข่ายของเครื่อง — หน้าที่นั้นเป็นของแอดมิน (netplan)
+# ที่นี่ทำแค่บอก agent ว่าที่อยู่ใหม่คืออะไร แล้วบอกแอดมินว่าต้องไปทำอะไรต่อ
+#
+#   live   = ที่อยู่ใหม่อยู่บนเครื่องนี้แล้ว -> ประกาศเฉย ๆ ใช้งานต่อได้ทันที
+#   notify = ที่อยู่ใหม่ยังไม่มีบนเครื่อง   -> ประกาศไว้ก่อน แล้วเตือนให้ไปตั้ง IP เอง
+#   skip   = ยังไม่มี agent ในระบบ         -> ไม่ต้องทำอะไร
+MIGRATE_MODE="skip"
+
+host_has_ip() {  # host_has_ip IP — เครื่องนี้ถือ IP นี้อยู่แล้วไหม
+    ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 \
+        | grep -qx "$1"
+}
+
+iface_of_ip() {  # iface_of_ip IP — ชื่อ interface ที่ถือ IP นี้ (ไม่เจอ = คืนค่าว่าง ไม่ใช่ error)
+    ip -4 -o addr show scope global 2>/dev/null \
+        | awk -v want="$1" '{split($4, a, "/"); if (a[1] == want) {print $2; exit}}' \
+        || true
+}
+
+iface_toward() {  # iface_toward IP — ขาที่เคอร์เนลจะใช้วิ่งไปหา IP นี้ (ใช้ตอน IP ยังไม่มีบนเครื่อง)
+    ip -4 route get "$1" 2>/dev/null \
+        | awk '{for (i = 1; i < NF; i++) if ($i == "dev") {print $(i + 1); exit}}' \
+        || true
+}
+
+prefix_of_iface() {  # prefix_of_iface IFACE — /prefix ของ IPv4 ใบแรก (ไม่มี interface นั้น = ค่าว่าง)
+    ip -4 -o addr show dev "$1" scope global 2>/dev/null \
+        | awk '{split($4, a, "/"); print a[2]; exit}' \
+        || true
+}
+
+ip_is_permanent() {  # ip_is_permanent IP — IP นี้จะยังอยู่หลัง reboot ไหม
+    # มาจาก DHCP (dynamic) = อยู่ · เขียนไว้ใน netplan = อยู่ · นอกนั้นคือแปะไว้ชั่วคราว หายแน่
+    ip -4 -o addr show scope global 2>/dev/null | grep -q "inet $1/.* dynamic " && return 0
+    grep -rqs -- "$1" /etc/netplan/ 2>/dev/null && return 0
+    return 1
+}
+
+AGENTS_PRESENT=0
+case "${EXISTING_AGENTS:-}" in
+    ''|*[!0-9]*) ;;
+    *) [ "$EXISTING_AGENTS" -gt 0 ] && AGENTS_PRESENT=1 ;;
+esac
+
+if [ "$IP_CHANGED" = "1" ] || [ "$PORT_CHANGED" = "1" ]; then
+    if [ "$AGENTS_PRESENT" != "1" ]; then
+        MIGRATE_MODE="skip"
+    elif [ "$IP_CHANGED" != "1" ] || host_has_ip "$BIND_HOST"; then
+        MIGRATE_MODE="live"
+        [ "$IP_CHANGED" = "1" ] \
+            && ok "$BIND_HOST is already on this machine ($(iface_of_ip "$BIND_HOST")) - the agents can move over straight away"
+    else
+        MIGRATE_MODE="notify"
+        warn "This machine does not hold $BIND_HOST yet"
+        echo "       The $EXISTING_AGENTS agent(s) will be told the new address while $CURRENT_BIND_HOST still"
+        echo "       answers, then move across by themselves once you give this machine $BIND_HOST."
+        echo "       How to do that comes at the end of this run."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 log "Installing OS packages (apt)"
 export DEBIAN_FRONTEND=noninteractive
 run_step "apt-get update" apt-get update -qq
@@ -1036,11 +1122,25 @@ if [ "$ENV_EXISTED" = "1" ]; then
 
     # กลุ่ม agent: AGENT_CENTRAL_* คือค่าที่ชุดติดตั้ง agent ใช้จริง (build_site_conf อ่านจากที่นี่)
     env_sync AGENT_CENTRAL_HOST       "$BIND_HOST"
+    # คีย์นี้ปกติปล่อยว่าง แต่ต้องโผล่ใน .env ให้เห็น ไม่งั้นไม่มีใครรู้ว่าตั้งได้ (env_sync ข้ามค่าว่าง)
+    if grep -qE "^[[:space:]]*AGENT_CENTRAL_CANDIDATES[[:space:]]*=" "$ENV_FILE" 2>/dev/null; then
+        env_sync AGENT_CENTRAL_CANDIDATES "$AGENT_CENTRAL_CANDIDATES"
+    else
+        {
+            echo ""
+            echo "# Backup addresses of this central, e.g. \"192.168.56.120 central.local\" (space or comma separated)."
+            echo "# They go into the cert SAN and into every agent package, so the agents can follow this server"
+            echo "# to another IP on their own - see CENTRAL_MOVE.md"
+            echo "AGENT_CENTRAL_CANDIDATES=$AGENT_CENTRAL_CANDIDATES"
+        } >> "$ENV_FILE"
+        ENV_CHANGED="$ENV_CHANGED AGENT_CENTRAL_CANDIDATES"
+    fi
     env_sync AGENT_CENTRAL_REDIS_PORT "$REDIS_PORT"
     env_sync AGENT_REDIS_USERNAME     "agent_node"
     env_sync AGENT_REDIS_PASSWORD     "$AGENT_REDIS_PASS"
 
     if [ -n "$ENV_CHANGED" ]; then
+        ENV_WRITTEN=1
         ok "Updated in .env:$ENV_CHANGED"
     else
         ok "Everything in .env already matches - nothing to change"
@@ -1091,11 +1191,16 @@ GEMINI_API_KEY=
 # AGENT_CENTRAL_* are read straight from here (re-run this script to change them);
 # AGENT_REDIS_* are only the fallback - the System Settings page stores those in the database
 AGENT_CENTRAL_HOST=$BIND_HOST
+# Backup addresses of this central, e.g. "192.168.56.120 central.local" (space or comma separated).
+# They go into the cert SAN and into every agent package, so the agents can follow this server
+# to another IP on their own - see CENTRAL_MOVE.md
+AGENT_CENTRAL_CANDIDATES=$AGENT_CENTRAL_CANDIDATES
 AGENT_CENTRAL_REDIS_PORT=$REDIS_PORT
 AGENT_REDIS_USERNAME=agent_node
 AGENT_REDIS_PASSWORD=$AGENT_REDIS_PASS
 EOF
     chmod 600 "$PROJECT_DIR/.env"
+    ENV_WRITTEN=2
     ok "Created .env (JWT/CSRF secrets generated automatically, mode 600)"
 fi
 
@@ -1106,6 +1211,16 @@ mkdir -p "$CERT_DIR"
 
 # ---- host ที่ต้องอยู่ใน SAN ----
 SAN_HOSTS=("$BIND_HOST")
+# รอบที่ย้าย IP: เก็บที่อยู่เดิมไว้ใน SAN ด้วย — agent ที่ยังเกาะที่อยู่เดิมอยู่จะได้ไม่ถูกตัดทันที
+# ที่ Redis restart ด้วย cert ใบใหม่ (มันมีเวลาให้ย้ายตามอย่างเป็นระเบียบ)
+if [ "$IP_CHANGED" = "1" ] && [ -n "$CURRENT_BIND_HOST" ]; then
+    SAN_HOSTS+=("$CURRENT_BIND_HOST")
+fi
+# ที่อยู่สำรองของ central (ไว้ย้าย IP ทีหลังโดย agent ตามเองได้) ต้องอยู่ใน SAN ตั้งแต่ตอนนี้
+# ไม่งั้นวันย้ายจริง agent จะเจอ cert ที่ไม่ครอบ IP ใหม่แล้วปฏิเสธการเชื่อมต่อ
+for _c in $(printf '%s' "${AGENT_CENTRAL_CANDIDATES:-}" | tr ',' ' '); do
+    SAN_HOSTS+=("${_c%%:*}")
+done
 # dashboard bind อีก IP หนึ่ง = คนเปิดเว็บด้วย IP นั้น ต้องมีใน SAN ด้วย ไม่งั้นเบราว์เซอร์ฟ้องทุกครั้ง
 if [ "$WEB_BIND_HOST" != "0.0.0.0" ] && [ "$WEB_BIND_HOST" != "$BIND_HOST" ]; then
     SAN_HOSTS+=("$WEB_BIND_HOST")
@@ -1342,6 +1457,7 @@ REDIS_PASSWORD="$ACL_AGENT_PASS"
 EOF
     chmod 600 "$SITE_CONF"
     if [ -n "$SITE_HOST" ] && [ "$SITE_HOST:$SITE_PORT" != "$BIND_HOST:$REDIS_PORT" ]; then
+        SITE_CONF_WRITTEN=1
         ok "Rewrote site.conf (agents now dial $BIND_HOST:$REDIS_PORT, was $SITE_HOST:$SITE_PORT)"
     else
         ok "Wrote site.conf - agent zips embed these values automatically"
@@ -1353,6 +1469,10 @@ fi
 # ---------------------------------------------------------------------------
 log "Setting file ownership to $APP_USER:$APP_GROUP"
 mkdir -p "$PROJECT_DIR/redis/data-redis"
+# สองโฟลเดอร์นี้ถูกสร้างตอน "ออก agent package ครั้งแรก" — ถ้าครั้งแรกนั้นถูกสั่งด้วย sudo
+# (เช่นรัน main/create_agent.py ผ่าน root) โฟลเดอร์จะเป็นของ root แล้วหน้าเว็บที่รันเป็น $APP_USER
+# จะสร้าง agent ไม่ได้อีกเลย ตอบ 500 PermissionError — สร้างไว้ก่อนตรงนี้ให้ chown ข้างล่างจัดการ
+mkdir -p "$PROJECT_DIR/cert/agent" "$PROJECT_DIR/main/agent_packages"
 chown -R "$APP_USER":"$APP_GROUP" "$PROJECT_DIR"
 ok "chown done"
 
@@ -1375,6 +1495,145 @@ redis_serving_stale_cert() {
     [ "$served" != "$ondisk" ]
 }
 
+# ---- บอก agent ว่า central ย้ายที่อยู่/พอร์ต ----
+# agent เก็บ "รายการที่อยู่ของ central" ไว้ได้หลายที่ (agent_config.json) พอที่อยู่ที่ใช้อยู่ล่ม
+# มันจะไล่ลองที่อยู่สำรองเอง — ที่นี่จึงแค่ฝากที่อยู่ใหม่ไว้ตอนที่ยังคุยกันได้ แล้วมันตามมาเอง
+#
+# ยิง 2 จังหวะ:
+#   รอบ 1 ก่อน restart Redis — ผ่านที่อยู่+พอร์ต "เดิม" ตอน agent ยังเกาะอยู่ (ได้ยินแน่)
+#          จำเป็นมากตอนเปลี่ยนพอร์ต เพราะพอ Redis ย้ายพอร์ตแล้ว agent จะไม่ได้ยินอะไรอีกเลย
+#   รอบ 2 หลัง service ขึ้นครบ — ที่อยู่ใหม่ใช้ได้จริงแล้ว ตัวที่ต่อกลับมาทันจะย้ายทันที
+#
+# คำสั่งถูกเซ็นด้วย HMAC โดยใช้ secret_token_hash ของ agent ตัวนั้นเป็นกุญแจ (ค่าที่ central
+# มีอยู่แล้วใน DB และ agent คำนวณเองได้จาก token ของตัวเอง) และ agent จะยอมย้ายก็ต่อเมื่อ
+# ต่อ mTLS ที่อยู่ใหม่ได้จริงเท่านั้น — สั่งลอย ๆ ให้ไปเกาะเครื่องอื่นไม่ได้
+AGENTS_ANNOUNCED=0
+
+# รอ agent ต่อกลับมาและย้ายตามได้นานสุดเท่านี้ (รวมทั้งรอบประกาศที่สองและตอนทำตารางสถานะ)
+# หมดเวลาแล้วจบเลย ไม่ต้องรอต่อ — ตัวที่ยังไม่กลับมามีที่อยู่ใหม่อยู่ในรายการสำรองแล้ว
+# เดี๋ยวมันย้ายเองตอนที่อยู่เดิมเงียบ ไม่ต้องให้คนนั่งเฝ้าหน้าจอ
+AGENT_WAIT_SECONDS=60
+AGENT_WAIT_UNTIL=0
+
+agent_wait_left() {  # เหลือกี่วินาทีในโควตารอ agent (0 = หมดเวลาแล้ว)
+    local left
+    [ "$AGENT_WAIT_UNTIL" -gt 0 ] || { printf '0'; return 0; }
+    left=$(( AGENT_WAIT_UNTIL - $(date +%s) ))
+    [ "$left" -gt 0 ] && printf '%s' "$left" || printf '0'
+}
+
+agent_key_file() {  # เขียน "agent_id<TAB>secret_token_hash" ของ agent ที่ยัง active ลงไฟล์ 600
+    local f
+    f="$(mktemp)"
+    chmod 600 "$f"
+    app_psql "select agent_id || E'\t' || secret_token_hash from agents where is_active" > "$f" 2>/dev/null
+    sed -i '/^[[:space:]]*$/d' "$f"
+    printf '%s' "$f"
+}
+
+announce_central_move() {  # announce_central_move WAIT [ที่อยู่ที่ใช้ส่ง] [พอร์ตที่ใช้ส่ง]
+    local waited="${1:-0}" via="${2:-$BIND_HOST}" via_port="${3:-$REDIS_PORT}"
+    local keys out rc=0
+
+    [ "$IP_CHANGED" = "1" ] || [ "$PORT_CHANGED" = "1" ] || return 0
+    [ "$MIGRATE_MODE" != "skip" ] || return 0
+    [ -x "$PROJECT_DIR/venv/bin/python" ] || return 0
+    [ -n "$via" ] || return 0
+    case "${EXISTING_AGENTS:-}" in ''|*[!0-9]*) return 0 ;; esac
+    [ "$EXISTING_AGENTS" -gt 0 ] || return 0
+    systemctl is-active --quiet centralredis.service || return 0
+
+    # ประกาศได้ก็ต่อเมื่อต่อ Redis ผ่านที่อยู่ "$via" ได้ — ถ้าเครื่องยังไม่มีที่อยู่นั้น (ย้าย IP แล้วยัง
+    # ไม่ได้ตั้งค่าเครือข่าย) ก็ไม่ต้องเสียเวลาลอง รอบแรกที่ยิงผ่านที่อยู่เดิมทำหน้าที่ครบแล้ว
+    case "$via" in
+        *[0-9].[0-9]*)
+            if ! host_has_ip "$via"; then
+                [ "$waited" = "0" ] \
+                    || log "Not announcing again over $via - this machine does not hold that address yet"
+                return 0
+            fi ;;
+    esac
+
+    keys="$(agent_key_file)"
+    if [ ! -s "$keys" ]; then rm -f "$keys"; return 0; fi
+
+    log "Telling the agents that central is now $BIND_HOST:$REDIS_PORT"
+
+    out="$("$PROJECT_DIR/venv/bin/python" - <<PYMOVE 2>&1 || rc=$?
+import hashlib, hmac, json, os, secrets, sys, time
+
+try:
+    import redis
+except Exception:
+    print("skipped (the redis library is not in the venv)"); sys.exit(2)
+
+AGENTS = []
+for line in open("$keys", encoding="utf-8"):
+    parts = line.rstrip("\n").split("\t")
+    if len(parts) == 2 and parts[0] and parts[1]:
+        AGENTS.append((parts[0].strip(), parts[1].strip()))
+
+if not AGENTS:
+    print("no active agent in the database"); sys.exit(2)
+
+try:
+    r = redis.Redis(
+        host="$via", port=$via_port, ssl=True,
+        ssl_certfile="$CERT_DIR/central.crt", ssl_keyfile="$CERT_DIR/central.key",
+        ssl_ca_certs="$CERT_DIR/ca.crt", ssl_cert_reqs="required", ssl_check_hostname=True,
+        username="$REDIS_USER", password="$REDIS_PASS",
+        socket_connect_timeout=5, socket_timeout=10,
+    )
+    r.ping()
+except Exception as e:
+    print("cannot reach Redis at $via:$via_port - %s" % str(e)[:120]); sys.exit(2)
+
+channels = ["agent_commands:%s" % a for a, _ in AGENTS]
+deadline = time.time() + $waited
+
+# เพิ่ง restart Redis ไป agent ยังต่อกลับมาไม่ครบ ประกาศตอนนี้จะไม่มีใครได้ยิน
+while time.time() < deadline:
+    try:
+        if any(n for _, n in r.pubsub_numsub(*channels)):
+            break
+    except Exception:
+        pass
+    time.sleep(1)
+
+for agent_id, token_hash in AGENTS:
+    now = int(time.time())
+    payload = {
+        "command": "central_move",
+        "agent_id": agent_id,
+        "new_host": "$BIND_HOST",
+        "new_port": $REDIS_PORT,
+        "switch_now": True,
+        "issued_at": now,
+        "expires_at": now + 900,
+        "nonce": secrets.token_hex(16),
+    }
+    # ต้องเรียงคีย์ + ไม่มีช่องว่าง ให้ตรงกับที่ agent คำนวณ ไม่งั้นลายเซ็นไม่ตรง
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    payload["sig"] = hmac.new(token_hash.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+
+    heard = r.publish("agent_commands:%s" % agent_id, json.dumps(payload))
+    print("%-20s %s" % (agent_id, "got it" if heard else "offline (it will follow once the old address stops answering)"))
+PYMOVE
+)"
+
+    printf '%s\n' "$out" | sed 's/^/       /'
+    rm -f "$keys"
+
+    case "$rc" in
+        0) AGENTS_ANNOUNCED=1 ;;
+        *) [ "$waited" = "0" ] || warn "Could not announce the move - the agents have to be reinstalled by hand" ;;
+    esac
+    return 0
+}
+
+# รอบแรก: ยิงผ่านที่อยู่+พอร์ตเดิมตอน agent ยังเกาะอยู่ ก่อน Redis จะ restart ด้วย cert/พอร์ตใหม่
+announce_central_move 0 "${CURRENT_BIND_HOST:-$BIND_HOST}" "${OLD_REDIS_PORT:-$REDIS_PORT}"
+
 REDIS_RESTART_REASON=""
 if [ "$CERT_ISSUED" = "1" ]; then
     REDIS_RESTART_REASON="it is still serving the old certificate"
@@ -1394,8 +1653,13 @@ if [ -n "$REDIS_RESTART_REASON" ] && systemctl is-active --quiet centralredis.se
 fi
 
 if [ "$CERT_OK" -eq 1 ]; then
-    bash "$PROJECT_DIR/systemd/install.sh"
+    QUIET_STATUS=1 bash "$PROJECT_DIR/systemd/install.sh"
     STARTED=1
+
+    # รอบสอง: ตอนนี้ที่อยู่ใหม่พร้อมใช้จริงแล้ว (cert ใบใหม่ + service ขึ้นครบ) agent ที่ต่อกลับมา
+    # จะย้ายตามได้ทันทีโดยไม่ต้องรอที่อยู่เดิมล่ม — เริ่มจับเวลาโควตารอ agent ตรงนี้
+    AGENT_WAIT_UNTIL=$(( $(date +%s) + AGENT_WAIT_SECONDS ))
+    announce_central_move "$(agent_wait_left)"
 else
     warn "Not starting services because certs are incomplete - units copied but not started"
     cp "$PROJECT_DIR"/systemd/securelog-*.service "$PROJECT_DIR"/systemd/securelog.target \
@@ -1628,114 +1892,267 @@ PYCHK
             warn "Redis check $REDIS_CHECK"
             ;;
         *)
-            err "This machine CANNOT use its own Redis - every service will sit in a retry loop:"
-            printf '      %s\n' "$REDIS_CHECK" >&2
-            err "  The services are running but nothing works until this is fixed. Usually one of:"
-            err "    - centralredis still serving an older certificate:  sudo systemctl restart centralredis.service"
-            err "    - users.acl and .env holding different passwords:   sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
-            err "  Then check again with:  journalctl -u securelog-agent-monitor -n 20"
+            if ! host_has_ip "$BIND_HOST"; then
+                # ที่อยู่ใหม่ยังไม่ได้ตั้งบนเครื่อง — คาดไว้อยู่แล้ว บอกไว้เฉย ๆ ไม่นับเป็นความล้มเหลว
+                warn "Cannot use Redis at $BIND_HOST:$REDIS_PORT yet - this machine does not hold that address"
+                warn "  (that is expected at this point - see what to do at the end of this run)"
+            else
+                err "This machine CANNOT use its own Redis - every service will sit in a retry loop:"
+                printf '      %s\n' "$REDIS_CHECK" >&2
+                echo "      The services are running but nothing works until this is fixed. Usually one of:"
+                echo "        - centralredis still serving an older certificate:"
+                echo "            sudo systemctl restart centralredis.service"
+                echo "        - users.acl and .env holding different passwords:"
+                echo "            sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
+                echo "      Then check again with:  journalctl -u securelog-agent-monitor -n 20"
+            fi
             ;;
     esac
 fi
 
 # ---------------------------------------------------------------------------
-log "Done - summary"
-echo "  Location      : $PROJECT_DIR"
-echo "  Runs as user  : $APP_USER"
-echo "  Central addr  : $BIND_HOST  (agents reach Redis at $BIND_HOST:$REDIS_PORT)"
-# เว็บ bind IP เดียว = ต้องเข้าด้วย IP นั้นเท่านั้น (0.0.0.0 ค่อยใช้ที่อยู่ของ central เป็นตัวแทน)
+# agent แต่ละตัวกำลังเกาะ central ที่ไหนอยู่ — ค่านี้ agent รายงานมาเองทุกวินาที (agent_runtime)
+# จึงใช้ยืนยันได้จริงว่าย้ายตามครบหรือยัง ไม่ใช่เดาจากไฟล์ config
+agent_status_table() {  # agent_status_table [ที่อยู่ที่คาดว่า agent ต้องย้ายไป] [วินาทีที่ยอมรอ]
+    local keys want="${1:-}" wait_left="${2:-0}"
+    [ "$AGENTS_PRESENT" = "1" ] || return 0
+    [ -x "$PROJECT_DIR/venv/bin/python" ] || return 0
+    [ "$REDIS_CHECK" = "ok" ] || return 0
+
+    keys="$(agent_key_file)"
+    if [ ! -s "$keys" ]; then rm -f "$keys"; return 0; fi
+
+    "$PROJECT_DIR/venv/bin/python" - <<PYSTAT 2>/dev/null || true
+import json, sys, time
+
+try:
+    import redis
+except Exception:
+    sys.exit(0)
+
+agents = [l.split("\t")[0].strip() for l in open("$keys", encoding="utf-8") if l.strip()]
+
+try:
+    r = redis.Redis(
+        host="$BIND_HOST", port=$REDIS_PORT, ssl=True,
+        ssl_certfile="$CERT_DIR/central.crt", ssl_keyfile="$CERT_DIR/central.key",
+        ssl_ca_certs="$CERT_DIR/ca.crt", ssl_cert_reqs="required", ssl_check_hostname=True,
+        username="$REDIS_USER", password="$REDIS_PASS",
+        socket_connect_timeout=5, socket_timeout=5,
+    )
+    r.ping()
+except Exception:
+    sys.exit(0)
+
+def snapshot():
+    rows = []
+    for agent_id in agents:
+        raw = r.get("agent_runtime:%s" % agent_id)
+        if not raw:
+            rows.append((agent_id, "offline", "-"))
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            data = {}
+        host = data.get("central_host")
+        port = data.get("central_port")
+        where = "%s:%s" % (host, port) if host and port else (host or "(older agent - does not report it)")
+        rows.append((agent_id, "online", where))
+    return rows
+
+# เพิ่งประกาศย้ายไป agent ใช้เวลาสักครู่กว่าจะสลับสายและรายงานที่อยู่ใหม่ — รอให้มันเสร็จก่อน
+# ไม่งั้นตารางจะโชว์ที่อยู่เก่าทั้งที่อีกวินาทีเดียวมันก็ย้ายแล้ว
+want = "$want"
+deadline = time.time() + $wait_left
+
+while want and time.time() < deadline:
+    rows = snapshot()
+    live = [r_ for r_ in rows if r_[1] == "online"]
+    if live and all(r_[2] == want for r_ in live):
+        break
+    time.sleep(2)
+
+online = 0
+print("  %-20s %-9s %s" % ("AGENT", "STATUS", "CENTRAL IT IS ATTACHED TO"))
+
+for agent_id, status, where in snapshot():
+    if status == "online":
+        online += 1
+    print("  %-20s %-9s %s" % (agent_id, status, where))
+
+print("  %d of %d online" % (online, len(agents)))
+
+# หมดโควตารอแล้วแต่ยังไม่ครบ = เรื่องปกติ ไม่ใช่ความผิดพลาด บอกให้ชัดจะได้ไม่ต้องนั่งลุ้น
+if want:
+    late = [a for a, s, w in snapshot() if s == "online" and w != want]
+    if late:
+        print("  Not all of them are on %s yet - no need to wait here, they switch by" % want)
+        print("  themselves once the old address goes quiet (CENTRAL_MOVE.md)")
+PYSTAT
+
+    rm -f "$keys"
+}
+
+# ---------------------------------------------------------------------------
+# สรุปทีเดียวตอนจบ — ระหว่างทางพิมพ์แค่ว่ากำลังทำอะไร ผลรวมมาอยู่ตรงนี้ที่เดียว
+DID=()          # รอบนี้ทำอะไรไปบ้าง
+NOTES=()        # เรื่องที่ควรรู้ แต่ไม่ต้องทำอะไร
+ACTIONS=()      # เรื่องที่ต้องไปทำต่อ (พิมพ์ตัวแดงท้ายสุด)
+
 if [ "$WEB_BIND_HOST" = "0.0.0.0" ]; then WEB_URL_HOST="$BIND_HOST"; else WEB_URL_HOST="$WEB_BIND_HOST"; fi
-echo "  dashboard     : bind $WEB_BIND_HOST:8000  ->  https://$WEB_URL_HOST:8000$ROOT_PATH/"
-echo "  root path     : ${ROOT_PATH:-/}${ROOT_PATH:+   (cookies are tied to this path)}"
-echo "  proxy ready   : trusts X-Forwarded-For from $FORWARDED_ALLOW_IPS"
-echo "                  put any proxy in front of https://$WEB_URL_HOST:8000$ROOT_PATH/ - keep the whole path"
-echo "                  sample nginx block + the traps to avoid: REVERSE_PROXY.md"
-if [ "$PROXY_IS_LOCAL" = "1" ]; then
-    echo "                  proxy on another host? re-run with FORWARDED_ALLOW_IPS=<its ip>"
+DASH_URL="https://$WEB_URL_HOST:8000$ROOT_PATH/"
+
+# ---- รอบนี้ทำอะไรไปบ้าง ----
+[ "$IP_CHANGED" = "1" ]   && DID+=("moved the central address $CURRENT_BIND_HOST -> $BIND_HOST")
+[ "$PORT_CHANGED" = "1" ] && DID+=("moved the Redis port $OLD_REDIS_PORT -> $REDIS_PORT")
+[ "$CA_CREATED" = "1" ]   && DID+=("created a new Root CA")
+[ "$CERT_ISSUED" = "1" ]  && DID+=("issued new certificates (SAN $SAN_LINE)")
+[ "$ACL_WRITTEN" = "1" ]  && DID+=("wrote redis/users.acl")
+[ "$ENV_WRITTEN" = "2" ]  && DID+=("created .env")
+[ "$ENV_WRITTEN" = "1" ]  && DID+=("updated .env:$ENV_CHANGED")
+[ "$SITE_CONF_WRITTEN" = "1" ] && DID+=("rewrote the agent installer's site.conf")
+[ -n "$REDIS_RESTART_REASON" ] && DID+=("restarted centralredis")
+[ "$AGENTS_ANNOUNCED" = "1" ]  && DID+=("told the agents where to find central")
+[ "$STARTED" -eq 1 ]      && DID+=("installed the systemd units and (re)started the stack")
+[ "${#DID[@]}" -gt 0 ]    || DID+=("nothing - everything was already in the state you asked for")
+
+# ---- เรื่องที่ควรรู้ ----
+NOTES+=("proxy ready - trusts X-Forwarded-For from $FORWARDED_ALLOW_IPS · sample nginx: REVERSE_PROXY.md")
+[ "$PROXY_IS_LOCAL" = "1" ] && NOTES+=("proxy on another host? re-run with FORWARDED_ALLOW_IPS=<its ip>")
+[ "$STARTED" -eq 1 ] && [ "$ENV_WRITTEN" = "2" ] && NOTES+=("first login is admin/admin")
+
+if [ -n "$GENERATED_PASSWORDS" ]; then
+    NOTES+=("passwords generated this run (not shown again - they are in .env and redis/users.acl):")
+    while IFS='=' read -r _k _v; do
+        [ -n "$_k" ] && NOTES+=("    $_k = $_v")
+    done <<< "$GENERATED_PASSWORDS"
 fi
-echo "  LINE webhook  : bind $WEBHOOK_BIND_HOST:8080"
-echo "  database      : $DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT${DB_STATE:+  [$DB_STATE]}"
-echo "  firewall      : $FW_SUMMARY"
-case "$REDIS_CHECK" in
-    ok)       echo "  Redis (mTLS)  : reachable and logged in" ;;
-    skipped*) echo "  Redis (mTLS)  : $REDIS_CHECK" ;;
-    *)        echo "  Redis (mTLS)  : ** NOT USABLE - see the error above **" ;;
-esac
-echo ""
-if [ "$STARTED" -eq 1 ]; then
-    ok "First login is admin/admin"
-else
-    warn "Services not started because certs are incomplete - check $CERT_DIR then run: sudo $PROJECT_DIR/systemd/install.sh"
+
+# ---- เรื่องที่ต้องไปทำต่อ ----
+if [ -n "$WEAK_SECRETS" ]; then
+    ACTIONS+=("Rotate the weak Redis password(s):$WEAK_SECRETS")
+    ACTIONS+=("    do it on the dashboard: System Settings - it rewrites redis/users.acl and .env together")
+    ACTIONS+=("    (running this script with REDIS_PASS=... does NOT change it: a value already in .env wins)")
+    ACTIONS+=("    changing the agent account's password means every agent machine has to be installed again")
+fi
+
+# ที่อยู่ที่ระบบชี้ไปต้องเป็นของเครื่องนี้จริง ๆ ไม่งั้น service ตัวเองก็ต่อ Redis ไม่ได้
+# สคริปต์ไม่ตั้งค่าเครือข่ายให้ (พลาดแล้วเครื่องหลุดจากเน็ตถาวร กู้ยากกว่าเดิม) — สั่งให้แอดมินไปทำ
+if ! host_has_ip "$BIND_HOST" || ! ip_is_permanent "$BIND_HOST"; then
+    _iface="$(iface_of_ip "$BIND_HOST")"
+    [ -n "$_iface" ] || _iface="$(iface_toward "$BIND_HOST")"
+    [ -n "$_iface" ] || _iface="$(iface_of_ip "$CURRENT_BIND_HOST")"
+    [ -n "$_iface" ] || _iface="<interface>"
+    _prefix="$(prefix_of_iface "$_iface")"
+
+    if host_has_ip "$BIND_HOST"; then
+        ACTIONS+=("Make $BIND_HOST permanent on $_iface with netplan, then: sudo netplan try")
+        ACTIONS+=("    right now it only lives in memory - the next reboot takes it away and the whole")
+        ACTIONS+=("    system stops working, with nothing to point at why")
+    else
+        ACTIONS+=("Give this machine the address $BIND_HOST/${_prefix:-24} on $_iface with netplan,")
+        ACTIONS+=("    then: sudo netplan try")
+        ACTIONS+=("    until you do, the services here cannot reach their own Redis")
+        [ "$AGENTS_PRESENT" = "1" ] && \
+            ACTIONS+=("    (the agents are fine - they were told the new address and follow by themselves)")
+    fi
+    case "${SSH_CONNECTION:-}" in
+        *" $CURRENT_BIND_HOST "*)
+            ACTIONS+=("    your ssh session comes in on $CURRENT_BIND_HOST - applying that cuts you off,")
+            ACTIONS+=("    so keep this window open or reconnect via $BIND_HOST first") ;;
+    esac
+fi
+
+# ---- agent: ต้องลงใหม่ไหม ----
+AGENT_COUNT_KNOWN=0
+case "${EXISTING_AGENTS:-}" in ''|*[!0-9]*) ;; *) AGENT_COUNT_KNOWN=1 ;; esac
+AGENT_LINE=""
+if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -gt 0 ]; }; then
+    AGENT_REASONS=()
+    [ "$IP_CHANGED" = "1" ]   && [ "$AGENTS_ANNOUNCED" != "1" ] && AGENT_REASONS+=("the central address moved (they still dial $CURRENT_BIND_HOST)")
+    [ "$PORT_CHANGED" = "1" ] && [ "$AGENTS_ANNOUNCED" != "1" ] && AGENT_REASONS+=("the Redis port moved (they still dial port $OLD_REDIS_PORT)")
+    [ "$AGENT_PASS_CHANGED" = "1" ] && AGENT_REASONS+=("the Redis password of the agent accounts changed")
+    [ "$CA_CREATED" = "1" ] && AGENT_REASONS+=("a new Root CA was issued - their certificates are signed by the old one")
+
+    if [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -eq 0 ]; then
+        AGENT_LINE="none registered yet - nothing to do on that side"
+    elif [ "${#AGENT_REASONS[@]}" -gt 0 ]; then
+        AGENT_LINE="they cannot reach central any more and have to be installed again"
+        ACTIONS+=("Install the agent again on every agent machine - this run changed what they rely on:")
+        for _r in "${AGENT_REASONS[@]}"; do ACTIONS+=("    - $_r"); done
+        ACTIONS+=("    dashboard -> download a fresh package for that agent -> unzip there -> sudo ./setup.sh")
+        ACTIONS+=("    (editing one file by hand is not enough: the address sits in agent_config.json AND filebeat.yml)")
+        [ "$IP_CHANGED" = "1" ] && \
+            ACTIONS+=("    next time run this script BEFORE the old address goes away - then they follow on their own")
+    elif [ "$AGENTS_ANNOUNCED" = "1" ]; then
+        AGENT_LINE="told the new address - they move over on their own (CENTRAL_MOVE.md)"
+    else
+        AGENT_LINE="nothing they depend on changed - the ones already installed keep working"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
-AGENT_COUNT_KNOWN=0
-case "${EXISTING_AGENTS:-}" in ''|*[!0-9]*) ;; *) AGENT_COUNT_KNOWN=1 ;; esac
-if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -gt 0 ]; }; then
-    AGENT_REASONS=()
-    if [ "$IP_CHANGED" = "1" ]; then
-        AGENT_REASONS+=("the central address moved $CURRENT_BIND_HOST -> $BIND_HOST (they still dial $CURRENT_BIND_HOST)")
-    fi
-    if [ "$PORT_CHANGED" = "1" ]; then
-        AGENT_REASONS+=("the Redis port moved $OLD_REDIS_PORT -> $REDIS_PORT (they still dial ${CURRENT_BIND_HOST:-the central}:$OLD_REDIS_PORT)")
-    fi
-    if [ "$AGENT_PASS_CHANGED" = "1" ]; then
-        AGENT_REASONS+=("the Redis password of the agent accounts changed (they authenticate with the old one)")
-    fi
-    if [ "$CA_CREATED" = "1" ]; then
-        AGENT_REASONS+=("a new Root CA was issued - the certificates in their packages are signed by the old CA,"$'\n'"         so they fail with CERTIFICATE_VERIFY_FAILED and retry forever without saying anything")
-    fi
-
-    echo ""
-    if [ "${#AGENT_REASONS[@]}" -gt 0 ]; then
-        if [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -gt 0 ]; then
-            warn "The $EXISTING_AGENTS agent machine(s) registered in the database have to be installed again:"
-        else
-            warn "Agent machines (client side) have to be installed again - this run changed what they rely on:"
-        fi
-        for _r in "${AGENT_REASONS[@]}"; do echo "       - $_r"; done
-        echo ""
-        echo "     Until that is done they keep retrying quietly and their logs never arrive here."
-        echo "     On EVERY agent machine, one of these:"
-        echo "       - open the dashboard -> download a fresh package for that agent -> unzip it there"
-        echo "         and run:  sudo ./setup.sh      (it rewrites everything, this is the safe one)"
-        echo "       - or, in the agent folder, edit site.conf (CENTRAL_HOST / CENTRAL_REDIS_PORT / REDIS_PASSWORD) and"
-        echo "         re-run:   sudo ./setup.sh"
-        echo "     Editing one file by hand is not enough - those values sit in BOTH"
-        echo "     <agent dir>/agent_config.json and /etc/filebeat/filebeat.yml; setup.sh writes both."
-        if [ "$IP_CHANGED" = "1" ]; then
-            echo "     Updated on this machine already: cert SAN, REDIS_HOST/AGENT_CENTRAL_HOST in .env,"
-            echo "     site.conf and the systemd units."
-        fi
-    else
-        ok "Agent machines: nothing they depend on changed - the agents already installed keep working as is"
-    fi
-fi
-
-# รหัสที่อ่อนแต่ยังใช้อยู่ — เตือนอีกครั้งตอนจบ จะได้ไม่หลุดสายตาไปกับ log ยาว ๆ
-if [ -n "$WEAK_SECRETS" ]; then
-    echo ""
-    warn "Weak Redis password(s) still in use:$WEAK_SECRETS"
-    warn "  they were set before this script enforced a minimum length, and are kept as they are."
-    warn "  Rotate with:  sudo REDIS_PASS='<12+ chars>' AGENT_REDIS_PASS='<12+ chars>' $PROJECT_DIR/setup-server.sh"
-    warn "  (changing AGENT_REDIS_PASS means every agent machine has to be installed again)"
-fi
-
-# รหัสที่สุ่มให้ไม่เคยถูกแสดงที่อื่นอีก — ต้องโชว์ตรงนี้ครั้งเดียวให้เก็บไว้
-if [ -n "$GENERATED_PASSWORDS" ]; then
-    echo ""
-    warn "Generated passwords (save them - not shown again; also stored in .env and redis/users.acl):"
-    printf '%s' "$GENERATED_PASSWORDS" | while IFS='=' read -r k v; do
-        [ -n "$k" ] && echo "     $k = $v"
-    done
-fi
-
-# ปิดท้ายด้วยรายชื่อ service ที่รันจริง — เป็นสิ่งสุดท้ายที่ค้างอยู่บนจอหลังสคริปต์จบ
+LINE_="============================================================"
 echo ""
-if [ "$STARTED" -eq 1 ]; then
-    ok "Setup complete - services running:"
-    systemctl --no-pager --plain --no-legend list-units 'centralredis.service' 'securelog-*' 2>/dev/null \
-        | awk '{printf "     %-36s %s %s\n", $1, $3, $4}'
+echo "$LINE_"
+if [ "$SETUP_ERRORS" -gt 0 ]; then
+    printf '  \033[1;31mSETUP FINISHED WITH %d ERROR(S) - scroll up for the [ERR] lines\033[0m\n' "$SETUP_ERRORS"
+elif [ "$STARTED" -ne 1 ]; then
+    printf '  \033[1;31mSETUP FINISHED - the services are not running\033[0m\n'
+elif [ "${#ACTIONS[@]}" -gt 0 ]; then
+    printf '  \033[1;32mSETUP COMPLETE\033[0m - but there is something left for you to do (bottom of this page)\n'
 else
-    warn "Setup finished - services are not running yet"
+    printf '  \033[1;32mSETUP COMPLETE\033[0m\n'
 fi
+echo "$LINE_"
+
+echo ""
+echo "  What this run did"
+for _d in "${DID[@]}"; do echo "     - $_d"; done
+
+echo ""
+echo "  Where things are"
+printf '     %-13s %s\n' "dashboard" "$DASH_URL   (bind $WEB_BIND_HOST:8000)"
+printf '     %-13s %s\n' "Redis mTLS" "$BIND_HOST:$REDIS_PORT   ($([ "$REDIS_CHECK" = "ok" ] && echo "reachable and logged in" || echo "$REDIS_CHECK"))"
+printf '     %-13s %s\n' "database" "$DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT${DB_STATE:+  [$DB_STATE]}"
+printf '     %-13s %s\n' "LINE webhook" "$WEBHOOK_BIND_HOST:8080"
+printf '     %-13s %s\n' "project" "$PROJECT_DIR   (runs as $APP_USER)"
+printf '     %-13s %s\n' "root path" "${ROOT_PATH:-/}"
+[ -n "$FW_SUMMARY" ] && printf '     %-13s %s\n' "firewall" "$FW_SUMMARY"
+
+echo ""
+UNITS_ALL="$(systemctl --no-pager --plain --no-legend list-units --all 'centralredis.service' 'securelog-*.service' 2>/dev/null || true)"
+UNITS_N="$(printf '%s\n' "$UNITS_ALL" | grep -c . || true)"
+UNITS_BAD="$(printf '%s\n' "$UNITS_ALL" | awk '$3 != "active" || $4 != "running"' || true)"
+if [ -z "$UNITS_BAD" ] && [ "${UNITS_N:-0}" -gt 0 ]; then
+    printf '  Services       \033[1;32m%s/%s running\033[0m\n' "$UNITS_N" "$UNITS_N"
+else
+    printf '  Services       %s of %s running - these are not:\n' \
+        "$(( ${UNITS_N:-0} - $(printf '%s\n' "$UNITS_BAD" | grep -c . || true) ))" "${UNITS_N:-0}"
+    printf '%s\n' "$UNITS_BAD" | awk 'NF {printf "     %-36s %s %s\n", $1, $3, $4}'
+    echo "     journalctl -u <name> -n 30      to see why"
+fi
+
+if [ -n "$AGENT_LINE" ]; then
+    echo ""
+    echo "  Agents         $AGENT_LINE"
+    if [ "$AGENTS_ANNOUNCED" = "1" ]; then
+        agent_status_table "$BIND_HOST:$REDIS_PORT" "$(agent_wait_left)"
+    else
+        agent_status_table
+    fi
+fi
+
+if [ "${#NOTES[@]}" -gt 0 ]; then
+    echo ""
+    echo "  Good to know"
+    for _n in "${NOTES[@]}"; do echo "     $_n"; done
+fi
+
+if [ "${#ACTIONS[@]}" -gt 0 ]; then
+    echo ""
+    red "  >>> YOU STILL HAVE TO DO THIS <<<"
+    for _a in "${ACTIONS[@]}"; do red "  $_a"; done
+fi
+echo ""

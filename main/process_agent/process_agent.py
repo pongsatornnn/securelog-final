@@ -149,6 +149,8 @@ def save_agent_runtime(
     cpu,
     ram,
     loop: asyncio.AbstractEventLoop,
+    central_host: str | None = None,
+    central_port=None,
 ) -> bool:
     try:
         now_ts = time.time()
@@ -166,6 +168,9 @@ def save_agent_runtime(
             "last_seen": datetime.now(TZ).isoformat(),
             "last_seen_text": now_thai(),
             "last_seen_ts": now_ts,
+            # ที่อยู่ central ที่ agent ตัวนี้เกาะอยู่ — ใช้ยืนยันตอนย้าย central ว่าย้ายตามครบหรือยัง
+            "central_host": central_host,
+            "central_port": central_port,
         }
 
         r.set(
@@ -266,6 +271,10 @@ def listen_agent_metrics() -> None:
                 host_ip = data.get("host_ip")
                 host_iface = data.get("host_iface")
 
+                # ที่อยู่ central ที่ agent ใช้อยู่ (agent รุ่นเก่าไม่ส่งมา = None)
+                central_host = data.get("central_host")
+                central_port = data.get("central_port")
+
                 if not agent_id:
                     print("[METRICS] ไม่มี agent_id")
                     continue
@@ -283,6 +292,8 @@ def listen_agent_metrics() -> None:
                     cpu=cpu,
                     ram=ram,
                     loop=loop,
+                    central_host=central_host,
+                    central_port=central_port,
                 )
 
                 online_type = "first/reconnect" if is_first_online else "online"

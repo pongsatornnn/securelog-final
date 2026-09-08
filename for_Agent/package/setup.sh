@@ -145,16 +145,72 @@ done
 log "All cert files present: $CERT_FILE / $KEY_FILE / $CA_FILE"
 
 # ---------- 3) เขียน agent_config.json ให้ agent_core.py ----------
-cat > "$INSTALL_DIR/agent_config.json" <<EOF
-{
-  "central_host": "$CENTRAL_HOST",
-  "central_port": $CENTRAL_REDIS_PORT,
-  "redis_username": "$REDIS_USERNAME",
-  "redis_password": "$REDIS_PASSWORD",
-  "host_iface": "$HOST_IFACE"
-}
-EOF
-log "Wrote agent_config.json (host_iface=$HOST_IFACE)"
+# ที่อยู่สำรองของ central: จาก site.conf (CENTRAL_CANDIDATES) + ที่อยู่ที่ไฟล์เดิมเคยรู้จัก
+# ลงซ้ำแล้วต้องไม่ลืมที่อยู่ที่ agent เคยย้ายไปเอง ไม่งั้น failover จะเสียของ
+CONFIG_BACKUPS="$(python3 - "$INSTALL_DIR/agent_config.json" "$CENTRAL_HOST" "$CENTRAL_REDIS_PORT" \
+        "$REDIS_USERNAME" "$REDIS_PASSWORD" "$HOST_IFACE" "${CENTRAL_CANDIDATES:-}" <<'PY'
+import json, os, sys, tempfile
+
+path, host, port, user, password, iface, candidates_raw = sys.argv[1:8]
+port = int(port)
+
+old = {}
+if os.path.exists(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            old = loaded
+    except (OSError, ValueError):
+        pass
+
+seen = [(host, port)]
+
+def push(h, p=None):
+    h = str(h or "").strip()
+    if not h:
+        return
+    try:
+        p = int(p) if p else port
+    except ValueError:
+        return
+    if (h, p) not in seen:
+        seen.append((h, p))
+
+for item in candidates_raw.replace(",", " ").split():
+    h, _, p = item.rpartition(":")
+    push(h or item, p if h else None)
+
+push(old.get("central_host"), old.get("central_port"))
+
+for item in old.get("central_candidates") or []:
+    if isinstance(item, dict):
+        push(item.get("host"), item.get("port"))
+    elif isinstance(item, str):
+        h, _, p = item.rpartition(":")
+        push(h or item, p if h else None)
+
+config = dict(old)
+config.update({
+    "central_host": host,
+    "central_port": port,
+    "central_candidates": [{"host": h, "port": p} for h, p in seen[1:]],
+    "redis_username": user,
+    "redis_password": password,
+    "host_iface": iface,
+})
+
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path) or ".", prefix=".agent_config.")
+with os.fdopen(fd, "w", encoding="utf-8") as f:
+    json.dump(config, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+os.chmod(tmp, 0o600)
+os.replace(tmp, path)
+
+print(" ".join(f"{h}:{p}" for h, p in seen[1:]) or "-")
+PY
+)"
+log "Wrote agent_config.json (host_iface=$HOST_IFACE, central=$CENTRAL_HOST:$CENTRAL_REDIS_PORT, backups=$CONFIG_BACKUPS)"
 
 # ---------- 4) ลง system packages ----------
 export DEBIAN_FRONTEND=noninteractive
@@ -273,6 +329,18 @@ else
     else
         warn "Could not add the ufw outbound rule for $CENTRAL_HOST:$CENTRAL_REDIS_PORT/tcp"
         warn "If outgoing traffic is denied by default here, add it yourself or the agent cannot report in"
+    fi
+
+    # ที่อยู่สำรองของ central ต้องเปิดขาออกไว้ด้วย ไม่งั้นวันที่ central ย้ายจริง agent ตามไปไม่ได้
+    if [ "$CONFIG_BACKUPS" != "-" ]; then
+        for _backup in $CONFIG_BACKUPS; do
+            _bhost="${_backup%:*}"; _bport="${_backup##*:}"
+            if ufw allow out to "$_bhost" port "$_bport" proto tcp \
+                    comment "SecureLog agent -> central Redis" >/dev/null 2>&1 \
+               || ufw allow out to "$_bhost" port "$_bport" proto tcp >/dev/null 2>&1; then
+                log "Allowed outbound $_bhost:$_bport/tcp in ufw (central backup address)"
+            fi
+        done
     fi
 
     if ufw status | grep -q "Status: active"; then

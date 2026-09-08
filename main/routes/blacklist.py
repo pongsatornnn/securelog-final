@@ -39,6 +39,7 @@ from settings_cache import update_setting
 from process_log_detect.security_response import (
     base_command_payload,
     is_non_blockable_ip,
+    non_blockable_reason,
     broadcast_whitelist_from_db,
     GLOBAL_COMMAND_CHANNEL,
 )
@@ -268,7 +269,7 @@ async def api_add_blacklist(
     if is_non_blockable_ip(ip_address):
         raise HTTPException(
             status_code=400,
-            detail=f"IP {ip_address} เป็น address พิเศษของทราฟฟิก broadcast ไม่ใช่เครื่องจริง จึงบล็อกไม่ได้",
+            detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
     whitelist_ip = await get_whitelist_by_ip(db, ip_address)
@@ -471,7 +472,7 @@ async def api_move_to_blacklist(
     if is_non_blockable_ip(ip_address):
         raise HTTPException(
             status_code=400,
-            detail=f"IP {ip_address} เป็น address พิเศษของทราฟฟิก broadcast ไม่ใช่เครื่องจริง จึงบล็อกไม่ได้",
+            detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
     # ตรวจระยะเวลา **ก่อน** ลบออกจาก whitelist — ถ้าไปตอบ 400 ทีหลัง แถวใน whitelist
@@ -609,7 +610,7 @@ async def api_add_blacklist_bulk(
             results["invalid"].append({
                 "ip_address": ip_address,
                 "event": event,
-                "reason": "เป็น address ของทราฟฟิก broadcast ไม่ใช่เครื่องจริง จึงบล็อกไม่ได้",
+                "reason": f"{non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
             })
             continue
 

@@ -60,10 +60,13 @@ fi
 systemctl enable securelog.target >/dev/null 2>&1
 systemctl restart securelog.target
 
-echo ""
-echo "=== Status ==="
-sleep 2
-systemctl --no-pager --plain list-units 'securelog-*' || true
-echo ""
-echo "View logs:  journalctl -u <service name> -f"
-echo "Whole stack: sudo systemctl restart securelog.target"
+# setup-server.sh เรียกตัวนี้แล้วสรุปสถานะให้เองตอนจบ (QUIET_STATUS=1) — ไม่ต้องพิมพ์ซ้ำสองที่
+if [ "${QUIET_STATUS:-0}" != "1" ]; then
+    echo ""
+    echo "=== Status ==="
+    sleep 2
+    systemctl --no-pager --plain list-units 'securelog-*' || true
+    echo ""
+    echo "View logs:  journalctl -u <service name> -f"
+    echo "Whole stack: sudo systemctl restart securelog.target"
+fi

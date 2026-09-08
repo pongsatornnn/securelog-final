@@ -13,3 +13,7 @@ CENTRAL_HOST="192.168.56.110"
 CENTRAL_REDIS_PORT="6380"
 REDIS_USERNAME="agent_node"
 REDIS_PASSWORD="changeme"
+
+# ที่อยู่สำรองของ central (ไม่ใส่ก็ได้) — คั่นด้วยช่องว่างหรือจุลภาค รูปแบบ host หรือ host:port
+# agent จะไล่ลองทีละอันเมื่อ CENTRAL_HOST ต่อไม่ได้ ทำให้ central ย้าย IP ได้โดยไม่ต้องลง agent ใหม่
+# CENTRAL_CANDIDATES="192.168.56.111 central.local:6380"

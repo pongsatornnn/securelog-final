@@ -92,3 +92,17 @@ journalctl -u securelog-agent -f        # log ของ agent (แทน print �
 ```
 
 แล้วดูหน้า Agents บน dashboard — เครื่องนี้ต้องขึ้น online ภายใน ~15 วินาที
+
+## ถ้า central ย้าย IP
+
+ไม่ต้องลง agent ใหม่ ถ้าฝั่ง central รัน `setup-server.sh` ตอนย้าย (มันประกาศที่อยู่ใหม่ให้เอง)
+agent จะเก็บที่อยู่ใหม่ไว้เป็นตัวสำรอง แล้วย้ายไปเองพร้อมชี้ Filebeat ตามให้ ภายในไม่เกินราวครึ่งนาที
+หลังที่อยู่เดิมล่ม
+
+- ที่อยู่ที่ agent รู้จักอยู่ดูได้จาก `central_host` + `central_candidates` ใน `agent_config.json`
+  หรือบรรทัด `[CONFIG]` ตอน service เริ่มทำงาน
+- เติมที่อยู่สำรองเองได้ที่ `CENTRAL_CANDIDATES` ใน `site.conf` แล้ว `sudo ./setup.sh` ซ้ำ
+  (ลงซ้ำไม่ลบที่อยู่ที่เคยรู้ — รวมให้ทั้งหมด)
+- agent จะยอมย้ายเฉพาะที่อยู่ที่คุย mTLS ผ่านด้วย CA ใบเดิมเท่านั้น สั่งลอย ๆ ให้ไปเกาะเครื่องอื่นไม่ได้
+
+รายละเอียดทั้งหมดอยู่ใน `CENTRAL_MOVE.md` ฝั่ง central

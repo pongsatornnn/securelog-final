@@ -8,6 +8,10 @@ import subprocess
 import os
 import sys
 import ipaddress
+import hashlib
+import hmac
+import shutil
+import tempfile
 from pathlib import Path
 
 
@@ -21,7 +25,11 @@ _DEFAULT_CONFIG = {
     "central_port": 6380,
     "redis_username": "agent_node",
     "redis_password": "123",
+    # ที่อยู่สำรองของ central — agent ไล่ลองทีละอันเมื่อ central_host เดิมต่อไม่ได้
+    "central_candidates": [],
 }
+
+CONFIG_FILE_NAME = "agent_config.json"
 
 
 def _read_kv_file(path: Path) -> dict:
@@ -79,18 +87,189 @@ HOST_IFACE = str(_CONFIG.get("host_iface") or "")
 METRICS_INTERVAL_SECONDS = 1
 RECONNECT_DELAY_SECONDS = 5
 
+# ต่อ endpoint ปัจจุบันไม่ติดกี่ครั้งติดกันถึงจะเริ่มไล่ลองที่อยู่สำรอง (5 วิ/ครั้ง)
+FAILOVER_AFTER_FAILURES = 2
+
+# timeout ตอนทดสอบว่าที่อยู่ใหม่ของ central ใช้ได้จริงไหม (วินาที)
+PROBE_TIMEOUT_SECONDS = 5
+
+# ตัวเฝ้าสาย: ตรวจทุกกี่วินาที และเงียบจาก central นานแค่ไหนถึงถือว่าสายตาย
+# (กรณี central หายไปเฉย ๆ TCP ฝั่งเราจะค้างอยู่แบบไม่มี error — ต้องมีคนคอยสะกิด)
+LINK_CHECK_SECONDS = 10
+LINK_SILENCE_SECONDS = 30
+
+# เก็บที่อยู่ central ได้มากสุดกี่ที่ (รวมตัวที่ใช้อยู่) — ที่อยู่จากคำสั่ง central_move ที่เก่าที่สุด
+# จะถูกทิ้งก่อนเมื่อเกิน เพื่อไม่ให้รายการยาวขึ้นเรื่อย ๆ ทุกครั้งที่ประกาศย้าย
+MAX_ENDPOINTS = 5
+
+# คำสั่ง central_move ที่ออกเกินเวลานี้ถือว่าหมดอายุ (กัน replay ข้อความเก่า)
+MOVE_MAX_AGE_SECONDS = 900
+
+# ไฟล์ config ของ Filebeat ที่ต้องแก้ปลายทางตามเมื่อ central ย้าย
+FILEBEAT_CONFIG_FILE = "/etc/filebeat/filebeat.yml"
+
 # อ่าน IP ใหม่ทุกกี่วินาที — ไม่อ่านทุกรอบ metrics (ทุก 1 วิ) เพราะ IP เครื่องแทบไม่เปลี่ยน
 HOST_IP_REFRESH_SECONDS = 30
 
 MANAGED_DIR = str(BASE_DIR / "state")
 MANAGED_BLACKLIST_FILE = f"{MANAGED_DIR}/central_blacklist.json"
 MANAGED_WHITELIST_FILE = f"{MANAGED_DIR}/central_whitelist.json"
+
+# nonce ของคำสั่ง central_move ที่รับไปแล้ว — กันข้อความเดิมถูกส่งซ้ำ
+SEEN_NONCE_FILE = f"{MANAGED_DIR}/seen_move_nonces.json"
+SEEN_NONCE_LIMIT = 200
 UFW_COMMENT = "central_blacklist"
 
+# ---------------------------------------------------------------------------
+# ที่อยู่ของ central: ตัวที่ใช้อยู่ + ตัวสำรอง
+#
+# central เปลี่ยน IP หรือย้ายเครื่องได้โดย agent ไม่ต้องลงใหม่ — ที่อยู่ใหม่เข้ามา 2 ทาง
+#   1) คำสั่ง central_move ที่เซ็นด้วย secret token ของ agent ตัวนี้ (ส่งก่อนย้ายจริง)
+#   2) ที่อยู่สำรองที่ใส่ไว้ตั้งแต่ตอนติดตั้ง (central_candidates ใน agent_config.json)
+# ทุกที่อยู่ต้องผ่าน mTLS ด้วย CA เดิมก่อนถึงจะถูกใช้จริง (probe_endpoint)
+
+
+def _norm_endpoint(host, port=None) -> tuple[str, int] | None:
+    host = str(host or "").strip()
+
+    if not host:
+        return None
+
+    try:
+        port = int(port if port is not None else CENTRAL_PORT)
+    except (TypeError, ValueError):
+        return None
+
+    if not 1 <= port <= 65535:
+        return None
+
+    return (host, port)
+
+
+def _endpoints_from_config(config: dict) -> tuple[list[tuple[str, int]], dict]:
+    # คืน (รายการที่อยู่, ที่มาของแต่ละที่อยู่) — ที่มา "setup" คือมาจากชุดติดตั้ง ไม่ทิ้งเวลารายการล้น
+    result = []
+    sources = {}
+
+    def push(host, port, source="setup"):
+        endpoint = _norm_endpoint(host, port)
+
+        if endpoint and endpoint not in result:
+            result.append(endpoint)
+            sources[endpoint] = source
+
+    push(config.get("central_host"), config.get("central_port"))
+
+    for item in config.get("central_candidates") or []:
+        if isinstance(item, dict):
+            push(item.get("host"), item.get("port"), item.get("source") or "setup")
+        elif isinstance(item, str):
+            # รูปแบบสั้น "host" หรือ "host:port"
+            host, _, port = item.rpartition(":")
+            push(host or item, port if host else None)
+
+    return result, sources
+
+
+_ENDPOINTS, _ENDPOINT_SOURCES = _endpoints_from_config(_CONFIG)
+
+_link_lock = threading.RLock()
+_link = {
+    "endpoints": _ENDPOINTS or [(CENTRAL_HOST, CENTRAL_PORT)],
+    "sources": _ENDPOINT_SOURCES,
+    # generation — ขยับทุกครั้งที่เปลี่ยนที่อยู่ ใช้บอก thread ที่ค้างอยู่ให้ต่อใหม่
+    "gen": 0,
+}
+
+
+def active_endpoint() -> tuple[str, int]:
+    with _link_lock:
+        return _link["endpoints"][0]
+
+
+def known_endpoints() -> list[tuple[str, int]]:
+    with _link_lock:
+        return list(_link["endpoints"])
+
+
+def link_generation() -> int:
+    with _link_lock:
+        return _link["gen"]
+
+
+def endpoint_text(endpoint: tuple[str, int]) -> str:
+    return f"{endpoint[0]}:{endpoint[1]}"
+
+
+# ---------------------------------------------------------------------------
+
+def save_config_updates(updates: dict) -> bool:
+    # เขียนทับเฉพาะคีย์ที่ส่งมา คีย์อื่นใน agent_config.json คงไว้ (เขียนแบบ atomic)
+    path = BASE_DIR / CONFIG_FILE_NAME
+
+    try:
+        data = {}
+
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+
+            if isinstance(loaded, dict):
+                data = loaded
+
+        data.update(updates)
+
+        fd, tmp_path = tempfile.mkstemp(dir=str(BASE_DIR), prefix=".agent_config.")
+
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, path)
+        return True
+
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"[CONFIG] เขียน {CONFIG_FILE_NAME} ไม่ได้: {e}")
+        return False
+
+
+def persist_endpoints() -> None:
+    with _link_lock:
+        endpoints = list(_link["endpoints"])
+        sources = dict(_link["sources"])
+
+    save_config_updates({
+        "central_host": endpoints[0][0],
+        "central_port": endpoints[0][1],
+        "central_candidates": [
+            {"host": host, "port": port, "source": sources.get((host, port), "setup")}
+            for host, port in endpoints[1:]
+        ],
+    })
+
+
+def _prune_endpoints() -> None:
+    # เรียกใต้ _link_lock เท่านั้น — ตัดที่อยู่ที่มาจากคำสั่งย้าย (เก่าสุดก่อน) จนเหลือไม่เกินที่กำหนด
+    # ที่อยู่จากคำสั่งย้ายเรียงใหม่สุดไว้หน้า ตัวเก่าสุดจึงเป็นตัวท้ายสุดของกลุ่ม
+    while len(_link["endpoints"]) > MAX_ENDPOINTS:
+        victim = next(
+            (e for e in reversed(_link["endpoints"][1:]) if _link["sources"].get(e) == "announce"),
+            None,
+        )
+
+        if victim is None:
+            return
+
+        _link["endpoints"].remove(victim)
+        _link["sources"].pop(victim, None)
+        print(f"[LINK] รายการที่อยู่เต็ม ทิ้งที่อยู่เก่าจากคำสั่งย้าย: {endpoint_text(victim)}")
+
+
 # รายการ IP/subnet ที่ agent จะ "ไม่มีวัน block" ไม่ว่า central จะสั่งมาหรือไม่
+# (ที่อยู่ของ central ทุกตัวที่รู้จักถูกเติมให้อัตโนมัติใน rebuild_never_block_nets)
 NEVER_BLOCK_CIDRS = [
     "127.0.0.0/8",
-    CENTRAL_HOST,
     # "192.168.56.1",  # <- ใส่ IP เครื่อง admin/gateway ที่ใช้ SSH เข้ามาที่นี่ด้วย
 ]
 
@@ -100,13 +279,28 @@ ALWAYS_NEVER_BLOCK_CIDRS = [
     "255.255.255.255/32",
 ]
 
-# แปลง never-block ทั้งสองลิสต์เป็น ip_network ครั้งเดียวตอน start
 _NEVER_BLOCK_NETS = []
-for _entry in ALWAYS_NEVER_BLOCK_CIDRS + NEVER_BLOCK_CIDRS:
-    try:
-        _NEVER_BLOCK_NETS.append(ipaddress.ip_network(_entry, strict=False))
-    except ValueError:
-        print(f"[CONFIG] NEVER_BLOCK_CIDRS entry ผิดรูป ข้าม: {_entry}")
+
+
+def rebuild_never_block_nets() -> None:
+    # เรียกใหม่ทุกครั้งที่รายการที่อยู่ central เปลี่ยน — กัน agent เผลอ block central ตัวเอง
+    nets = []
+
+    central_hosts = [host for host, _ in known_endpoints()]
+
+    for entry in ALWAYS_NEVER_BLOCK_CIDRS + NEVER_BLOCK_CIDRS + central_hosts:
+        try:
+            nets.append(ipaddress.ip_network(entry, strict=False))
+        except ValueError:
+            # central_host ที่เป็นชื่อโดเมนตกมาทางนี้ — ไม่ใช่ IP ก็ข้ามไป ไม่ต้องเตือน
+            if entry not in central_hosts:
+                print(f"[CONFIG] NEVER_BLOCK_CIDRS entry ผิดรูป ข้าม: {entry}")
+
+    global _NEVER_BLOCK_NETS
+    _NEVER_BLOCK_NETS = nets
+
+
+rebuild_never_block_nets()
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +327,7 @@ def detect_outbound_ip() -> str | None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
-        sock.connect((CENTRAL_HOST, CENTRAL_PORT))
+        sock.connect(active_endpoint())
         return sock.getsockname()[0]
     except OSError:
         return None
@@ -164,10 +358,24 @@ def get_host_ip_cached() -> str | None:
     return _host_ip_cache["ip"]
 
 
-def create_redis():
+# redis-py 6 ขึ้นไปตั้ง retry อัตโนมัติ 3 ครั้งพร้อม backoff — connect timeout 5 วิกลายเป็นเกือบนาที
+# กว่าจะรู้ว่าต่อไม่ได้ ที่นี่มีลูป reconnect ของตัวเองอยู่แล้ว จึงปิด retry ให้ล้มเร็วตามที่ตั้งไว้จริง
+try:
+    from redis.retry import Retry
+    from redis.backoff import NoBackoff
+
+    _NO_RETRY = {"retry": Retry(NoBackoff(), 0), "retry_on_error": []}
+except ImportError:
+    _NO_RETRY = {}
+
+
+def create_redis(host: str | None = None, port: int | None = None, timeout: int | None = None):
+    if host is None or port is None:
+        host, port = active_endpoint()
+
     return redis.Redis(
-        host=CENTRAL_HOST,
-        port=CENTRAL_PORT,
+        host=host,
+        port=port,
         ssl=True,
         ssl_certfile=AGENT_CERT_FILE,
         ssl_keyfile=AGENT_KEY_FILE,
@@ -175,7 +383,284 @@ def create_redis():
         username=REDIS_USERNAME,
         password=REDIS_PASSWORD,
         ssl_check_hostname=True,
+        socket_connect_timeout=timeout or 10,
+        socket_timeout=timeout or 15,
+        socket_keepalive=True,
+        health_check_interval=15,
+        **_NO_RETRY,
     )
+
+
+def tcp_reachable(host: str, port: int) -> bool:
+    # เคาะ TCP เปล่า ๆ ก่อนด้วย timeout ของเราเอง — ที่อยู่ที่ยังไม่มีเครื่องอยู่จริงจะได้รู้ผลใน
+    # ไม่กี่วินาที ไม่ต้องรอ redis-py ลองใหม่หลายรอบ (ตอนนั้น thread คำสั่งจะค้างไปด้วย)
+    try:
+        with socket.create_connection((host, port), timeout=PROBE_TIMEOUT_SECONDS):
+            return True
+    except OSError as e:
+        print(f"[LINK] เคาะ {host}:{port} ไม่ติด: {e}")
+        return False
+
+
+def probe_endpoint(host: str, port: int) -> bool:
+    # ที่อยู่ใหม่ "ใช้ได้จริง" = ต่อ TLS ผ่าน (cert ต้องออกโดย CA ใบเดิมและครอบ IP นี้)
+    # + ล็อกอินด้วยบัญชี ACL เดิมผ่าน + ping ตอบ — ปลอมไม่ได้ถ้าไม่มี key ของ CA
+    if not tcp_reachable(host, port):
+        return False
+
+    r = None
+
+    try:
+        r = create_redis(host, port, timeout=PROBE_TIMEOUT_SECONDS)
+        return bool(r.ping())
+
+    except Exception as e:
+        print(f"[LINK] ทดสอบ {host}:{port} ไม่ผ่าน: {e}")
+        return False
+
+    finally:
+        try:
+            if r:
+                r.close()
+        except Exception:
+            pass
+
+
+def allow_outbound_in_ufw(host: str, port: int) -> None:
+    # เปิดขาออกไปหา central ตัวใหม่ใน ufw — ถ้าเครื่องนี้ไม่มี ufw ก็ข้ามไปเงียบ ๆ
+    if not shutil.which("ufw"):
+        return
+
+    try:
+        subprocess.run(
+            [
+                "ufw", "allow", "out", "to", host,
+                "port", str(port), "proto", "tcp",
+                "comment", "SecureLog agent -> central Redis",
+            ],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[LINK] เปิดขาออก ufw ไปหา {host}:{port} ไม่ได้: {e}")
+
+
+def update_filebeat_endpoint(host: str, port: int) -> bool:
+    # ชี้ output.redis ของ Filebeat ไปที่ central ตัวใหม่ แล้ว restart ให้ทันที
+    path = FILEBEAT_CONFIG_FILE
+
+    if not os.path.exists(path):
+        print(f"[LINK] ไม่พบ {path} — ข้ามการแก้ Filebeat")
+        return False
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError as e:
+        print(f"[LINK] อ่าน {path} ไม่ได้: {e}")
+        return False
+
+    in_output = False
+    changed = False
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # ออกจากบล็อก output.redis เมื่อเจอคีย์ที่ระดับบนสุดอีกอัน
+        if not line[:1].isspace():
+            in_output = stripped.startswith("output.redis")
+            continue
+
+        if in_output and stripped.startswith("hosts:"):
+            indent = line[: len(line) - len(line.lstrip())]
+            new_line = f'{indent}hosts: ["{host}:{port}"]\n'
+
+            if new_line != line:
+                lines[i] = new_line
+                changed = True
+
+            break
+
+    if not changed:
+        return False
+
+    try:
+        shutil.copyfile(path, f"{path}.securelog.bak")
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+    except OSError as e:
+        print(f"[LINK] เขียน {path} ไม่ได้: {e}")
+        return False
+
+    print(f"[LINK] ชี้ Filebeat ไปที่ {host}:{port} แล้ว")
+
+    try:
+        subprocess.run(
+            ["systemctl", "restart", "filebeat"],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        print("[LINK] restart filebeat แล้ว")
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"[LINK] restart filebeat ไม่ได้: {e}")
+
+    return True
+
+
+def add_endpoint(host: str, port: int, source: str = "announce") -> bool:
+    # เพิ่ม/เลื่อนลำดับที่อยู่สำรอง (ยังไม่สลับไปใช้) — คืน True ถ้าเป็นที่อยู่ใหม่จริง ๆ
+    endpoint = _norm_endpoint(host, port)
+
+    if not endpoint:
+        return False
+
+    with _link_lock:
+        known = endpoint in _link["endpoints"]
+
+        # รู้จักอยู่แล้วและไม่ต้องเลื่อนลำดับอะไร
+        if known and (source != "announce" or _link["endpoints"][0] == endpoint):
+            return False
+
+        if known:
+            _link["endpoints"].remove(endpoint)
+
+        # ที่อยู่ที่ central เพิ่งประกาศ = ที่ที่ central อยากให้ไปอยู่ ต่อไม่ติดเมื่อไหร่ให้ลองอันนี้ก่อน
+        # (ไม่งั้น agent จะไปเกาะที่อยู่เก่าอันไหนก็ได้ที่บังเอิญยังตอบอยู่ แล้วคนสั่งย้ายจะงง)
+        if source == "announce":
+            _link["endpoints"].insert(1, endpoint)
+        else:
+            _link["endpoints"].append(endpoint)
+
+        _link["sources"][endpoint] = source
+        _prune_endpoints()
+
+    rebuild_never_block_nets()
+    persist_endpoints()
+    allow_outbound_in_ufw(*endpoint)
+
+    if known:
+        print(f"[LINK] เลื่อน {endpoint_text(endpoint)} ขึ้นเป็นที่อยู่สำรองอันดับแรก")
+        return False
+
+    print(f"[LINK] เพิ่มที่อยู่สำรองของ central: {endpoint_text(endpoint)}")
+    return True
+
+
+def switch_endpoint(host: str, port: int) -> bool:
+    # ย้ายไปใช้ที่อยู่นี้เป็นตัวหลัก — ที่อยู่เดิมยังถูกเก็บไว้เป็นตัวสำรอง (เผื่อย้ายกลับ)
+    endpoint = _norm_endpoint(host, port)
+
+    if not endpoint:
+        return False
+
+    with _link_lock:
+        if _link["endpoints"][0] == endpoint:
+            return False
+
+        previous = _link["endpoints"][0]
+        remaining = [e for e in _link["endpoints"] if e != endpoint]
+        _link["endpoints"] = [endpoint] + remaining
+        _link["gen"] += 1
+
+    rebuild_never_block_nets()
+    persist_endpoints()
+    allow_outbound_in_ufw(*endpoint)
+    update_filebeat_endpoint(*endpoint)
+
+    print(
+        f"[LINK] ย้าย central จาก {endpoint_text(previous)} "
+        f"ไป {endpoint_text(endpoint)} เรียบร้อย"
+    )
+    return True
+
+
+# connection ที่เปิดอยู่ตอนนี้ (thread ละอัน) — ตัวเฝ้าสายต้องปิดมันเพื่อปลุก thread ที่ค้างอยู่
+_clients = {}
+_clients_lock = threading.Lock()
+_last_contact = {"at": time.time()}
+
+
+def note_link_ok() -> None:
+    _last_contact["at"] = time.time()
+
+
+def register_client(label: str, client) -> None:
+    with _clients_lock:
+        _clients[label] = client
+
+
+def unregister_client(label: str) -> None:
+    with _clients_lock:
+        _clients.pop(label, None)
+
+
+def drop_all_connections() -> None:
+    # ปิด socket ใต้ client ทุกตัว — thread ที่ค้างรออ่านอยู่จะเด้ง exception แล้ววนไปต่อใหม่เอง
+    with _clients_lock:
+        clients = list(_clients.values())
+
+    for client in clients:
+        try:
+            client.connection_pool.disconnect()
+        except Exception:
+            pass
+
+
+# ให้มีแค่ thread เดียวที่ไล่หาที่อยู่ใหม่ได้ในเวลาหนึ่ง — ทุก thread เจอสายตายพร้อมกัน
+# ถ้าปล่อยให้ไล่หาพร้อมกันจะเสียเวลาซ้ำซ้อนและอาจย้ายทับกันเอง
+_failover_lock = threading.Lock()
+
+
+def failover_to_backup(from_generation: int | None = None) -> bool:
+    # ไล่ลองที่อยู่สำรองทีละอัน อันไหน ping ผ่านก่อนก็ย้ายไปใช้อันนั้น
+    with _failover_lock:
+        # ระหว่างรอคิว อาจมี thread อื่นย้ายให้เรียบร้อยแล้ว — ไม่ต้องไล่ซ้ำ
+        if from_generation is not None and link_generation() != from_generation:
+            return True
+
+        endpoints = known_endpoints()
+
+        if len(endpoints) < 2:
+            return False
+
+        print(f"[LINK] ต่อ {endpoint_text(endpoints[0])} ไม่ได้ — ลองที่อยู่สำรอง {len(endpoints) - 1} ที่")
+
+        for endpoint in endpoints[1:]:
+            if probe_endpoint(*endpoint):
+                return switch_endpoint(*endpoint)
+
+        print("[LINK] ที่อยู่สำรองยังต่อไม่ได้สักที่ — รอแล้วลองใหม่")
+        return False
+
+
+def watch_link():
+    # central ที่หายไปดื้อ ๆ (เครื่องดับ/ถูกไฟร์วอลล์กั้น) ไม่ทำให้ TCP ฝั่งเราพัง — thread จะค้าง
+    # รออ่านไปเรื่อย ๆ ตัวนี้คอยดูว่าเงียบนานเกินไปไหม แล้วสะกิดให้ไปต่อ
+    while True:
+        time.sleep(LINK_CHECK_SECONDS)
+
+        silence = time.time() - _last_contact["at"]
+
+        if silence < LINK_SILENCE_SECONDS:
+            continue
+
+        generation = link_generation()
+        host, port = active_endpoint()
+        print(f"[LINK] ไม่ได้คุยกับ {host}:{port} มา {silence:.0f} วินาที — ตรวจสายใหม่")
+
+        if not probe_endpoint(host, port):
+            failover_to_backup(generation)
+
+        # ต่อได้หรือย้ายแล้วก็ตาม ปิด connection เดิมทิ้งเสมอ ให้ทุก thread เริ่มสายใหม่
+        drop_all_connections()
+        note_link_ok()
 
 
 # ---------------------------------------------------------------------------
@@ -498,8 +983,120 @@ def handle_sync_whitelist_command(data: dict):
     print(f"[WHITELIST] ได้รับ whitelist จาก Central {len(ips)} รายการ -> อัปเดต never-block แล้ว")
 
 
+def move_signing_key() -> bytes:
+    # กุญแจที่ใช้เซ็นคำสั่ง central_move = sha256 ของ secret token ของ agent ตัวนี้
+    # ฝั่ง central มีค่านี้อยู่แล้วในคอลัมน์ secret_token_hash (ไม่ต้องเก็บ token ตัวจริง)
+    return hashlib.sha256(SECRET_TOKEN.encode()).hexdigest().encode()
+
+
+def move_signature(data: dict) -> str:
+    payload = {k: v for k, v in data.items() if k != "sig"}
+    message = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hmac.new(move_signing_key(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def load_seen_nonces() -> list[str]:
+    try:
+        with open(SEEN_NONCE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        return [str(x) for x in data] if isinstance(data, list) else []
+
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def remember_nonce(nonce: str) -> None:
+    ensure_managed_dir()
+    nonces = load_seen_nonces()
+    nonces.append(nonce)
+
+    try:
+        with open(SEEN_NONCE_FILE, "w", encoding="utf-8") as f:
+            json.dump(nonces[-SEEN_NONCE_LIMIT:], f)
+    except OSError as e:
+        print(f"[MOVE] เก็บ nonce ไม่ได้: {e}")
+
+
+def verify_move_command(data: dict) -> bool:
+    # คำสั่งย้าย central ต้องผ่านครบ 4 ด่านถึงจะเชื่อ:
+    #   1) จ่าหน้าถึง agent ตัวนี้   2) ลายเซ็นตรง   3) ยังไม่หมดอายุ   4) ไม่ใช่ข้อความซ้ำ
+    if not SECRET_TOKEN:
+        print("[MOVE] ปฏิเสธ: agent ตัวนี้ไม่มี secret token")
+        return False
+
+    if data.get("agent_id") != AGENT_ID:
+        print(f"[MOVE] ปฏิเสธ: คำสั่งจ่าหน้าถึง {data.get('agent_id')} ไม่ใช่ {AGENT_ID}")
+        return False
+
+    sig = str(data.get("sig") or "")
+
+    if not sig or not hmac.compare_digest(sig, move_signature(data)):
+        print("[MOVE] ปฏิเสธ: ลายเซ็นไม่ถูกต้อง")
+        return False
+
+    try:
+        issued_at = float(data.get("issued_at") or 0)
+    except (TypeError, ValueError):
+        issued_at = 0
+
+    age = time.time() - issued_at
+
+    if issued_at <= 0 or age > MOVE_MAX_AGE_SECONDS or age < -MOVE_MAX_AGE_SECONDS:
+        print(f"[MOVE] ปฏิเสธ: คำสั่งหมดอายุ (ออกเมื่อ {age:.0f} วินาทีก่อน)")
+        return False
+
+    nonce = str(data.get("nonce") or "")
+
+    if not nonce:
+        print("[MOVE] ปฏิเสธ: ไม่มี nonce")
+        return False
+
+    if nonce in load_seen_nonces():
+        print("[MOVE] ปฏิเสธ: คำสั่งนี้เคยใช้ไปแล้ว (replay)")
+        return False
+
+    remember_nonce(nonce)
+    return True
+
+
+def handle_central_move_command(data: dict):
+    # central แจ้งที่อยู่ใหม่ล่วงหน้าก่อนย้ายจริง — เก็บไว้เป็นตัวสำรองเสมอ
+    # แล้วถ้าที่อยู่ใหม่ใช้ได้แล้วตอนนี้ ก็ย้ายไปเลยโดยไม่ต้องรอ central เดิมล่ม
+    if not verify_move_command(data):
+        return
+
+    endpoint = _norm_endpoint(data.get("new_host"), data.get("new_port") or CENTRAL_PORT)
+
+    if not endpoint:
+        print(f"[MOVE] ปฏิเสธ: ที่อยู่ใหม่ผิดรูป ({data.get('new_host')}:{data.get('new_port')})")
+        return
+
+    host, port = endpoint
+    print(f"[MOVE] central แจ้งย้ายไปที่ {host}:{port}")
+
+    if endpoint == active_endpoint():
+        print("[MOVE] เป็นที่อยู่เดิมที่ใช้อยู่แล้ว ไม่ต้องทำอะไร")
+        return
+
+    add_endpoint(host, port)
+
+    if not data.get("switch_now", True):
+        print("[MOVE] เก็บไว้เป็นตัวสำรองตามที่สั่ง ยังไม่ย้าย")
+        return
+
+    if probe_endpoint(host, port):
+        switch_endpoint(host, port)
+    else:
+        print(
+            f"[MOVE] {host}:{port} ยังต่อไม่ได้ — เก็บเป็นตัวสำรองไว้ก่อน "
+            f"เดี๋ยวจะย้ายให้เองตอนที่อยู่เดิมล่ม"
+        )
+
+
 COMMAND_HANDLERS = {
     "hello": handle_hello_command,
+    "central_move": handle_central_move_command,
     "block_ip": handle_block_ip_command,
     "unblock_ip": handle_unblock_ip_command,
     "sync_blacklist": handle_sync_blacklist_command,
@@ -520,19 +1117,41 @@ def handle_command(data: dict):
 
 def run_with_reconnect(label: str, worker):
     # เปิด Redis connection แล้วส่งให้ worker ทำงานยาว ๆ
+    # worker คืนค่าเมื่อที่อยู่ central เปลี่ยน (generation ขยับ) รอบถัดไปจะต่อที่อยู่ใหม่ให้เอง
+    failures = 0
+
     while True:
         r = None
+        endpoint = active_endpoint()
+        generation = link_generation()
 
         try:
-            r = create_redis()
+            r = create_redis(*endpoint)
             r.ping()
-            worker(r)
+            register_client(label, r)
+            note_link_ok()
+
+            if failures:
+                print(f"[{label}] ต่อ {endpoint_text(endpoint)} ได้แล้ว")
+
+            failures = 0
+            worker(r, generation)
 
         except Exception as e:
+            failures += 1
             print(f"[{label}] หลุด: {e} รอ {RECONNECT_DELAY_SECONDS} วินาที...")
+
+            # ต่อที่อยู่เดิมไม่ติดหลายครั้งติดกัน = central อาจย้ายไปแล้ว ลองที่อยู่สำรอง
+            if failures >= FAILOVER_AFTER_FAILURES and link_generation() == generation:
+                if failover_to_backup(generation):
+                    failures = 0
+                    continue
+
             time.sleep(RECONNECT_DELAY_SECONDS)
 
         finally:
+            unregister_client(label)
+
             try:
                 if r:
                     r.close()
@@ -541,7 +1160,7 @@ def run_with_reconnect(label: str, worker):
 
 
 def listen_commands():
-    def worker(r):
+    def worker(r, generation):
         pubsub = r.pubsub()
         private_channel = f"agent_commands:{AGENT_ID}"
 
@@ -549,7 +1168,15 @@ def listen_commands():
             pubsub.subscribe("global_commands", private_channel)
             print(f"[LISTEN] subscribe global_commands และ {private_channel}")
 
-            for message in pubsub.listen():
+            # ใช้ get_message แทน listen() เพื่อให้วนกลับมาเช็คได้ว่าที่อยู่ central เปลี่ยนหรือยัง
+            while link_generation() == generation:
+                message = pubsub.get_message(timeout=1.0)
+
+                if not message:
+                    continue
+
+                note_link_ok()
+
                 if message.get("type") != "message":
                     continue
 
@@ -570,9 +1197,10 @@ def listen_commands():
 def send_metrics():
     print("[METRICS] เริ่มส่งค่า CPU/RAM")
 
-    def worker(r):
-        while True:
+    def worker(r, generation):
+        while link_generation() == generation:
             host_ip = get_host_ip_cached()
+            endpoint = active_endpoint()
 
             payload = {
                 "agent_id": AGENT_ID,
@@ -580,12 +1208,16 @@ def send_metrics():
                 # central เอาไปเทียบกับ IP ที่ผูกไว้กับ agent_id นี้ ไม่ตรง = ปฏิเสธทั้ง message
                 "host_ip": host_ip,
                 "host_iface": HOST_IFACE or None,
+                # ที่อยู่ central ที่ agent ตัวนี้ใช้อยู่จริง — หน้า Agents เอาไว้ยืนยันว่าย้ายครบแล้ว
+                "central_host": endpoint[0],
+                "central_port": endpoint[1],
                 "cpu": psutil.cpu_percent(interval=1),
                 "ram": psutil.virtual_memory().percent,
                 "timestamp": time.time(),
             }
 
             r.publish("agent_metrics", json.dumps(payload))
+            note_link_ok()
 
             print(
                 f"[METRICS] {AGENT_ID} | "
@@ -608,6 +1240,15 @@ def _check_config_or_exit():
     for name, path in (("cert", AGENT_CERT_FILE), ("key", AGENT_KEY_FILE), ("ca", CA_CERT_FILE)):
         if not os.path.exists(path):
             problems.append(f"ไม่พบไฟล์ {name}: {path}")
+
+    endpoints = known_endpoints()
+    print(f"[CONFIG] central ที่ใช้อยู่: {endpoint_text(endpoints[0])}")
+
+    if len(endpoints) > 1:
+        print(
+            "[CONFIG] ที่อยู่สำรองของ central: "
+            + ", ".join(endpoint_text(e) for e in endpoints[1:])
+        )
 
     if HOST_IFACE and HOST_IFACE not in psutil.net_if_addrs():
         available = ", ".join(sorted(list_interface_ips())) or "ไม่มีเลย"
@@ -637,4 +1278,5 @@ def _check_config_or_exit():
 if __name__ == "__main__":
     _check_config_or_exit()
     threading.Thread(target=listen_commands, daemon=True).start()
+    threading.Thread(target=watch_link, daemon=True).start()
     send_metrics()
