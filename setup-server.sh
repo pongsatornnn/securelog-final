@@ -829,8 +829,16 @@ fi
 MIGRATE_MODE="skip"
 
 host_has_ip() {  # host_has_ip IP — เครื่องนี้ถือ IP นี้อยู่แล้วไหม
-    ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 \
+    # ไม่จำกัด scope global เพราะ 127.0.0.1 อยู่ scope host — ไม่นับจะกลายเป็น "เครื่องไม่มีที่อยู่นี้"
+    ip -4 -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1 \
         | grep -qx "$1"
+}
+
+looks_like_ipv4() {  # looks_like_ipv4 VALUE — ใช่ IPv4 ไหม (ชื่อโฮสต์ตัดสินจาก ip addr ไม่ได้)
+    case "$1" in
+        ''|*[!0-9.]*|.*|*.|*..*) return 1 ;;
+    esac
+    [ "$(printf '%s' "$1" | tr -cd . | wc -c)" = "3" ]
 }
 
 iface_of_ip() {  # iface_of_ip IP — ชื่อ interface ที่ถือ IP นี้ (ไม่เจอ = คืนค่าว่าง ไม่ใช่ error)
@@ -853,6 +861,7 @@ prefix_of_iface() {  # prefix_of_iface IFACE — /prefix ของ IPv4 ใบ�
 
 ip_is_permanent() {  # ip_is_permanent IP — IP นี้จะยังอยู่หลัง reboot ไหม
     # มาจาก DHCP (dynamic) = อยู่ · เขียนไว้ใน netplan = อยู่ · นอกนั้นคือแปะไว้ชั่วคราว หายแน่
+    case "$1" in 127.*) return 0 ;; esac      # loopback มากับเคอร์เนล ไม่ต้องเขียนใน netplan
     ip -4 -o addr show scope global 2>/dev/null | grep -q "inet $1/.* dynamic " && return 0
     grep -rqs -- "$1" /etc/netplan/ 2>/dev/null && return 0
     return 1
@@ -1861,7 +1870,18 @@ esac
 
 # ---------------------------------------------------------------------------
 REDIS_CHECK="skipped"
+CAN_CHECK_REDIS=0
 if [ "$STARTED" -eq 1 ] && [ -x "$PROJECT_DIR/venv/bin/python" ] && [ "$CERT_OK" -eq 1 ]; then
+    CAN_CHECK_REDIS=1
+fi
+
+if [ "$CAN_CHECK_REDIS" = "1" ] && looks_like_ipv4 "$BIND_HOST" && ! host_has_ip "$BIND_HOST"; then
+    # เครื่องยังไม่ถือที่อยู่นี้ (ย้าย IP แล้วรอ netplan) — ต่อยังไงก็ไม่ติด ไม่ต้องเสียเวลาลอง
+    # แล้วพ่นสีแดงให้ตกใจเปล่า ๆ ของจริงจะได้เช็คตอนที่อยู่มาอยู่บนเครื่องแล้ว
+    REDIS_CHECK="not checked yet - waiting for you to apply netplan"
+    log "Skipping the Redis self-check - this machine does not hold $BIND_HOST yet"
+    echo "       it will work once you apply netplan (see the end of this run)"
+elif [ "$CAN_CHECK_REDIS" = "1" ]; then
     log "Checking that this machine can actually use its own Redis (mTLS + ACL)"
     sleep 2      # เผื่อ centralredis ที่เพิ่ง start/restart ไปเมื่อครู่ยังรับ connection ไม่ทัน
     REDIS_CHECK="$("$PROJECT_DIR/venv/bin/python" - <<PYCHK 2>&1 || true
@@ -1892,20 +1912,14 @@ PYCHK
             warn "Redis check $REDIS_CHECK"
             ;;
         *)
-            if ! host_has_ip "$BIND_HOST"; then
-                # ที่อยู่ใหม่ยังไม่ได้ตั้งบนเครื่อง — คาดไว้อยู่แล้ว บอกไว้เฉย ๆ ไม่นับเป็นความล้มเหลว
-                warn "Cannot use Redis at $BIND_HOST:$REDIS_PORT yet - this machine does not hold that address"
-                warn "  (that is expected at this point - see what to do at the end of this run)"
-            else
-                err "This machine CANNOT use its own Redis - every service will sit in a retry loop:"
-                printf '      %s\n' "$REDIS_CHECK" >&2
-                echo "      The services are running but nothing works until this is fixed. Usually one of:"
-                echo "        - centralredis still serving an older certificate:"
-                echo "            sudo systemctl restart centralredis.service"
-                echo "        - users.acl and .env holding different passwords:"
-                echo "            sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
-                echo "      Then check again with:  journalctl -u securelog-agent-monitor -n 20"
-            fi
+            err "This machine CANNOT use its own Redis - every service will sit in a retry loop:"
+            printf '      %s\n' "$REDIS_CHECK" >&2
+            echo "      The services are running but nothing works until this is fixed. Usually one of:"
+            echo "        - centralredis still serving an older certificate:"
+            echo "            sudo systemctl restart centralredis.service"
+            echo "        - users.acl and .env holding different passwords:"
+            echo "            sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
+            echo "      Then check again with:  journalctl -u securelog-agent-monitor -n 20"
             ;;
     esac
 fi
