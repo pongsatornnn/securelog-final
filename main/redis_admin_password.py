@@ -28,6 +28,9 @@ ENV_KEY = "REDIS_PASS"
 
 _LOCK = threading.Lock()
 
+# เก็บไฟล์สำรองของแต่ละไฟล์ไว้กี่ชุด — ไฟล์เก่ามี "รหัสเก่า" อยู่ข้างใน ปล่อยสะสมไปเรื่อย ๆ ไม่ดี
+KEEP_BACKUPS = 5
+
 
 class RotationError(RuntimeError):
     """เปลี่ยนรหัสไม่สำเร็จ — ข้อความในนี้ถูกส่งไปโชว์บนหน้าเว็บตรง ๆ"""
@@ -85,10 +88,30 @@ def _write_atomic(path: str, content: str) -> None:
         raise
 
 
+def _prune_backups(path: str) -> None:
+    # ลบไฟล์สำรองที่เกิน KEEP_BACKUPS ชุดล่าสุด — ชื่อลงท้ายด้วยเวลา เรียงตามชื่อ = เรียงตามเวลา
+    folder = os.path.dirname(path) or "."
+    prefix = os.path.basename(path) + ".bak."
+
+    try:
+        names = sorted(n for n in os.listdir(folder) if n.startswith(prefix))
+    except OSError as e:
+        print(f"[{LOG_PREFIX}] อ่านรายชื่อไฟล์สำรองใน {folder} ไม่ได้ (ข้ามการล้าง): {e}")
+        return
+
+    for name in names[:-KEEP_BACKUPS]:
+        try:
+            os.unlink(os.path.join(folder, name))
+            print(f"[{LOG_PREFIX}] ลบไฟล์สำรองเก่าที่เกิน {KEEP_BACKUPS} ชุด: {name}")
+        except OSError as e:
+            print(f"[{LOG_PREFIX}] ลบไฟล์สำรองเก่า {name} ไม่สำเร็จ (ข้ามไป): {e}")
+
+
 def _backup(path: str) -> str:
     # สำเนาไฟล์เดิมไว้ข้าง ๆ ก่อนแก้ — ชื่อลงท้ายด้วยเวลา เหมือน users.acl.bak.* ที่เคยทำด้วยมือ
     dest = f"{path}.bak.{datetime.now():%Y%m%d%H%M%S}"
     shutil.copy2(path, dest)
+    _prune_backups(path)
     return dest
 
 

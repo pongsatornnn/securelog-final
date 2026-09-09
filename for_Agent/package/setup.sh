@@ -114,7 +114,14 @@ if [ "${#IFACE_LINES[@]}" -eq 1 ]; then
     CHOICE=1
     log "Only one interface - using it automatically"
 else
-    read -rp "Pick the interface to use as this agent's IP [1-${#IFACE_LINES[@]}] (Enter = $DEFAULT_INDEX, the one that routes to central): " CHOICE
+    # `if ! read` สำคัญ: ถ้ารันแบบไม่มีคนตอบ (ไม่มี tty / stdin หมด) read คืน non-zero
+    # เปล่า ๆ แบบเดิมจะชน `set -e` แล้วสคริปต์ออกกลางคันโดยไม่มีข้อความอะไรเลย
+    if ! read -rp "Pick the interface to use as this agent's IP [1-${#IFACE_LINES[@]}] (Enter = $DEFAULT_INDEX, the one that routes to central): " CHOICE; then
+        CHOICE=""
+        echo ""
+        log "No answer on stdin - using the default: $DEFAULT_INDEX"
+    fi
+
     CHOICE="${CHOICE:-$DEFAULT_INDEX}"
 fi
 

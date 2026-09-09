@@ -64,9 +64,11 @@ def get_redis() -> redis.Redis:
         # socket_connect_timeout: ที่อยู่ใน REDIS_HOST หายไป (ย้าย IP แล้วยังไม่ได้ตั้งค่าเครือข่าย)
         # ต้องรู้เร็ว ไม่งั้นหน้าเว็บค้างเป็นนาทีโดยไม่มีข้อความบอกอะไรเลย
         #
-        # ไม่ตั้ง socket_timeout เพราะ client ตัวเดียวกันนี้ถูกใช้ทำ pubsub แบบ blocking
-        # (process_agent / LINE alert_subscriber วนอยู่ใน pubsub.listen()) — ตั้งแล้วจะเด้ง
-        # TimeoutError ทุกครั้งที่ไม่มีข้อความเข้ามาในช่วงเวลานั้น
+        # ไม่ตั้ง socket_timeout เอง แต่ **redis-py 8 เอา socket_connect_timeout มาใช้เป็น
+        # socket_timeout ให้ด้วย** (วัดจริง: socket_timeout=5 ทั้งที่ไม่ได้ส่งเข้าไป) การอ่าน
+        # pubsub แบบ block จึงเด้ง TimeoutError ทุก 5 วินาทีเมื่อไม่มีข้อความ — ฝั่ง pubsub
+        # (process_agent / LINE alert_subscriber) จึงต้องใช้ get_message(timeout=...) แล้ว
+        # ถือว่า "ว่าง" เป็นเรื่องปกติ ห้ามใช้ listen() ตรง ๆ
         _client = _Client(
             **REDIS_CONFIG,
             health_check_interval=30,

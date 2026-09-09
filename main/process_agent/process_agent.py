@@ -17,6 +17,9 @@ TZ = ZoneInfo("Asia/Bangkok")
 AGENT_RUNTIME_TTL_SECONDS = 15
 AGENT_COMMAND_CHANNEL_PREFIX = "agent_commands:"
 
+# รอข้อความรอบละกี่วินาทีก่อนวนกลับมาเช็คใหม่ — ไม่ใช่ timeout ที่เป็น error
+PUBSUB_POLL_SECONDS = 5
+
 
 def now_thai() -> str:
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -253,7 +256,19 @@ def listen_agent_metrics() -> None:
             print("[CENTRAL] Redis connected")
             print("[CENTRAL] Listening agent_metrics...")
 
-            for message in pubsub.listen():
+            # อ่านด้วย get_message ไม่ใช่ listen(): redis-py 8 เอา socket_connect_timeout
+            # มาเป็น socket_timeout ด้วย การ block รออ่านจึงเด้ง TimeoutError ทุก 5 วินาที
+            # ทั้งที่ "ช่วงที่ไม่มีข้อความ" เป็นเรื่องปกติของ pubsub — เดิมต้องรื้อ subscription
+            # ทิ้งแล้ว subscribe ใหม่ทุก 6 วินาที (มีช่วงสั้น ๆ ที่ไม่มีใคร subscribe = ข้อความหาย)
+            while True:
+                try:
+                    message = pubsub.get_message(timeout=PUBSUB_POLL_SECONDS)
+                except redis.exceptions.TimeoutError:
+                    continue
+
+                if message is None:
+                    continue
+
                 if message.get("type") != "message":
                     continue
 

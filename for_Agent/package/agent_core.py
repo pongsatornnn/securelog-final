@@ -402,21 +402,37 @@ def tcp_reachable(host: str, port: int) -> bool:
         return False
 
 
-def probe_endpoint(host: str, port: int) -> bool:
-    # ที่อยู่ใหม่ "ใช้ได้จริง" = ต่อ TLS ผ่าน (cert ต้องออกโดย CA ใบเดิมและครอบ IP นี้)
-    # + ล็อกอินด้วยบัญชี ACL เดิมผ่าน + ping ตอบ — ปลอมไม่ได้ถ้าไม่มี key ของ CA
+# ล็อกอินไม่ผ่าน = เครื่องอยู่ที่เดิมและ TLS ผ่าน แต่รหัส/สิทธิ์ไม่ตรง (เช่นเพิ่งเปลี่ยนรหัส
+# Redis ของ Client Server จากหน้า System Settings) — คนละเรื่องกับ "ที่อยู่ central เปลี่ยน"
+AUTH_ERRORS = tuple(
+    e for e in (
+        getattr(redis.exceptions, "AuthenticationError", None),
+        getattr(redis.exceptions, "AuthorizationError", None),
+        getattr(redis.exceptions, "NoPermissionError", None),
+    ) if e is not None
+)
+
+
+def endpoint_state(host: str, port: int) -> str:
+    # "ok" = ใช้ได้จริง (TLS ผ่าน + ล็อกอินผ่าน + ping ตอบ — ปลอมไม่ได้ถ้าไม่มี key ของ CA)
+    # "auth" = ไปถึงเครื่องและ TLS ผ่าน แต่ล็อกอินไม่ผ่าน
+    # "down" = ไปไม่ถึง (เครื่องดับ / ถูกกั้น / cert ไม่ครอบที่อยู่นี้)
     if not tcp_reachable(host, port):
-        return False
+        return "down"
 
     r = None
 
     try:
         r = create_redis(host, port, timeout=PROBE_TIMEOUT_SECONDS)
-        return bool(r.ping())
+        return "ok" if r.ping() else "down"
+
+    except AUTH_ERRORS as e:
+        print(f"[LINK] {host}:{port} ต่อได้ แต่ล็อกอินไม่ผ่าน: {e}")
+        return "auth"
 
     except Exception as e:
         print(f"[LINK] ทดสอบ {host}:{port} ไม่ผ่าน: {e}")
-        return False
+        return "down"
 
     finally:
         try:
@@ -424,6 +440,10 @@ def probe_endpoint(host: str, port: int) -> bool:
                 r.close()
         except Exception:
             pass
+
+
+def probe_endpoint(host: str, port: int) -> bool:
+    return endpoint_state(host, port) == "ok"
 
 
 def allow_outbound_in_ufw(host: str, port: int) -> None:
@@ -655,7 +675,15 @@ def watch_link():
         host, port = active_endpoint()
         print(f"[LINK] ไม่ได้คุยกับ {host}:{port} มา {silence:.0f} วินาที — ตรวจสายใหม่")
 
-        if not probe_endpoint(host, port):
+        state = endpoint_state(host, port)
+
+        if state == "auth":
+            # central อยู่ที่เดิม แค่ล็อกอินไม่ผ่าน — ไล่หาที่อยู่สำรองไปก็ไม่ช่วย (รหัสชุดเดียวกัน)
+            print(
+                f"[LINK] {host}:{port} ยังอยู่ที่เดิม แต่ล็อกอิน Redis ไม่ผ่าน — ไม่ใช่การย้ายที่อยู่ "
+                "ต้องออกชุดติดตั้งใหม่จากหน้า Agents (Regenerate Download Link) มาลงที่เครื่องนี้"
+            )
+        elif state == "down":
             failover_to_backup(generation)
 
         # ต่อได้หรือย้ายแล้วก็ตาม ปิด connection เดิมทิ้งเสมอ ให้ทุก thread เริ่มสายใหม่
@@ -1139,10 +1167,19 @@ def run_with_reconnect(label: str, worker):
 
         except Exception as e:
             failures += 1
-            print(f"[{label}] หลุด: {e} รอ {RECONNECT_DELAY_SECONDS} วินาที...")
+            auth_problem = isinstance(e, AUTH_ERRORS)
+
+            if auth_problem:
+                print(
+                    f"[{label}] ล็อกอิน Redis ไม่ผ่าน: {e} — central อยู่ที่เดิม ไม่ใช่การย้ายที่อยู่ "
+                    f"(ต้องลงชุดติดตั้งใหม่) รอ {RECONNECT_DELAY_SECONDS} วินาที..."
+                )
+            else:
+                print(f"[{label}] หลุด: {e} รอ {RECONNECT_DELAY_SECONDS} วินาที...")
 
             # ต่อที่อยู่เดิมไม่ติดหลายครั้งติดกัน = central อาจย้ายไปแล้ว ลองที่อยู่สำรอง
-            if failures >= FAILOVER_AFTER_FAILURES and link_generation() == generation:
+            # (ยกเว้นตอนล็อกอินไม่ผ่าน — ที่อยู่ไม่ได้เปลี่ยน ย้ายไปที่สำรองก็ล็อกอินไม่ผ่านเหมือนกัน)
+            if not auth_problem and failures >= FAILOVER_AFTER_FAILURES and link_generation() == generation:
                 if failover_to_backup(generation):
                     failures = 0
                     continue

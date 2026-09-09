@@ -17,6 +17,10 @@ from LINE_API import config, line_client
 from LINE_API.alert_formatter import format_alert
 
 
+# รอข้อความรอบละกี่วินาทีก่อนวนกลับมาเช็คใหม่ — ไม่ใช่ timeout ที่เป็น error
+PUBSUB_POLL_SECONDS = 5
+
+
 async def _approved_user_ids() -> list[str]:
     async with AsyncSessionLocal() as db:
         return await get_approved_line_user_ids(db)
@@ -85,7 +89,19 @@ def start_line_notifier() -> None:
             pubsub = r.pubsub(ignore_subscribe_messages=True)
             pubsub.subscribe(SECURITY_ALERTS_STREAM_CHANNEL)
 
-            for message in pubsub.listen():
+            # อ่านด้วย get_message ไม่ใช่ listen(): redis-py 8 เอา socket_connect_timeout
+            # มาเป็น socket_timeout ด้วย การ block รออ่านจึงเด้ง TimeoutError ทุก 5 วินาที
+            # ทั้งที่ "ช่วงที่ไม่มีข้อความ" เป็นเรื่องปกติของ pubsub — เดิมต้องรื้อ subscription
+            # ทิ้งแล้ว subscribe ใหม่ทุก 6 วินาที (มีช่วงสั้น ๆ ที่ไม่มีใคร subscribe = ข้อความหาย)
+            while True:
+                try:
+                    message = pubsub.get_message(timeout=PUBSUB_POLL_SECONDS)
+                except redis.exceptions.TimeoutError:
+                    continue
+
+                if message is None:
+                    continue
+
                 if message.get("type") != "message":
                     continue
 
