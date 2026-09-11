@@ -7,7 +7,7 @@ import time
 import redis
 
 from alerts import SECURITY_ALERTS_STREAM_CHANNEL
-from database.connection import AsyncSessionLocal
+from database.connection import AsyncSessionLocal, wait_for_table
 from database.crud import get_approved_line_user_ids
 from redis_client import get_redis
 
@@ -19,7 +19,6 @@ from LINE_API.alert_formatter import format_alert
 
 # รอข้อความรอบละกี่วินาทีก่อนวนกลับมาเช็คใหม่ — ไม่ใช่ timeout ที่เป็น error
 PUBSUB_POLL_SECONDS = 5
-
 
 async def _approved_user_ids() -> list[str]:
     async with AsyncSessionLocal() as db:
@@ -75,8 +74,18 @@ def start_line_notifier() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
+    # ตารางถูกสร้างโดยเว็บตอน start — worker นี้ขึ้นพร้อมกันจึงอาจมาถึงก่อน (ดู wait_for_table)
+    loop.run_until_complete(wait_for_table("app_settings", "LINE-NOTIFY"))
+
     # เตือนตอน start เฉย ๆ ไม่ต้อง exit — แอดมินตั้งค่าทีหลังจากหน้า System Settings ได้
-    if not loop.run_until_complete(_configured_now()):
+    # อ่านไม่ได้จริง ๆ ก็ไปต่อ ไม่ตาย เดี๋ยวอ่านใหม่ตอนมี alert เข้ามา (ลูปนั้นกัน exception ไว้แล้ว)
+    try:
+        configured = loop.run_until_complete(_configured_now())
+    except Exception as e:
+        print(f"[LINE-NOTIFY] อ่านค่าจากฐานไม่ได้ ({e}) — เริ่มทำงานต่อ")
+        configured = True
+
+    if not configured:
         print("[LINE-NOTIFY] ยังไม่ได้ตั้งค่า LINE — ตั้งได้ที่หน้า System Settings แล้วมีผลทันที")
 
     print("[LINE-NOTIFY] started")

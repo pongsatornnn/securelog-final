@@ -13,6 +13,15 @@ err()  { SETUP_ERRORS=$((SETUP_ERRORS + 1)); printf '  \033[1;31m[ERR]\033[0m %s
 red()  { printf '  \033[1;31m%s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------------------
+term_cols() {  # ความกว้างจอตอนนี้ — tput ถาม terminal ตรง ๆ ใช้ได้แม้ stdout ถูกจับไว้ใน $( )
+    local c=""
+    c="$(tput cols 2>/dev/null)" || c=""
+    case "$c" in ''|*[!0-9]*) c="$(stty size </dev/tty 2>/dev/null | awk '{print $2}')" ;; esac
+    case "$c" in ''|*[!0-9]*) c=80 ;; esac
+    [ "$c" -ge 30 ] || c=80
+    printf '%s' "$c"
+}
+
 STEP_LOG=""
 run_step() {  # run_step "คำอธิบาย" cmd [args...]
     local desc="$1"; shift
@@ -32,23 +41,39 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
         trap 'rm -f "$STEP_LOG"' EXIT
     fi
 
-    local pid i=0 frames='|/-\' spent=0 tail_line hint=''
+    local pid i=0 frames='|/-\' spent=0 tail_line hint='' room dsp cut_to
+    SPIN_COLS="$(term_cols)"
+    trap 'SPIN_COLS="$(term_cols)"' WINCH   # ย่อ/ขยายหน้าต่างระหว่างรออยู่ก็ยังพอดีจอ
     "$@" </dev/null >"$STEP_LOG" 2>&1 &
     pid=$!
 
     printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
     while kill -0 "$pid" 2>/dev/null; do
         spent=$((SECONDS - start))
+        # ★ ทั้งบรรทัดต้องสั้นกว่าความกว้างจอเสมอ ถ้ายาวเกินจอจะห่อไปบรรทัดใหม่ แล้ว \r จะกลับไป
+        #   ต้น "บรรทัดที่ห่อ" ไม่ใช่บรรทัดเดิม \033[K ก็ล้างได้แค่บรรทัดนั้น ตัวหมุนเลยไหลลงมา
+        #   เป็นแถว | / - \ แทนที่จะหมุนอยู่กับที่ (ของเดิมยาว 120 คอลัมน์ตอนมี hint ต่อท้าย)
+        dsp="$desc"
+        room=$(( SPIN_COLS - 1 - ${#dsp} - ${#spent} - 8 ))   # "  X desc (Ns)" กินไป 8 ตัว
+        if [ "$room" -lt 0 ]; then                            # จอแคบจนชื่อขั้นเองยังไม่พอ
+            cut_to=$(( ${#dsp} + room ))
+            [ "$cut_to" -lt 4 ] && cut_to=4
+            dsp="${dsp:0:cut_to}"
+            room=0
+        fi
+        hint=''
         # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
-        if [ "$spent" -ge 15 ]; then
-            tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-58)"
-            if [ -n "$tail_line" ]; then hint="  "$'\033[2m'"| $tail_line"$'\033[0m'; fi
+        # มันยังเดินอยู่ — แปะเฉพาะตอนที่เหลือที่ว่างพอจริง ๆ ("  | " กินอีก 4 ตัว)
+        if [ "$spent" -ge 15 ] && [ "$room" -ge 16 ]; then
+            tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-"$(( room - 4 ))")"
+            [ -n "$tail_line" ] && hint="  "$'\033[2m'"| $tail_line"$'\033[0m'
         fi
         printf '\r\033[K  \033[1;36m%s\033[0m %s \033[2m(%ds)\033[0m%s' \
-            "${frames:i++%4:1}" "$desc" "$spent" "$hint"
+            "${frames:i++%4:1}" "$dsp" "$spent" "$hint"
         sleep 0.2
     done
     printf '\r\033[K\033[?25h'       # ล้างบรรทัดตัวหมุนแล้วคืน cursor
+    trap - WINCH
 
     wait "$pid" || rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -170,7 +195,7 @@ if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ]; then
         echo "    Redis user      : ${OLD_REDIS_USER:-?}"
         echo ""
         echo "    1) Keep these settings      - reuse what is in .env, only repair what is missing  <- default"
-        echo "    2) Set everything up again  - ask every question again: another database, another"
+        echo "    2) Reset configuration      - ask every question again: another database, another"
         echo "                                  postgres user, new Redis passwords, another IP"
         echo "                                  (Enter on a question = keep what it is now)"
         echo ""
@@ -867,6 +892,28 @@ ip_is_permanent() {  # ip_is_permanent IP — IP นี้จะยังอย�
     return 1
 }
 
+unit_names() {  # ชื่อ unit ทั้งหมดของระบบนี้ (รวมตัวที่ตายอยู่ด้วย)
+    systemctl --no-pager --plain --no-legend list-units --all \
+        'centralredis.service' 'securelog-*.service' 2>/dev/null | awk '{print $1}'
+}
+
+mono_now() {  # เวลาปัจจุบันในหน่วยเดียวกับ *TimestampMonotonic ของ systemd (ไมโครวินาที)
+    awk '{printf "%d", $1 * 1000000}' /proc/uptime 2>/dev/null || printf '0'
+}
+
+unit_active_age() {  # unit_active_age UNIT — "ตอนนี้" ขึ้นมาแล้วอยู่รอดมากี่วินาที (ไม่ได้รันอยู่ = 0)
+    local t now
+    # ตัวที่ตายแล้วรอ systemd ปลุกใหม่ ยังเก็บ ActiveEnterTimestamp ของรอบก่อนไว้ — ถ้าไม่เช็ก
+    # สถานะปัจจุบันก่อน มันจะดูเหมือน "อยู่มานานแล้ว" ทั้งที่กำลังวนรีสตาร์ตอยู่
+    [ "$(systemctl show "$1" -p ActiveState --value 2>/dev/null)" = "active" ] || { printf '0'; return 0; }
+    [ "$(systemctl show "$1" -p SubState --value 2>/dev/null)" = "running" ] || { printf '0'; return 0; }
+    t="$(systemctl show "$1" -p ActiveEnterTimestampMonotonic --value 2>/dev/null)"
+    case "$t" in ''|0|*[!0-9]*) printf '0'; return 0 ;; esac
+    now="$(mono_now)"
+    case "$now" in ''|*[!0-9]*) printf '0'; return 0 ;; esac
+    if [ "$now" -gt "$t" ]; then printf '%s' $(( (now - t) / 1000000 )); else printf '0'; fi
+}
+
 AGENTS_PRESENT=0
 case "${EXISTING_AGENTS:-}" in
     ''|*[!0-9]*) ;;
@@ -892,9 +939,47 @@ fi
 # ---------------------------------------------------------------------------
 log "Installing OS packages (apt)"
 export DEBIAN_FRONTEND=noninteractive
-run_step "apt-get update" apt-get update -qq
-run_step "Installing python3-venv / python3-pip / postgresql / redis-server / tar" \
-    apt-get install -y -qq python3-venv python3-pip postgresql redis-server tar
+
+# ตีตราเองว่า apt-get update สำเร็จไปเมื่อไร — ห้ามใช้ mtime ของไฟล์ InRelease เพราะ apt ตั้ง
+# mtime ตาม Last-Modified ของมิเรอร์ (ของ noble คือวันปล่อยรุ่น ปี 2024) ไม่ใช่เวลาที่เราโหลดมา
+APT_STAMP="/var/lib/apt/lists/.securelog-apt-update-stamp"
+apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำเร็จไปไม่เกินกี่นาที (update-success-stamp
+                     # เป็นของ apt เอง มีติดมากับ unattended-upgrades — เผื่อเครื่องที่ถอดตัวนั้นทิ้ง)
+    local f
+    for f in "$APT_STAMP" /var/lib/apt/periodic/update-success-stamp; do
+        [ -f "$f" ] && [ -n "$(find "$f" -mmin -"$1" -print -quit 2>/dev/null)" ] && return 0
+    done
+    return 1
+}
+
+# apt-get update = ไปขอ "รายชื่อแพ็กเกจล่าสุด" จากมิเรอร์ ซึ่ง Ubuntu ออกใหม่ทุกวัน วันละหลายรอบ
+# แปลว่าเครื่องที่ clone มาจาก image เมื่อวานก็ยังต้องโหลดใหม่ ~10 MB แล้วเอา lists ทั้งกอง (~200 MB)
+# มา parse ใหม่อีก 13-15 วิ บนเครื่อง 1 core — ทั้งที่ของที่จะลงมีครบอยู่แล้ว จึงถามก่อนว่าขาดอะไรไหม
+# ค่อยออกเน็ต (FORCE_APT=1 = ทำแบบเดิมทุกรอบ: update แล้ว install ทั้งชุด เผื่ออยากได้รุ่นใหม่กว่า)
+APT_PKGS=(python3-venv python3-pip postgresql redis-server tar)
+APT_TARGET=()
+for p in "${APT_PKGS[@]}"; do
+    dpkg -s "$p" >/dev/null 2>&1 || APT_TARGET+=("$p")
+done
+[ "${FORCE_APT:-0}" = "1" ] && APT_TARGET=("${APT_PKGS[@]}")
+
+if [ "${#APT_TARGET[@]}" -eq 0 ]; then
+    ok "${APT_PKGS[*]} - already installed, apt skipped entirely (force it with FORCE_APT=1)"
+else
+    APT_LISTS_MAX_AGE_MIN="${APT_LISTS_MAX_AGE_MIN:-60}"
+    if [ "${FORCE_APT:-0}" != "1" ] && apt_lists_fresh "$APT_LISTS_MAX_AGE_MIN"; then
+        ok "apt package lists were refreshed less than $APT_LISTS_MAX_AGE_MIN minutes ago - apt-get update skipped"
+    # -q ไม่ใช่ -qq: -qq เงียบสนิท (output 0 ตัวอักษร) ตัวหมุนของ run_step เลยไม่มีบรรทัดให้โชว์
+    #   คนดูเห็นแต่ตัวหมุนนิ่ง ๆ นึกว่าค้าง · Languages=none ตัด Translation-* ที่ระบบนี้ไม่ได้ใช้
+    #   Retries/Timeout: มิเรอร์ล่ม = เด้งใน ~15 วิ แทนที่จะค้างรอ default (120 วิ x 3 รอบ)
+    elif run_step "apt-get update" apt-get update -q \
+            -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::Languages=none; then
+        : > "$APT_STAMP" 2>/dev/null || true
+    else
+        warn "apt-get update failed - carrying on with the package lists already on disk"
+    fi
+    run_step "Installing ${APT_TARGET[*]}" apt-get install -y -qq "${APT_TARGET[@]}"
+fi
 
 # ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (mTLS พอร์ตที่เลือกไว้ ตั้งต้น 6380)
 systemctl disable --now redis-server >/dev/null 2>&1 || true
@@ -1665,6 +1750,7 @@ if [ "$CERT_OK" -eq 1 ]; then
     QUIET_STATUS=1 bash "$PROJECT_DIR/systemd/install.sh"
     STARTED=1
 
+
     # รอบสอง: ตอนนี้ที่อยู่ใหม่พร้อมใช้จริงแล้ว (cert ใบใหม่ + service ขึ้นครบ) agent ที่ต่อกลับมา
     # จะย้ายตามได้ทันทีโดยไม่ต้องรอที่อยู่เดิมล่ม — เริ่มจับเวลาโควตารอ agent ตรงนี้
     AGENT_WAIT_UNTIL=$(( $(date +%s) + AGENT_WAIT_SECONDS ))
@@ -2107,6 +2193,41 @@ if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_
 fi
 
 # ---------------------------------------------------------------------------
+# ★ ตัวที่ต่อฐาน/Redis ไม่ได้จะขึ้นมา "active running" แล้วอยู่ได้สิบกว่าวินาทีค่อยตาย (เช่นรอ DNS
+#   ของ host ที่เพี้ยนหมดเวลา) แล้ว systemd ปลุกใหม่วนไป — อ่านสถานะแวบเดียวตอนสรุปจะรายงาน
+#   "N/N running" ทั้งที่ระบบใช้งานไม่ได้ · เกณฑ์ที่ใช้คือ **ตอนนี้อยู่รอดต่อเนื่องนานพอหรือยัง**
+#   ไม่ใช่ "เคยถูกรีสตาร์ตไหม" เพราะตอนฐานใหม่เอี่ยม line-notifier จะขึ้นก่อนเว็บสร้างตารางเสร็จ
+#   แล้วตายรอบเดียว (app_settings ยังไม่มี) จากนั้นก็ทำงานได้ตลอด — แบบนั้นไม่ใช่ของพัง
+UNIT_SETTLE_SECONDS="${UNIT_SETTLE_SECONDS:-45}"   # เพดานเวลาที่ยอมรอ (0 = ไม่รอเลย)
+UNIT_MIN_UPTIME="${UNIT_MIN_UPTIME:-20}"           # อยู่รอดต่อเนื่องเกินนี้ = พ้นช่วงที่มันจะพัง
+if [ "$STARTED" = "1" ] && [ "$UNIT_SETTLE_SECONDS" -gt 0 ]; then
+    _settle_until=$(( SECONDS + UNIT_SETTLE_SECONDS ))
+    while :; do
+        _young=""
+        for _u in $(unit_names); do
+            [ "$(unit_active_age "$_u")" -lt "$UNIT_MIN_UPTIME" ] && _young="$_u"
+        done
+        [ -z "$_young" ] && break                   # ทุกตัวอยู่รอดต่อเนื่องนานพอแล้ว = ผ่าน
+        [ "$SECONDS" -ge "$_settle_until" ] && break
+        sleep 1
+    done
+fi
+
+UNITS_ALL="$(systemctl --no-pager --plain --no-legend list-units --all 'centralredis.service' 'securelog-*.service' 2>/dev/null || true)"
+UNITS_N="$(printf '%s\n' "$UNITS_ALL" | grep -c . || true)"
+UNITS_BAD="$(printf '%s\n' "$UNITS_ALL" | awk '$3 != "active" || $4 != "running"' || true)"
+
+# รอมาจนหมดเวลาแล้วยัง "เพิ่งขึ้นมาหยก ๆ" = มันวนตายวนเกิดอยู่ ไม่ใช่ตัวที่นิ่งแล้ว
+if [ "$STARTED" = "1" ] && [ "$UNIT_SETTLE_SECONDS" -gt 0 ]; then
+    for _u in $(unit_names); do
+        _age="$(unit_active_age "$_u")"
+        [ "$_age" -ge "$UNIT_MIN_UPTIME" ] && continue
+        printf '%s\n' "$UNITS_BAD" | grep -q "^${_u} " && continue
+        UNITS_BAD="$(printf '%s\n%s' "$UNITS_BAD" "$_u loaded crash-loop up-only-${_age}s")"
+    done
+    UNITS_BAD="$(printf '%s\n' "$UNITS_BAD" | awk 'NF')"
+fi
+
 LINE_="============================================================"
 echo ""
 echo "$LINE_"
@@ -2114,6 +2235,9 @@ if [ "$SETUP_ERRORS" -gt 0 ]; then
     printf '  \033[1;31mSETUP FINISHED WITH %d ERROR(S) - scroll up for the [ERR] lines\033[0m\n' "$SETUP_ERRORS"
 elif [ "$STARTED" -ne 1 ]; then
     printf '  \033[1;31mSETUP FINISHED - the services are not running\033[0m\n'
+elif [ -n "$UNITS_BAD" ]; then
+    printf '  \033[1;31mSETUP FINISHED - %s service(s) are not running (list below)\033[0m\n' \
+        "$(printf '%s\n' "$UNITS_BAD" | grep -c . || true)"
 elif [ "${#ACTIONS[@]}" -gt 0 ]; then
     printf '  \033[1;32mSETUP COMPLETE\033[0m - but there is something left for you to do (bottom of this page)\n'
 else
@@ -2136,9 +2260,6 @@ printf '     %-13s %s\n' "root path" "${ROOT_PATH:-/}"
 [ -n "$FW_SUMMARY" ] && printf '     %-13s %s\n' "firewall" "$FW_SUMMARY"
 
 echo ""
-UNITS_ALL="$(systemctl --no-pager --plain --no-legend list-units --all 'centralredis.service' 'securelog-*.service' 2>/dev/null || true)"
-UNITS_N="$(printf '%s\n' "$UNITS_ALL" | grep -c . || true)"
-UNITS_BAD="$(printf '%s\n' "$UNITS_ALL" | awk '$3 != "active" || $4 != "running"' || true)"
 if [ -z "$UNITS_BAD" ] && [ "${UNITS_N:-0}" -gt 0 ]; then
     printf '  Services       \033[1;32m%s/%s running\033[0m\n' "$UNITS_N" "$UNITS_N"
 else

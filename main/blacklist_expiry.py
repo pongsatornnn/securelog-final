@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime
 
-from database.connection import AsyncSessionLocal
+from database.connection import AsyncSessionLocal, wait_for_table
 from database.crud import get_expired_active_blacklist, deactivate_blacklist
 from process_log_detect.security_response import publish_unblock_ip_command
 
@@ -30,6 +30,8 @@ async def sweep_once() -> int:
 
 async def run() -> None:
     print("[AUTO-EXPIRY] started (blacklist expiry sweeper)")
+    # ตารางถูกสร้างโดยเว็บตอน start — ตัวนี้ขึ้นพร้อมกันจึงอาจมาถึงก่อน (ดู wait_for_table)
+    await wait_for_table("ip_black_list", "AUTO-EXPIRY")
     print(f"[AUTO-EXPIRY] interval: {SWEEP_INTERVAL_SECONDS}s")
 
     while True:

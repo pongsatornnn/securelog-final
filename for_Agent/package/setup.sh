@@ -11,6 +11,15 @@ warn() { echo -e "\e[33m[WARN]\e[0m  $*"; }
 die()  { echo -e "\e[31m[ERROR]\e[0m $*" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
+term_cols() {  # ความกว้างจอตอนนี้ — tput ถาม terminal ตรง ๆ ใช้ได้แม้ stdout ถูกจับไว้ใน $( )
+    local c=""
+    c="$(tput cols 2>/dev/null)" || c=""
+    case "$c" in ''|*[!0-9]*) c="$(stty size </dev/tty 2>/dev/null | awk '{print $2}')" ;; esac
+    case "$c" in ''|*[!0-9]*) c=80 ;; esac
+    [ "$c" -ge 30 ] || c=80
+    printf '%s' "$c"
+}
+
 STEP_LOG=""
 run_step() {  # run_step "คำอธิบาย" cmd [args...]
     local desc="$1"; shift
@@ -32,23 +41,38 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
         trap 'rm -f "$STEP_LOG"' EXIT
     fi
 
-    local pid i=0 frames='|/-\' spent=0 tail_line hint=''
+    local pid i=0 frames='|/-\' spent=0 tail_line hint='' room dsp cut_to
+    SPIN_COLS="$(term_cols)"
+    trap 'SPIN_COLS="$(term_cols)"' WINCH   # ย่อ/ขยายหน้าต่างระหว่างรออยู่ก็ยังพอดีจอ
     "$@" </dev/null >"$STEP_LOG" 2>&1 &
     pid=$!
 
     printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
     while kill -0 "$pid" 2>/dev/null; do
         spent=$((SECONDS - start))
+        # ★ ทั้งบรรทัดต้องสั้นกว่าความกว้างจอเสมอ ถ้ายาวเกินจอจะห่อไปบรรทัดใหม่ แล้ว \r จะกลับไป
+        #   ต้น "บรรทัดที่ห่อ" ไม่ใช่บรรทัดเดิม ตัวหมุนเลยไหลลงมาเป็นแถว | / - \ แทนที่จะหมุนอยู่กับที่
+        dsp="$desc"
+        room=$(( SPIN_COLS - 1 - ${#dsp} - ${#spent} - 14 ))  # "[SETUP] desc (Ns) X" กินไป 14 ตัว
+        if [ "$room" -lt 0 ]; then                            # จอแคบจนชื่อขั้นเองยังไม่พอ
+            cut_to=$(( ${#dsp} + room ))
+            [ "$cut_to" -lt 4 ] && cut_to=4
+            dsp="${dsp:0:cut_to}"
+            room=0
+        fi
+        hint=''
         # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
-        if [ "$spent" -ge 15 ]; then
-            tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-52)"
-            if [ -n "$tail_line" ]; then hint="  "$'\033[2m'"| $tail_line"$'\033[0m'; fi
+        # มันยังเดินอยู่ — แปะเฉพาะตอนที่เหลือที่ว่างพอจริง ๆ ("  | " กินอีก 4 ตัว)
+        if [ "$spent" -ge 15 ] && [ "$room" -ge 16 ]; then
+            tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-"$(( room - 4 ))")"
+            [ -n "$tail_line" ] && hint="  "$'\033[2m'"| $tail_line"$'\033[0m'
         fi
         printf '\r\033[K\033[32m[SETUP]\033[0m %s \033[2m(%ds)\033[0m %s%s' \
-            "$desc" "$spent" "${frames:i++%4:1}" "$hint"
+            "$dsp" "$spent" "${frames:i++%4:1}" "$hint"
         sleep 0.2
     done
     printf '\r\033[K\033[?25h'       # ล้างบรรทัดตัวหมุนแล้วคืน cursor
+    trap - WINCH
 
     wait "$pid" || rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -227,8 +251,32 @@ dpkg -s conntrack    >/dev/null 2>&1 || NEED_PKGS+=(conntrack)
 dpkg -s curl         >/dev/null 2>&1 || NEED_PKGS+=(curl)
 dpkg -s gnupg        >/dev/null 2>&1 || NEED_PKGS+=(gnupg)
 
+# ตีตราเองว่า apt-get update สำเร็จไปเมื่อไร — ห้ามใช้ mtime ของไฟล์ InRelease เพราะ apt ตั้ง
+# mtime ตาม Last-Modified ของมิเรอร์ (ของ noble คือวันปล่อยรุ่น ปี 2024) ไม่ใช่เวลาที่เราโหลดมา
+APT_STAMP="/var/lib/apt/lists/.securelog-apt-update-stamp"
+apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำเร็จไปไม่เกินกี่นาที (update-success-stamp
+                     # เป็นของ apt เอง มีติดมากับ unattended-upgrades — เผื่อเครื่องที่ถอดตัวนั้นทิ้ง)
+    local f
+    for f in "$APT_STAMP" /var/lib/apt/periodic/update-success-stamp; do
+        [ -f "$f" ] && [ -n "$(find "$f" -mmin -"$1" -print -quit 2>/dev/null)" ] && return 0
+    done
+    return 1
+}
+
 if [ "${#NEED_PKGS[@]}" -gt 0 ]; then
-    run_step "apt-get update" apt-get update -qq
+    # Ubuntu ออก index ใหม่ทุกวัน เครื่องที่ clone มาจาก image เก่าจึงต้องโหลดใหม่ ~10 MB ทุกครั้ง
+    # แล้ว parse lists ทั้งกอง (~200 MB) อีก 13-15 วิ บนเครื่อง 1 core — ที่โหลดมาไม่ถึงชั่วโมงยังใช้ได้
+    APT_LISTS_MAX_AGE_MIN="${APT_LISTS_MAX_AGE_MIN:-60}"
+    if apt_lists_fresh "$APT_LISTS_MAX_AGE_MIN"; then
+        log "apt package lists were refreshed less than $APT_LISTS_MAX_AGE_MIN minutes ago - apt-get update skipped"
+    # -q ไม่ใช่ -qq: -qq เงียบสนิท (output 0 ตัวอักษร) ตัวหมุนของ run_step เลยไม่มีบรรทัดให้โชว์
+    #   คนดูเห็นแต่ตัวหมุนนิ่ง ๆ นึกว่าค้าง · Retries/Timeout: มิเรอร์ล่ม = เด้งใน ~15 วิ
+    elif run_step "apt-get update" apt-get update -q \
+            -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::Languages=none; then
+        : > "$APT_STAMP" 2>/dev/null || true
+    else
+        warn "apt-get update failed - trying the install with the lists already on disk"
+    fi
     run_step "Installing packages: ${NEED_PKGS[*]}" apt-get install -y -qq "${NEED_PKGS[@]}"
 else
     log "python3-venv + conntrack + curl + gnupg already present"
@@ -258,7 +306,11 @@ else
                 > "$ELASTIC_LIST"
         fi
 
-        run_step "apt-get update (Elastic repo)" apt-get update -qq
+        # อ่านเฉพาะ list ของ Elastic (sourceparts="-" = ปิด sources.list.d ที่เหลือ, List-Cleanup=0
+        # = ห้ามลบ lists ของ repo ที่ไม่ได้อ่านรอบนี้) ไม่งั้นมันไล่โหลด index ของ Ubuntu ใหม่ทั้งกอง
+        run_step "apt-get update (Elastic repo only)" apt-get update -q \
+            -o Dir::Etc::sourcelist="$ELASTIC_LIST" -o Dir::Etc::sourceparts="-" \
+            -o APT::Get::List-Cleanup="0" -o Acquire::Retries=1 -o Acquire::http::Timeout=15
         run_step "Installing filebeat" apt-get install -y -qq filebeat
         log "Installed filebeat from the Elastic APT repo (on a later re-run apt will upgrade it if a newer version exists)"
     else

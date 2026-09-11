@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 import redis
 
-from database.connection import AsyncSessionLocal
+from database.connection import AsyncSessionLocal, wait_for_table
 from database.crud import (
     create_security_alert,
     get_agent_by_agent_id,
@@ -181,6 +181,11 @@ def seed_rules(loop: asyncio.AbstractEventLoop, rule_keys, log_prefix: str) -> N
             print(f"[{log_prefix}] seed rule {rule_key} ไม่สำเร็จ: {e}")
 
 
+# ตารางถูกสร้างโดยเว็บตอน start — detector อาจมาถึงก่อน (ดู wait_for_table ใน database/connection)
+# ถ้าไม่รอ: seed rule/โหลด signature จะล้มเงียบ ๆ แล้ววิ่งต่อแบบ "ไม่มี signature เลย" จนครบรอบ refresh
+DETECTOR_GATE_TABLE = "detection_rules"   # ตารางที่ detector ทุกตัวต้องใช้ (get_rule เรียกทุกครั้ง)
+
+
 def run_detector_loop(
     queue_name: str,
     process_log: Callable[[dict, asyncio.AbstractEventLoop], None],
@@ -197,6 +202,9 @@ def run_detector_loop(
     print(f"[{log_prefix}] input queue: {queue_name}")
     for message in startup_messages:
         print(f"[{log_prefix}] {message}")
+
+    # รอให้ฐานพร้อมก่อนค่อย seed rule / โหลด signature (ไม่งั้นล้มเงียบแล้วได้ของว่างไปใช้)
+    loop.run_until_complete(wait_for_table(DETECTOR_GATE_TABLE, log_prefix))
 
     if on_start:
         on_start(loop)
