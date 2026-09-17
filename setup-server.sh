@@ -632,7 +632,12 @@ if [ "$ENV_EXISTED" = "1" ]; then
         CHANGES+=("postgres moves to $DB_HOST:$DB_PORT (was $OLD_DB_HOST:$OLD_DB_PORT)")
     fi
     if [ -n "$OLD_DB_PASSWORD" ] && [ "$OLD_DB_PASSWORD" != "$DB_PASSWORD" ]; then
-        CHANGES+=("password of postgres role '$DB_USER' is reset to the one typed now (ALTER ROLE)")
+        # ตรงกับสิ่งที่ขั้น 5 ทำจริง: ทับให้เฉพาะตอนใส่ FORCE_DB_PASSWORD=1 ไม่งั้นมันหยุด
+        if [ "${FORCE_DB_PASSWORD:-0}" = "1" ]; then
+            CHANGES+=("password of postgres role '$DB_USER' is reset to the one typed now (ALTER ROLE, FORCE_DB_PASSWORD=1)")
+        else
+            CHANGES+=("the password typed for '$DB_USER' is not the one it has now - step 5 stops there unless FORCE_DB_PASSWORD=1")
+        fi
     fi
     if [ -n "$OLD_REDIS_USER" ] && [ "$OLD_REDIS_USER" != "$REDIS_USER" ]; then
         REDIS_ACL_CHANGED=1
@@ -739,16 +744,29 @@ else
     CAN_PEER=0
     if [ "$(peer_psql "SELECT 1" postgres)" = "1" ]; then CAN_PEER=1; fi
 
-    # รอบนี้ตั้งใจเปลี่ยนรหัสอยู่แล้ว = ล็อกอินไม่ผ่านตอนนี้เป็นเรื่องปกติ ขั้น 5 ALTER ROLE ให้
+    # รอบนี้ตั้งใจเปลี่ยนรหัสอยู่แล้ว = ล็อกอินไม่ผ่านตอนนี้เป็นเรื่องปกติ
     PW_CHANGING=0
     if [ "$ENV_EXISTED" = "1" ] && [ -n "$OLD_DB_PASSWORD" ] && [ "$OLD_DB_PASSWORD" != "$DB_PASSWORD" ]; then
         PW_CHANGING=1
     fi
 
+    # ★ ขั้น 5 **ไม่เคย** ทับรหัสของ role ที่มีอยู่แล้วเอง ต้องยืนยันด้วย FORCE_DB_PASSWORD=1 เท่านั้น
+    #   (ข้อความเดิมตรงนี้บอกว่า "step 5 runs ALTER ROLE to set it" แล้วขั้น 5 ไปปฏิเสธ = สัญญาคนละอย่าง
+    #   กับที่ทำจริง เจอตอนเทส 2026-09-17) — บอกให้ตรงตั้งแต่ตรงนี้ จะได้รู้ก่อนว่าต้องใส่ตัวแปรนั้น
+    say_pw_changing() {
+        if [ "${FORCE_DB_PASSWORD:-0}" = "1" ]; then
+            ok "'$DB_USER' cannot log in with the new password yet - expected, step 5 resets it (FORCE_DB_PASSWORD=1)"
+        else
+            warn "'$DB_USER' cannot log in with the password given - step 5 stops there rather than overwriting it"
+            warn "  Re-run with FORCE_DB_PASSWORD=1 to reset the role's password to the one typed now,"
+            warn "  or type the password it already has (it is in the .env of the previous installation)"
+        fi
+    }
+
     if [ "$CAN_APP" = "0" ] && [ "$CAN_PEER" = "0" ]; then
         DB_STATE="could not be checked (no login yet)"
         if [ "$PW_CHANGING" = "1" ]; then
-            ok "'$DB_USER' cannot log in with the new password yet - expected, step 5 runs ALTER ROLE to set it"
+            say_pw_changing
         else
             warn "PostgreSQL answers, but nothing can log in yet - '$DB_USER' is rejected and peer auth is not available here"
         fi
@@ -773,14 +791,14 @@ else
         else
             # ฐานมีอยู่ แต่ role ของแอปยังเข้าไม่ได้ — บอกสาเหตุที่ตรงเคส แล้วอ่านสภาพฐานผ่าน peer แทน
             if [ "$PW_CHANGING" = "1" ]; then
-                ok "'$DB_USER' cannot log in with the new password yet - expected, step 5 runs ALTER ROLE to set it"
+                say_pw_changing
             elif [ "$CAN_PEER" = "1" ] \
                  && [ "$(peer_psql "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" postgres)" != "1" ]; then
                 ok "Role '$DB_USER' does not exist yet - it is created in step 5"
             else
                 warn "Cannot log in as '$DB_USER' to '$DB_NAME' with the password given"
-                warn "  Step 5 sets the role password to the one typed now and verifies it before going on"
-                warn "  If it still fails there, the cause is pg_hba.conf (needs a 'host $DB_NAME $DB_USER ... scram-sha-256' line)"
+                warn "  If that password is simply the wrong one, step 5 stops and asks for FORCE_DB_PASSWORD=1"
+                warn "  If the password is right, the cause is pg_hba.conf (needs a 'host $DB_NAME $DB_USER ... scram-sha-256' line)"
             fi
             if [ "$CAN_PEER" = "1" ]; then
                 report_db_contents peer
@@ -824,9 +842,18 @@ if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
         echo "     The old database is left exactly as it is - nothing is copied across."
         # สถานะฐานปลายทางมาจากขั้น 1.2 ที่เพิ่งตรวจไปจริง ๆ ไม่ใช่คำเตือนลอย ๆ
         [ -n "$DB_STATE" ] && echo "     '$DB_NAME' right now: $DB_STATE"
+        # ★ ทะเบียน agent (agent_id + token) อยู่ใน "ฐาน" ไม่ได้อยู่ในไฟล์ฝั่ง agent — ย้ายฐานเมื่อไหร่
+        #   ฐานใหม่ก็ไม่รู้จักเครื่องเดิมสักตัว ต้องบอกตั้งแต่ก่อนกดยืนยัน ไม่ใช่ไปรู้ตอนจบ
         case "$DB_STATE" in
-            *empty*|"to be created") echo "     -> the system starts from scratch there (first login admin/admin again)." ;;
-            *"existing data"*)       echo "     -> that existing data is what the system will show after the switch." ;;
+            *empty*|"to be created")
+                echo "     -> the system starts from scratch there (first login admin/admin again)."
+                echo "     -> no agent is registered in it: every agent machine has to be added on the dashboard"
+                echo "        and installed again from the fresh package - the package installed on it now carries"
+                echo "        a token this database does not know. Switching back brings the old ones back as they were." ;;
+            *"existing data"*)
+                echo "     -> that existing data is what the system will show after the switch."
+                echo "     -> only the agents registered in it can report; any agent that exists solely in the"
+                echo "        database used until now is rejected there until it is added and installed again." ;;
         esac
     fi
     echo "     Nothing has been touched yet."
@@ -1764,6 +1791,46 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# ★ รหัสฝั่ง agent มีอีกที่หนึ่งที่ต้องตรงกัน: แถว `agent_redis_password` ในตาราง app_settings
+#   ชุดติดตั้ง agent (zip) สร้าง site.conf จาก **ค่าในแถวนั้น** ไม่ใช่จาก .env/users.acl
+#   (manage_agent/create_agent_package.py) แถวนี้เกิดขึ้นเมื่อเคยเปลี่ยนรหัสจากหน้า System Settings
+#   เครื่องแบบนั้นถ้ามารีรหัสด้วยสคริปต์นี้แล้วไม่อัปเดตแถวตาม = ออกชุดติดตั้งใหม่กี่รอบ agent ก็
+#   ล็อกอินไม่ผ่าน เพราะ zip ฝังรหัสเก่าที่ Redis ไม่รับแล้ว (เจอตอนเทส 2026-09-17)
+#   รันเป็น $APP_USER เพราะขั้น chown ผ่านไปแล้ว — ไฟล์ที่ python แตะ (.settings_key/__pycache__)
+#   จะได้ไม่กลายเป็นของ root
+if [ "$STARTED" = "1" ] && [ -x "$PROJECT_DIR/venv/bin/python" ]; then
+    log "Agent password in the database (the value agent zips are built from)"
+
+    AGENT_SETTING_OUT="$(sudo -u "$APP_USER" env PYTHONDONTWRITEBYTECODE=1 \
+        "$PROJECT_DIR/venv/bin/python" -B - "$ACL_AGENT_PASS" <<PYSET 2>&1
+import asyncio, sys
+sys.path.insert(0, "$PROJECT_DIR/main")
+from settings_cache import get_setting_async, update_setting
+
+async def main():
+    current = await get_setting_async("agent_redis_password") or ""
+    if current == sys.argv[1]:
+        print("same")
+        return
+    await update_setting("agent_redis_password", sys.argv[1],
+                         actor="setup-server.sh", source="setup")
+    print("updated")
+
+asyncio.run(main())
+PYSET
+    )" || AGENT_SETTING_OUT="failed: $AGENT_SETTING_OUT"
+
+    case "$AGENT_SETTING_OUT" in
+        *same*)    ok "app_settings already holds this agent password - left untouched" ;;
+        *updated*) ok "Updated agent_redis_password in app_settings - new agent packages embed the password that Redis actually accepts" ;;
+        *)         warn "Could not sync agent_redis_password into app_settings:"
+                   printf '%s\n' "$AGENT_SETTING_OUT" | tail -3 | sed 's/^/      /'
+                   warn "  Agent packages built from the dashboard may carry the old password -"
+                   warn "  set it once from the web UI (System Settings) to bring the database back in line" ;;
+    esac
+fi
+
+# ---------------------------------------------------------------------------
 log "Firewall (opening the ports this system serves)"
 
 FW_KIND="none"
@@ -2083,6 +2150,13 @@ for agent_id, status, where in snapshot():
 
 print("  %d of %d online" % (online, len(agents)))
 
+# ★ มีตัวที่ไม่รายงาน = ห้ามปล่อยให้บรรทัดสรุปข้างบน ("ไม่มีอะไรเปลี่ยน ใช้ต่อได้") ขัดกับตารางนี้
+#   สาเหตุที่เจอบ่อยคือรหัส Redis ฝั่ง agent เปลี่ยนไปแล้วแต่เครื่องนั้นยังถือชุดติดตั้งเก่า
+if online < len(agents):
+    print("  The ones that are not reporting need a fresh install package if the agent Redis")
+    print("  password, the central address/port or the Root CA changed at any point since they")
+    print("  were installed: dashboard -> Regenerate Download Link -> unzip there -> sudo ./setup.sh")
+
 # หมดโควตารอแล้วแต่ยังไม่ครบ = เรื่องปกติ ไม่ใช่ความผิดพลาด บอกให้ชัดจะได้ไม่ต้องนั่งลุ้น
 if want:
     late = [a for a, s, w in snapshot() if s == "online" and w != want]
@@ -2175,7 +2249,15 @@ if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_
     [ "$AGENT_PASS_CHANGED" = "1" ] && AGENT_REASONS+=("the Redis password of the agent accounts changed")
     [ "$CA_CREATED" = "1" ] && AGENT_REASONS+=("a new Root CA was issued - their certificates are signed by the old one")
 
-    if [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -eq 0 ]; then
+    # ★ เปลี่ยนฐาน = ทะเบียน agent อยู่ในฐานเก่า ฐานใหม่ไม่รู้จักใครเลย ต่อให้รหัส Redis/ที่อยู่
+    #   ไม่ได้เปลี่ยนสักอย่าง central ก็ปฏิเสธทั้ง metrics และ log ("ไม่พบ Agent ใน DB")
+    #   ของเดิมตกไปเข้าเงื่อนไขท้ายสุดแล้วบอกว่า "ไม่มีอะไรเปลี่ยน ใช้ต่อได้" ซึ่งตรงข้ามกับความจริง
+    if [ "$DB_TARGET_CHANGED" = "1" ]; then
+        AGENT_LINE="the list above comes from '$DB_NAME' - agents registered in the old database are unknown here and get rejected"
+        ACTIONS+=("Register every agent again - this run switched to another database:")
+        ACTIONS+=("    dashboard -> add the Client Server -> download the package -> unzip there -> sudo ./setup.sh")
+        ACTIONS+=("    (the old database still holds the old registrations - switching back brings them straight back)")
+    elif [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_AGENTS" -eq 0 ]; then
         AGENT_LINE="none registered yet - nothing to do on that side"
     elif [ "${#AGENT_REASONS[@]}" -gt 0 ]; then
         AGENT_LINE="they cannot reach central any more and have to be installed again"

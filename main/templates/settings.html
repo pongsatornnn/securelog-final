@@ -281,7 +281,11 @@
                 <input class="form-input" type="password" x-model="redis.manual"
                        :disabled="redis.busy" autocomplete="new-password"
                        @keydown.enter="rotateRedisPassword()">
-                <div class="form-hint">12 ตัวขึ้นไป · ใช้ได้เฉพาะ A-Z a-z 0-9 และ <code>_ - . ~ @ % + = : , /</code></div>
+                <div class="form-hint">
+                  12–128 ตัว · ใช้ได้เฉพาะ A-Z a-z 0-9 และ <code>_ - . ~ @ % + = : , /</code> ·
+                  ต้องมีตัวอักษรต่างกันอย่างน้อย 6 ตัว ·
+                  ห้ามซ้ำรหัสเดิม และห้ามซ้ำรหัส Redis ของ Client Server
+                </div>
               </div>
             </template>
 
@@ -380,7 +384,11 @@
         <input class="form-input" type="password" x-model="keyModal.next"
                :disabled="keyModal.busy" autocomplete="new-password"
                @keydown.enter="submitKeyModal()">
-        <div class="form-hint">12 ตัวขึ้นไป · ใช้ได้เฉพาะ A-Z a-z 0-9 และ <code>_ - . ~ @ % + = : , /</code></div>
+        <div class="form-hint" x-show="keyModal.item && keyModal.item.password_rules">
+          12–128 ตัว · ใช้ได้เฉพาะ A-Z a-z 0-9 และ <code>_ - . ~ @ % + = : , /</code> ·
+          ต้องมีตัวอักษรต่างกันอย่างน้อย 6 ตัว ·
+          ห้ามซ้ำรหัสเดิม และห้ามซ้ำรหัส Redis ของ Central
+        </div>
       </div>
 
       <div class="form-group">

@@ -95,7 +95,6 @@ function settingsApp() {
       if (value.length < 12) return 'รหัสสั้นเกินไป ต้องยาวอย่างน้อย 12 ตัวอักษร'
       if (value.length > 128) return 'รหัสยาวเกิน 128 ตัวอักษร'
       if (!/^[A-Za-z0-9_\-.~@%+=:,/]+$/.test(value)) return 'รหัสมีอักขระที่ใช้ไม่ได้ — ห้ามเว้นวรรคและ # \' " $ ` \\ !'
-      if (['123', 'password', 'redis', 'admin', 'changeme'].includes(value.toLowerCase())) return 'รหัสนี้เดาง่ายเกินไป'
       if (new Set(value).size < 6) return 'รหัสซ้ำตัวอักษรเดิมมากเกินไป'
       return ''
     },
