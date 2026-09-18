@@ -744,9 +744,34 @@ def load_synced_whitelist() -> set[str]:
 
 def save_synced_whitelist(ips: set[str]):
     global _synced_whitelist_cache
+    global _synced_whitelist_nets_cache
 
     _synced_whitelist_cache = set(ips)
+    _synced_whitelist_nets_cache = None      # ให้สร้างใหม่รอบหน้าจากรายการชุดใหม่
     _write_ip_file(MANAGED_WHITELIST_FILE, _synced_whitelist_cache, "WHITELIST")
+
+
+# central ส่ง whitelist มาเป็นช่วง subnet ได้ (เช่น 192.168.1.0/24) ไม่ใช่แค่ IP เดี่ยว
+# แปลงเป็น ip_network เก็บไว้ครั้งเดียว — is_never_block ถูกเรียกทุกครั้งที่จะ block
+_synced_whitelist_nets_cache = None
+
+
+def load_synced_whitelist_nets():
+    global _synced_whitelist_nets_cache
+
+    if _synced_whitelist_nets_cache is None:
+        nets = []
+
+        for entry in load_synced_whitelist():
+            try:
+                nets.append(ipaddress.ip_network(entry, strict=False))
+            except ValueError:
+                # ค่าที่แปลงไม่ได้ข้ามไป ไม่ทิ้งทั้งรายการ — เหลือ entry อื่นใช้ได้ตามปกติ
+                print(f"[WHITELIST] รายการที่ central ส่งมาผิดรูป ข้าม: {entry}")
+
+        _synced_whitelist_nets_cache = nets
+
+    return _synced_whitelist_nets_cache
 
 
 def load_managed_ips() -> set[str]:
@@ -785,15 +810,24 @@ def is_never_block(ip: str) -> bool:
 
     ip = str(ip).strip()
 
+    # ตรงตัวก่อน — เคสที่เจอบ่อยสุดและเทียบ set เร็วกว่าไล่ทีละวง
     if ip in load_synced_whitelist():
         return True
 
+    # รับได้ทั้ง IP เดี่ยวและช่วง subnet — central สั่งมาเป็นวงได้ตั้งแต่ whitelist รองรับ CIDR
+    # (ip_network ของ IP เดี่ยวคือ /32 ผลลัพธ์เคสเดิมจึงไม่เปลี่ยน)
     try:
-        addr = ipaddress.ip_address(ip)
+        target = ipaddress.ip_network(ip, strict=False)
     except ValueError:
         return False
 
-    return any(addr in net for net in _NEVER_BLOCK_NETS)
+    # ใช้ overlaps ไม่ใช่ "อยู่ใน" — วงที่ทับ never-block แม้เพียงบางส่วนก็ห้าม block ทั้งวง
+    # ไม่งั้นคำสั่งอย่าง 127.0.0.0/8 จะเล็ดลอดเข้ามาลงกฎตัด loopback ของเครื่องตัวเอง
+    for net in list(load_synced_whitelist_nets()) + list(_NEVER_BLOCK_NETS):
+        if target.version == net.version and target.overlaps(net):
+            return True
+
+    return False
 
 
 def extract_ip(item) -> str | None:
@@ -835,6 +869,46 @@ def drop_conntrack(ip):
     print(f"[BLOCK] ล้าง conntrack (ตัด session เดิม) ของ {ip} แล้ว")
 
 
+def ufw_deny_rule_owner(ip: str) -> str:
+    # กฎปฏิเสธของ IP นี้ใน ufw เป็นของใคร: "none" ไม่มี · "ours" ระบบสร้าง · "foreign" มีอยู่ก่อน
+    #
+    # ดูจาก comment ที่ติดมากับกฎเป็นหลัก เพราะมันอยู่กับตัวกฎเอง — ต่อให้ไฟล์ state หาย
+    # ก็ยังรู้ว่าอันไหนของระบบ (ผู้เรียกเช็ค managed state ควบไปอีกชั้นอยู่แล้ว)
+    if not ip:
+        return "none"
+
+    try:
+        result = subprocess.run(
+            ["sudo", "ufw", "status"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        print("[FIREWALL] ไม่พบคำสั่ง ufw — ตรวจกฎเดิมไม่ได้")
+        return "none"
+
+    if result.returncode != 0:
+        print(f"[FIREWALL] อ่านสถานะ ufw ไม่ได้ (exit {result.returncode}) — ถือว่ายังไม่มีกฎ")
+        return "none"
+
+    for line in result.stdout.splitlines():
+        if "DENY" not in line and "REJECT" not in line:
+            continue
+
+        # รูปแบบบรรทัด: "<ปลายทาง>  DENY IN  <ต้นทาง>  # <comment>"
+        # ต้นทางคือคอลัมน์สุดท้ายของส่วนหน้า # — ตัด comment ออกก่อนค่อยดู
+        head, _, comment = line.partition("#")
+        fields = head.split()
+
+        if not fields or fields[-1] != ip:
+            continue
+
+        return "ours" if comment.strip() == UFW_COMMENT else "foreign"
+
+    return "none"
+
+
 def _ufw_block(ip, prefix: str, comment: str | None = None) -> bool:
     if not ip:
         print(f"[{prefix}] ไม่พบ IP")
@@ -842,6 +916,15 @@ def _ufw_block(ip, prefix: str, comment: str | None = None) -> bool:
 
     if is_never_block(ip):
         print(f"[{prefix}] {ip} อยู่ใน never-block list -> ข้าม ไม่ block (safety)")
+        return False
+
+    # เครื่องบล็อก IP นี้ด้วยกฎของตัวเองอยู่ก่อนแล้ว — ปล่อยไว้อย่างนั้น ไม่รับมาเป็นของระบบ
+    # (ถ้ารับมา เวลา central สั่ง unblock ทีหลังจะกลายเป็นไปลบกฎของผู้ดูแลทิ้ง)
+    if ip not in load_managed_ips() and ufw_deny_rule_owner(ip) == "foreign":
+        print(
+            f"[{prefix}] {ip} ถูกบล็อกด้วยกฎที่มีอยู่ก่อนแล้วบนเครื่องนี้ "
+            f"-> ไม่แตะ และไม่รับมาเป็นของระบบ (กฎเดิมยังทำงานอยู่)"
+        )
         return False
 
     cmd = ["sudo", "ufw", "insert", "1", "deny", "from", ip, "to", "any"]
@@ -867,6 +950,25 @@ def _ufw_unblock(ip, prefix: str) -> bool:
         print(f"[{prefix}] ไม่พบ IP")
         return False
 
+    # ลบเฉพาะกฎที่ระบบเป็นคนสร้าง — `ufw delete` ลบกฎแรกที่ match ไม่สนว่าใครตั้ง
+    # ถ้าไม่กันตรงนี้ กฎที่ผู้ดูแลตั้งไว้เองจะหายไปตอน IP นั้นถูก unblock/ย้ายเข้า whitelist
+    if ip not in load_managed_ips():
+        owner = ufw_deny_rule_owner(ip)
+
+        if owner == "foreign":
+            print(
+                f"[{prefix}] {ip} ถูกบล็อกด้วยกฎที่ระบบไม่ได้สร้าง -> ไม่ลบให้ "
+                f"(ถ้าต้องการปลดจริง ให้ผู้ดูแลลบกฎนั้นเองบนเครื่อง)"
+            )
+            return False
+
+        if owner == "none":
+            print(f"[{prefix}] {ip} ไม่มีกฎบล็อกอยู่แล้ว -> ไม่ต้องทำอะไร")
+            return False
+
+        # owner == "ours" แต่หลุดจาก state (ไฟล์หาย/ถูกลบ) — กฎมี comment ของระบบ ลบได้
+        print(f"[{prefix}] {ip} ไม่อยู่ใน state แต่กฎมีป้ายของระบบ -> ลบให้")
+
     try:
         subprocess.run(
             ["sudo", "ufw", "delete", "deny", "from", ip, "to", "any"],
@@ -882,7 +984,8 @@ def _ufw_unblock(ip, prefix: str) -> bool:
 
 
 def block_ip(ip) -> bool:
-    return _ufw_block(ip, "BLOCK")
+    # ติด comment เหมือนทาง sync — ป้ายนี้คือหลักฐานว่ากฎนี้ระบบเป็นคนสร้าง
+    return _ufw_block(ip, "BLOCK", comment=UFW_COMMENT)
 
 
 def unblock_ip(ip) -> bool:

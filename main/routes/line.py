@@ -11,6 +11,7 @@ from database.crud import (
     set_line_recipient_status,
     delete_line_recipient,
 )
+from base_path import LINE_WEBHOOK_PATH
 from dependencies import require_admin
 from shared import iso_utc
 
@@ -28,7 +29,7 @@ webhook_router = APIRouter()
 
 # ============================================================
 
-@webhook_router.post("/line/webhook")
+@webhook_router.post(LINE_WEBHOOK_PATH)
 async def line_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     # เติม cache จาก DB ก่อน — verify_signature/get_profile เป็นโค้ด sync ที่อ่านค่าจาก cache
     await ensure_loaded()

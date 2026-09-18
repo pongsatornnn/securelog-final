@@ -41,9 +41,11 @@ async def load_ttl_from_db(detection_type: str) -> dict:
             if snap is not None:
                 default_ttl = snap.get("ttl_seconds")
                 description = snap.get("description")
+                default_auto_block = snap.get("auto_block", True)
             else:
                 default_ttl = base_ttl_for(detection_type)
                 description = None
+                default_auto_block = True
                 if detection_type in BASE_TTL_SECONDS and BASE_TTL_SECONDS[detection_type] is None:
                     description = "ถาวร (default)"
             row = await upsert_blacklist_ttl(
@@ -51,12 +53,14 @@ async def load_ttl_from_db(detection_type: str) -> dict:
                 detection_type,
                 ttl_seconds=default_ttl,
                 description=description,
+                auto_block=default_auto_block,
             )
             print(f"[{LOG_PREFIX}] seed default TTL ลง DB: {detection_type} = {default_ttl}")
 
         data = {
             "detection_type": row.detection_type,
             "ttl_seconds": row.ttl_seconds,
+            "auto_block": bool(row.auto_block),
         }
 
     cache_set_json(ttl_cache_key(detection_type), data, TTL_CACHE_TTL_SECONDS, log_prefix=LOG_PREFIX)
@@ -64,25 +68,50 @@ async def load_ttl_from_db(detection_type: str) -> dict:
 
 
 async def get_ttl(detection_type: str) -> dict:
-    # Entry point: คืน {'detection_type', 'ttl_seconds'} (ttl_seconds=None -> ถาวร)
+    # Entry point: คืน {'detection_type', 'ttl_seconds', 'auto_block'} (ttl_seconds=None -> ถาวร)
     cached = cache_get_json(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
-    if cached is not None:
+
+    # แคชที่ค้างจากรุ่นก่อนมีโหมดแจ้งเตือนอย่างเดียวจะไม่มีคีย์ auto_block —
+    # โหลดใหม่จาก DB แทนที่จะเดาค่าให้ (เดาผิดทางไหนก็ผิดความตั้งใจของแอดมิน)
+    if cached is not None and "auto_block" in cached:
         return cached
+
     return await load_ttl_from_db(detection_type)
 
 
-async def update_ttl(detection_type: str, ttl_seconds: int | None) -> dict:
-    # แก้ TTL (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)
+async def should_auto_block(detection_type: str | None) -> bool:
+    # False = ชนิดนี้ถูกตั้งไว้ที่หน้า Rules ว่า "แจ้งเตือนอย่างเดียว ไม่ต้อง block"
+    # การ block ด้วยมือจากหน้าเว็บไม่ผ่านทางนี้ และไม่มีวันถูกปิดด้วยค่านี้
+    if not detection_type or detection_type == MANUAL_EVENT:
+        return True
+
+    data = await get_ttl(detection_type)
+    return bool(data.get("auto_block", True))
+
+
+async def update_ttl(
+    detection_type: str,
+    ttl_seconds: int | None,
+    auto_block: bool | None = None,
+) -> dict:
+    # แก้ TTL/โหมดตอบสนอง (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)
     async with AsyncSessionLocal() as db:
-        row = await upsert_blacklist_ttl(db, detection_type, ttl_seconds=ttl_seconds)
+        row = await upsert_blacklist_ttl(
+            db,
+            detection_type,
+            ttl_seconds=ttl_seconds,
+            auto_block=auto_block,
+        )
         result = {
             "detection_type": row.detection_type,
             "ttl_seconds": row.ttl_seconds,
+            "auto_block": bool(row.auto_block),
         }
 
     cache_delete(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
     label = "ถาวร" if ttl_seconds is None else f"{ttl_seconds}s"
-    print(f"[{LOG_PREFIX}] อัปเดต TTL {detection_type} = {label} (เคลียร์ cache แล้ว)")
+    mode = "block อัตโนมัติ" if result["auto_block"] else "แจ้งเตือนอย่างเดียว (ไม่ block)"
+    print(f"[{LOG_PREFIX}] อัปเดต {detection_type}: TTL={label} · ตอบสนอง={mode} (เคลียร์ cache แล้ว)")
     return result
 
 

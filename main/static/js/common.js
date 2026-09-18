@@ -16,6 +16,49 @@
     return IPV4.test(String(value == null ? '' : value).trim())
   }
 
+  // ช่วง subnet แบบ CIDR — prefix 0-32 และไม่ยอมรับเลข 0 นำหน้า (/08)
+  var IPV4_CIDR = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\/(3[0-2]|[12]\d|\d)$/
+
+  window.isValidIPv4Cidr = function (value) {
+    return IPV4_CIDR.test(String(value == null ? '' : value).trim())
+  }
+
+  // ช่องที่รับได้ทั้ง IP เดี่ยวและช่วง subnet (หน้า Whitelist)
+  window.isValidIpOrCidr = function (value) {
+    var v = String(value == null ? '' : value).trim()
+    return isValidIPv4(v) || isValidIPv4Cidr(v)
+  }
+
+  // ต้องตรงกับ ip_match.MIN_WHITELIST_PREFIXLEN ฝั่ง python
+  window.MIN_WHITELIST_PREFIXLEN = 8
+
+  // วงกว้างเกินกว่าจะใส่ whitelist ได้ (0.0.0.0/0 = ทุก IP บนโลก)
+  window.isTooBroadCidr = function (value) {
+    var v = String(value == null ? '' : value).trim()
+
+    if (!isValidIPv4Cidr(v)) return false
+
+    return parseInt(v.split('/')[1], 10) < MIN_WHITELIST_PREFIXLEN
+  }
+
+  // ใส่ whitelist ได้ไหม = รูปแบบถูก และไม่กว้างเกิน
+  window.isAllowedWhitelistEntry = function (value) {
+    return isValidIpOrCidr(value) && !isTooBroadCidr(value)
+  }
+
+  // จำนวนเครื่องที่ใช้งานได้จริงในวง — /24 = 254 (หัก network + broadcast)
+  // /31 กับ /32 ไม่มีสองตัวนั้นให้หัก (RFC 3021) · ต้องได้ผลตรงกับ ip_match.entry_host_count ฝั่ง python
+  window.cidrHostCount = function (value) {
+    var v = String(value == null ? '' : value).trim()
+
+    if (!isValidIPv4Cidr(v)) return isValidIPv4(v) ? 1 : 0
+
+    var prefix = parseInt(v.split('/')[1], 10)
+    var total = Math.pow(2, 32 - prefix)
+
+    return prefix <= 30 ? total - 2 : total
+  }
+
   // address พิเศษของทราฟฟิก broadcast — ไม่ใช่เครื่องจริง บล็อกไปก็ไม่มีผล
   var NON_BLOCKABLE_IPS = ['0.0.0.0', '255.255.255.255']
 
@@ -27,6 +70,11 @@
   // กันพิมพ์ตัวอักษรอื่นในช่อง IP (เหลือแต่ตัวเลขกับจุด)
   window.normalizeIpInput = function (value) {
     return String(value == null ? '' : value).replace(/[^0-9.]/g, '')
+  }
+
+  // เหมือนข้างบนแต่ยอมให้มี / ด้วย — ใช้กับช่องที่รับ subnet ได้
+  window.normalizeIpCidrInput = function (value) {
+    return String(value == null ? '' : value).replace(/[^0-9./]/g, '')
   }
 
   // ─────────────────────────────────────────────────────────────

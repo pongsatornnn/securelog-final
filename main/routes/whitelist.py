@@ -1,7 +1,5 @@
 # เส้นทางจัดการ IP Whitelist
 
-import ipaddress
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,13 +9,25 @@ from database.crud import (
     get_ip_whitelist_by_id,
     delete_ip_whitelist_by_id,
     save_ip_whitelist,
-    get_whitelist_by_ip,
-    get_blacklist_by_ip,
+    find_whitelist_covering,
+    get_active_blacklist_in_entry,
+)
+from ip_match import (
+    normalize_entry,
+    is_subnet,
+    is_too_broad,
+    entry_host_count,
+    describe_entry,
+    MIN_WHITELIST_PREFIXLEN,
 )
 
 from dependencies import require_login, require_admin
 from shared import iso_utc
-from process_log_detect.security_response import broadcast_whitelist_from_db
+from process_log_detect.security_response import (
+    broadcast_whitelist_from_db,
+    is_non_blockable_ip,
+    non_blockable_reason,
+)
 
 from schemas.whitelist_schema import (
     CreateWhitelistRequest,
@@ -26,6 +36,38 @@ from schemas.whitelist_schema import (
 
 
 router = APIRouter()
+
+
+# ข้อความเดียวกันทั้งตอนเพิ่มทีละรายการและเพิ่มทีละหลายรายการ
+INVALID_FORMAT_DETAIL = (
+    "รูปแบบไม่ถูกต้อง — กรอกได้ทั้ง IP เดี่ยว (192.168.1.10) "
+    "และช่วง Subnet แบบ CIDR (192.168.1.0/24)"
+)
+
+# บอกชื่อ IP ที่ติดอยู่ไม่เกิน 10 ตัว — วง /8 ที่ชนเป็นร้อยตัวไม่ควรพ่นออกมาทั้งหมด
+BLOCKED_PREVIEW_MAX = 10
+
+
+def non_blockable_detail(entry: str) -> str:
+    return f"{entry} {non_blockable_reason(entry)}"
+
+
+def too_broad_detail(entry: str) -> str:
+    return (
+        f"{describe_entry(entry)} กว้างเกินกว่าจะใส่ Whitelist ได้ "
+        f"— รับได้สูงสุดแค่ /{MIN_WHITELIST_PREFIXLEN}"
+    )
+
+
+def blocked_detail(entry: str, blocked_rows) -> str:
+    names = [row.ip_address for row in blocked_rows]
+    shown = ", ".join(names[:BLOCKED_PREVIEW_MAX])
+    more = f" และอีก {len(names) - BLOCKED_PREVIEW_MAX} IP" if len(names) > BLOCKED_PREVIEW_MAX else ""
+
+    return (
+        f"{describe_entry(entry)} มี IP ที่กำลังถูกบล็อกอยู่ใน Blacklist: {shown}{more} "
+        "— กรุณาปลดบล็อกที่หน้า Blacklist ก่อนจึงจะเพิ่มเข้า Whitelist ได้"
+    )
 
 
 @router.get("/api/get_whitelist")
@@ -39,6 +81,9 @@ async def api_get_whitelist(
         {
             "id": item.id,
             "ip_address": item.ip_address,
+            # แถวที่เป็นช่วง subnet — หน้าเว็บเอาไปโชว์ว่ากินกี่เครื่อง
+            "is_subnet": is_subnet(item.ip_address),
+            "host_count": entry_host_count(item.ip_address),
             "description": item.description,
             "created_at": iso_utc(item.created_at),
             "created_by": item.created_by,
@@ -54,39 +99,55 @@ async def api_add_whitelist(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    ip_address = payload.ip_address.strip()
+    raw_value = payload.ip_address.strip()
     description = (payload.description or "manual_whitelist").strip()
 
-    if not ip_address:
+    if not raw_value:
         raise HTTPException(
             status_code=400,
-            detail="กรุณากรอก IP Address",
+            detail="กรุณากรอก IP Address หรือ Subnet",
         )
 
-    try:
-        ipaddress.ip_address(ip_address)
-    except ValueError:
+    # รับได้ทั้ง IP เดี่ยวและช่วง subnet · normalize ให้วงเก็บเป็น network address เสมอ
+    # (192.168.1.5/24 -> 192.168.1.0/24) กันเก็บวงเดียวกันซ้ำหลายหน้าตา
+    ip_address = normalize_entry(raw_value)
+
+    if ip_address is None:
         raise HTTPException(
             status_code=400,
-            detail="รูปแบบ IP Address ไม่ถูกต้อง",
+            detail=INVALID_FORMAT_DETAIL,
         )
 
-    # เช็คเฉพาะแถวที่ยัง block อยู่จริง (is_active) — แถวที่ปลดบล็อก/หมดอายุไปแล้ว
-    blacklist_ip = await get_blacklist_by_ip(db, ip_address)
-    if blacklist_ip and blacklist_ip.is_active:
+    if is_too_broad(ip_address):
+        raise HTTPException(
+            status_code=400,
+            detail=too_broad_detail(ip_address),
+        )
+
+    if is_non_blockable_ip(ip_address):
+        raise HTTPException(
+            status_code=400,
+            detail=non_blockable_detail(ip_address),
+        )
+
+    # เช็คเฉพาะแถวที่ยัง block อยู่จริง (is_active) — แถวที่ปลดบล็อก/หมดอายุไปแล้วเป็นแค่ประวัติ
+    # วงเดียวอาจชนหลาย IP พร้อมกัน จึงบอกกลับไปว่าติดตัวไหนบ้าง
+    blocked = await get_active_blacklist_in_entry(db, ip_address)
+    if blocked:
+        raise HTTPException(
+            status_code=409,
+            detail=blocked_detail(ip_address, blocked),
+        )
+
+    covering = await find_whitelist_covering(db, ip_address)
+    if covering:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"IP {ip_address} กำลังถูกบล็อกอยู่ใน Blacklist "
-                "กรุณาปลดบล็อกที่หน้า Blacklist ก่อนจึงจะเพิ่มเข้า Whitelist ได้"
+                f"{ip_address} มีอยู่ใน Whitelist แล้ว"
+                if covering.ip_address == ip_address
+                else f"{ip_address} อยู่ในวง {covering.ip_address} ที่อยู่ใน Whitelist อยู่แล้ว"
             ),
-        )
-
-    whitelist_ip = await get_whitelist_by_ip(db, ip_address)
-    if whitelist_ip:
-        raise HTTPException(
-            status_code=409,
-            detail=f"IP {ip_address} มีอยู่ใน Whitelist แล้ว",
         )
 
     ip = await save_ip_whitelist(
@@ -172,15 +233,18 @@ async def api_add_whitelist_bulk(
         if not ip_address:
             continue
 
-        if ip_address in seen_ips:
+        # เทียบซ้ำด้วยค่า normalize แล้ว — 192.168.1.0/24 กับ 192.168.1.5/24 คือวงเดียวกัน
+        dedupe_key = normalize_entry(ip_address) or ip_address
+
+        if dedupe_key in seen_ips:
             results["skipped"].append({
                 "ip_address": ip_address,
                 "description": description,
-                "reason": "IP ซ้ำในรายการที่ส่งมา",
+                "reason": "ซ้ำในรายการที่ส่งมา",
             })
             continue
 
-        seen_ips.add(ip_address)
+        seen_ips.add(dedupe_key)
 
         clean_items.append({
             "ip_address": ip_address,
@@ -197,32 +261,55 @@ async def api_add_whitelist_bulk(
         ip_address = item["ip_address"]
         description = item["description"]
 
-        try:
-            ipaddress.ip_address(ip_address)
-        except ValueError:
+        normalized = normalize_entry(ip_address)
+
+        if normalized is None:
             results["invalid"].append({
                 "ip_address": ip_address,
                 "description": description,
-                "reason": "รูปแบบ IP Address ไม่ถูกต้อง",
+                "reason": INVALID_FORMAT_DETAIL,
+            })
+            continue
+
+        ip_address = normalized
+
+        if is_too_broad(ip_address):
+            results["invalid"].append({
+                "ip_address": ip_address,
+                "description": description,
+                "reason": too_broad_detail(ip_address),
+            })
+            continue
+
+        if is_non_blockable_ip(ip_address):
+            results["invalid"].append({
+                "ip_address": ip_address,
+                "description": description,
+                "reason": non_blockable_detail(ip_address),
             })
             continue
 
         # เช็ค is_active ด้วยเหตุผลเดียวกับ api_add_whitelist (แถวที่ปลดบล็อกแล้วเป็นแค่ประวัติ)
-        blacklist_ip = await get_blacklist_by_ip(db, ip_address)
-        if blacklist_ip and blacklist_ip.is_active:
+        blocked = await get_active_blacklist_in_entry(db, ip_address)
+        if blocked:
+            names = ", ".join(row.ip_address for row in blocked[:BLOCKED_PREVIEW_MAX])
             results["blocked_by_blacklist"].append({
                 "ip_address": ip_address,
                 "description": description,
-                "reason": "IP กำลังถูกบล็อกอยู่ ต้องปลดบล็อกที่หน้า Blacklist ก่อน",
+                "reason": f"มี IP ที่กำลังถูกบล็อกอยู่ ({names}) ต้องปลดบล็อกที่หน้า Blacklist ก่อน",
             })
             continue
 
-        whitelist_ip = await get_whitelist_by_ip(db, ip_address)
-        if whitelist_ip:
+        covering = await find_whitelist_covering(db, ip_address)
+        if covering:
             results["skipped"].append({
                 "ip_address": ip_address,
                 "description": description,
-                "reason": "IP มีอยู่ใน Whitelist แล้ว",
+                "reason": (
+                    "มีอยู่ใน Whitelist แล้ว"
+                    if covering.ip_address == ip_address
+                    else f"อยู่ในวง {covering.ip_address} ที่อยู่ใน Whitelist อยู่แล้ว"
+                ),
             })
             continue
 

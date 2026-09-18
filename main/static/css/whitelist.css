@@ -1,4 +1,14 @@
 /* ย้ายมาจาก templates/whitelist.html (บล็อก <style> เดิม) */
+
+/* จำนวนเครื่องในวง ต่อท้ายแถวที่เป็น subnet — ตัวเล็กและจางกว่าตัว IP เอง
+   เพื่อให้ยังอ่าน IP/วงเป็นตัวหลักได้เหมือนเดิม */
+.subnet-size {
+  margin-left: 6px;
+  font-family: var(--font-sans, inherit);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
 /* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
    หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
 .modal { --modal-width: 760px; }

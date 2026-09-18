@@ -226,6 +226,11 @@ class BlacklistTtl(Base):
     id = Column(Integer, primary_key=True, index=True)
     detection_type = Column(String(50), unique=True, nullable=False, index=True)
     ttl_seconds = Column(Integer, nullable=True)
+
+    # False = ตรวจเจอแล้ว "แจ้งเตือนอย่างเดียว" ไม่ block IP (ttl_seconds ยังเก็บค่าเดิมไว้
+    # ไม่ถูกล้าง เพื่อให้สลับกลับมาเป็น block แล้วได้ระยะเวลาที่เคยตั้งไว้คืน)
+    auto_block = Column(Boolean, nullable=False, default=True, server_default="true")
+
     description = Column(String(200), nullable=True)
 
     created_at = Column(DateTime, default=datetime.now)

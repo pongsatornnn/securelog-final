@@ -7,7 +7,13 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from base_path import strip_base, cookie_name_for, cookie_path_for, CSRF_COOKIE_BASE
+from base_path import (
+    strip_base,
+    cookie_name_for,
+    cookie_path_for,
+    CSRF_COOKIE_BASE,
+    LINE_WEBHOOK_PATH,
+)
 
 
 CSRF_SECRET = os.getenv("CSRF_SECRET")
@@ -21,7 +27,9 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
 # path ที่ยกเว้น CSRF (ไม่ใช่ request จาก browser ของผู้ใช้ — verify ด้วยวิธีอื่น)
-EXEMPT_PREFIXES = ("/line/webhook",)
+# เทียบ "ทั้ง path" ไม่ใช่ prefix โดยตั้งใจ — ตั้งแต่ LINE_WEBHOOK_PATH ตั้งค่าได้จาก .env
+# การเทียบแบบ prefix กลายเป็นกับดัก: ตั้งเป็น /a แล้ว /agents /alerts /api/* หลุด CSRF ยกแผง
+EXEMPT_PATHS = frozenset({LINE_WEBHOOK_PATH})
 
 _signer = URLSafeTimedSerializer(CSRF_SECRET)
 
@@ -41,8 +49,9 @@ def verify_csrf(token: str) -> bool:
 
 
 def _is_exempt(path: str) -> bool:
-    path = strip_base(path)
-    return any(path.startswith(p) for p in EXEMPT_PREFIXES)
+    # rstrip("/") กันเคสที่มี slash ปิดท้ายมา ("/line/webhook/") ให้ยังตรงกับค่าที่ตั้งไว้
+    path = strip_base(path).rstrip("/") or "/"
+    return path in EXEMPT_PATHS
 
 
 def _csrf_set_cookie_header(token: str, name: str, path: str) -> tuple[bytes, bytes]:

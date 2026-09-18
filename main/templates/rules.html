@@ -41,7 +41,7 @@
             :aria-selected="tab === 'rules'" @click="selectTab('rules')">Detection Rules</button>
 
     <button class="tab" type="button" role="tab" :class="{ 'is-active': tab === 'policy' }"
-            :aria-selected="tab === 'policy'" @click="selectTab('policy')">ความรุนแรง &amp; ระยะเวลา Block</button>
+            :aria-selected="tab === 'policy'" @click="selectTab('policy')">ความรุนแรง &amp; การตอบสนอง</button>
   </div>
 
   
@@ -127,7 +127,7 @@
 
   <div role="tabpanel" x-show="tab === 'policy'" x-cloak>
 
-  <div class="section-subtitle">ระดับความรุนแรงและระยะเวลาก่อนปลด block ของแต่ละประเภทการโจมตี</div>
+  <div class="section-subtitle">ระดับความรุนแรงและการตอบสนองของแต่ละประเภทการโจมตี — เลือกได้ว่าจะ block IP อัตโนมัติ (นานเท่าไหร่) หรือแจ้งเตือนอย่างเดียว</div>
 
   
   <div class="esc-card" x-show="!loadingTtl && !ttlError" x-cloak>
@@ -167,12 +167,12 @@
 
   <div class="state-box" x-show="loadingSeverity || loadingTtl" style="border-radius: 14px;">
     <div class="state-spinner" aria-hidden="true"></div>
-    <div class="state-title">กำลังโหลดค่าความรุนแรงและระยะเวลา Block...</div>
+    <div class="state-title">กำลังโหลดค่าความรุนแรงและการตอบสนอง...</div>
   </div>
 
   
   <div class="state-box is-error" x-show="!loadingSeverity && !loadingTtl && policyError()" x-cloak style="border-radius: 14px;">
-    <div class="state-title">โหลดค่าความรุนแรง / ระยะเวลา Block ไม่สำเร็จ</div>
+    <div class="state-title">โหลดค่าความรุนแรง / การตอบสนอง ไม่สำเร็จ</div>
     <div class="state-detail" x-text="policyError()"></div>
     <button class="btn-retry" type="button" @click="loadPolicy()">ลองใหม่อีกครั้ง</button>
   </div>
@@ -196,7 +196,7 @@
         <tr>
           <th>ประเภทการโจมตี</th>
           <th>ระดับความรุนแรง</th>
-          <th>ระยะเวลา Block</th>
+          <th>การตอบสนอง</th>
           <th>แก้ไขล่าสุด</th>
           <th style="text-align: center;">Action</th>
         </tr>
@@ -212,9 +212,11 @@
               <span class="badge" :class="'badge-' + item.severity" x-text="item.severity" x-show="item.hasSeverity"></span>
               <span class="policy-missing" x-show="!item.hasSeverity">—</span>
             </td>
-            <td data-label="ระยะเวลา Block">
+            <td data-label="การตอบสนอง">
+              <span class="badge badge-inactive" x-show="item.hasTtl && !item.auto_block">แจ้งเตือนอย่างเดียว</span>
               <span class="ttl-value" :class="{permanent: item.ttl_seconds === null}"
-                    x-text="formatTtl(item.ttl_seconds)" x-show="item.hasTtl"></span>
+                    x-text="'Block ' + formatTtl(item.ttl_seconds)"
+                    x-show="item.hasTtl && item.auto_block"></span>
               <span class="policy-missing" x-show="!item.hasTtl">—</span>
             </td>
             <td data-label="แก้ไขล่าสุด" x-text="formatTime(item.updated_at)"></td>
@@ -258,14 +260,20 @@
           <option value="HIGH">HIGH</option>
           <option value="CRITICAL">CRITICAL</option>
         </select>
-        <div class="form-hint">ใช้แสดงระดับของ alert — ไม่มีผลต่อการตัดสินใจ block</div>
       </div>
 
-      <template x-if="editingPolicy && editingPolicy.hasTtl">
+      <div class="form-group" x-show="editingPolicy && editingPolicy.hasTtl">
+        <label class="form-label">เมื่อตรวจเจอการโจมตีชนิดนี้</label>
+        <select class="form-input" x-model="policyForm.response">
+          <option value="block">Block IP อัตโนมัติ</option>
+          <option value="alert_only">แจ้งเตือนอย่างเดียว (ไม่ Block)</option>
+        </select>
+      </div>
+
+      <template x-if="editingPolicy && editingPolicy.hasTtl && policyForm.response === 'block'">
         <div>
           {{ duration_picker('policyForm.duration', 'ttl',
                              label='ระยะเวลา Block',
-                             hint='ครบ escalation คูณเพิ่มให้เองตามจำนวนครั้งที่ IP โดน block ซ้ำ',
                              expiry=false) }}
         </div>
       </template>

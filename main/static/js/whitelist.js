@@ -113,7 +113,7 @@ function whitelistApp() {
         return false
       }
 
-      return items.every(item => isValidIPv4(item.ip_address))
+      return items.every(item => isAllowedWhitelistEntry(item.ip_address))
     },
 
     async loadWhitelist() {
@@ -150,10 +150,19 @@ function whitelistApp() {
         return
       }
 
-      const invalidItems = items.filter(item => !isValidIPv4(item.ip_address))
+      const invalidItems = items.filter(item => !isValidIpOrCidr(item.ip_address))
 
       if (invalidItems.length > 0) {
-        this.$store.ui.error('กรุณากรอก IP Address ให้ถูกต้อง')
+        this.$store.ui.error('กรุณากรอก IP Address หรือ Subnet ให้ถูกต้อง')
+        return
+      }
+
+      const tooBroad = items.filter(item => isTooBroadCidr(item.ip_address))
+
+      if (tooBroad.length > 0) {
+        this.$store.ui.error(
+          `วงกว้างเกินไป (${tooBroad.map(i => i.ip_address).join(', ')}) — รับได้สูงสุดแค่ /${MIN_WHITELIST_PREFIXLEN}`
+        )
         return
       }
 

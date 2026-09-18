@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from shared import templates
-from base_path import strip_base, RELATIVE_URLS
+from base_path import strip_base, RELATIVE_URLS, LINE_WEBHOOK_PATH
 
 
 logger = logging.getLogger("securelog.errors")
@@ -41,7 +41,8 @@ def _wants_html(request: Request) -> bool:
     # หน้าเว็บ (browser navigation) รับ HTML ส่วน fetch ของ frontend เรียกแต่ /api/* และรับ JSON
     path = strip_base(request.url.path)
 
-    if path.startswith("/api/") or path.startswith("/line/webhook"):
+    # /api/ เป็น "หมวด" จึงเทียบ prefix · ส่วน webhook เป็น endpoint เดียว เทียบทั้ง path
+    if path.startswith("/api/") or path.rstrip("/") == LINE_WEBHOOK_PATH:
         return False
 
     return "text/html" in request.headers.get("accept", "")

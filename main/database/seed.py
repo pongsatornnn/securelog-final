@@ -83,16 +83,19 @@ async def seed_blacklist_ttl(db) -> int:
         if snap is not None:
             ttl_seconds = snap.get("ttl_seconds")
             description = snap.get("description")
+            auto_block = snap.get("auto_block", True)
         else:
             ttl_seconds = BASE_TTL_SECONDS.get(detection_type)
             # ป้ายกำกับเดิมจาก blacklist_ttl_cache.load_ttl_from_db — คงข้อความให้เหมือนกัน
             description = "ถาวร (default)" if ttl_seconds is None else None
+            auto_block = True
 
         await upsert_blacklist_ttl(
             db,
             detection_type,
             ttl_seconds=ttl_seconds,
             description=description,
+            auto_block=auto_block,
         )
         created += 1
 

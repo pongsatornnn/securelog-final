@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from database.models import *
+from ip_match import entry_covers, entry_contains
 
 
 async def get_user(db: AsyncSession, username: str):
@@ -407,10 +408,35 @@ async def get_blacklist_by_ip(db: AsyncSession, ip_address: str):
 
 
 async def get_whitelist_by_ip(db: AsyncSession, ip_address: str):
+    # เทียบตรงตัวอย่างเดียว — ไม่ครอบ subnet (ใช้ตอนอยากได้ "แถวนี้เป๊ะ ๆ")
     result = await db.execute(
         select(Ip_white_list).where(Ip_white_list.ip_address == ip_address)
     )
     return result.scalar_one_or_none()
+
+
+async def find_whitelist_covering(db: AsyncSession, value: str):
+    # หาแถว whitelist ที่ "ครอบ" ค่านี้ — ตรงตัว หรือเป็นวงที่กินค่านี้ทั้งก้อน
+    # ส่ง value เป็น IP เดี่ยวก็ได้ (ตอน detector ถาม) หรือเป็น subnet ก็ได้ (ตอนกันเพิ่มซ้ำ)
+    #
+    # สแกนใน python ไม่ใช่ SQL เพราะคอลัมน์เป็น VARCHAR ไม่ใช่ inet ของ postgres
+    # (whitelist มีไม่กี่สิบแถว และถูกเรียกเฉพาะตอน detector เจอการโจมตี ไม่ใช่ทุก log)
+    if not value:
+        return None
+
+    rows = await get_ip_whitelist(db)
+
+    for row in rows:
+        if entry_covers(row.ip_address, value):
+            return row
+
+    return None
+
+
+async def get_active_blacklist_in_entry(db: AsyncSession, entry: str):
+    # แถวที่ยัง block อยู่จริงและ IP ตกอยู่ในรายการนี้ — subnet เดียวอาจชนหลาย IP พร้อมกัน
+    rows = await get_active_blacklist(db)
+    return [row for row in rows if entry_contains(entry, row.ip_address)]
 
 
 async def get_ip_blacklist_by_id(db: AsyncSession, blacklist_id: int):
@@ -691,6 +717,7 @@ async def upsert_blacklist_ttl(
     *,
     ttl_seconds: int | None,
     description: str | None = None,
+    auto_block: bool | None = None,
 ):
     row = await get_blacklist_ttl(db, detection_type)
 
@@ -698,12 +725,16 @@ async def upsert_blacklist_ttl(
         row.ttl_seconds = ttl_seconds
         if description is not None:
             row.description = description
+        # None = ไม่ได้สั่งเปลี่ยนโหมด (แก้แค่ระยะเวลา) — คงค่าเดิมไว้ ไม่ใช่รีเซ็ตเป็น block
+        if auto_block is not None:
+            row.auto_block = auto_block
         row.updated_at = datetime.now()
     else:
         row = BlacklistTtl(
             detection_type=detection_type,
             ttl_seconds=ttl_seconds,
             description=description,
+            auto_block=True if auto_block is None else auto_block,
         )
         db.add(row)
 

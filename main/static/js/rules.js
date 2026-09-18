@@ -67,6 +67,8 @@ function rulesApp() {
 
     policyForm: {
       severity: 'LOW',
+      // 'block' = block IP อัตโนมัติ · 'alert_only' = แจ้งเตือนอย่างเดียว (ตรง ๆ กับ auto_block ฝั่ง API)
+      response: 'block',
       // กรอกตัวเลขเอง + เลือกหน่วย นาที/ชั่วโมง/วัน/ถาวร (ชุดเดียวกับหน้า Blacklist/Whitelist)
       // helper อยู่ที่ static/js/common.js — ดู macro duration_picker
       duration: newDuration('hours'),
@@ -92,7 +94,7 @@ function rulesApp() {
     policyError() {
       const parts = []
       if (this.severityError) parts.push('ระดับความรุนแรง: ' + this.severityError)
-      if (this.ttlError) parts.push('ระยะเวลา Block: ' + this.ttlError)
+      if (this.ttlError) parts.push('การตอบสนอง: ' + this.ttlError)
       return parts.join(' · ')
     },
 
@@ -118,6 +120,8 @@ function rulesApp() {
           severity: sev ? sev.severity : null,
           hasTtl: !!ttl,
           ttl_seconds: ttl ? ttl.ttl_seconds : undefined,   // null = ถาวร (ต่างจาก undefined = ไม่มีแถว)
+          // API รุ่นก่อนไม่ส่งคีย์นี้มา — ไม่มีมา = block อัตโนมัติ (พฤติกรรมเดิม)
+          auto_block: ttl ? ttl.auto_block !== false : true,
           updated_at: updated.length ? updated[updated.length - 1] : null,
         }
       })
@@ -304,6 +308,9 @@ function rulesApp() {
       // undefined = ไม่มีแถว TTL (ช่องนี้จะถูกซ่อนอยู่แล้ว) — ตั้งเป็นชั่วโมงไว้เฉย ๆ
       this.policyForm = {
         severity: item.severity || 'LOW',
+        response: item.auto_block === false ? 'alert_only' : 'block',
+        // เก็บระยะเวลาที่ตั้งไว้เดิมไว้เสมอ แม้ตอนนี้เลือกแจ้งเตือนอย่างเดียว (ช่องถูกซ่อน)
+        // สลับกลับมา block แล้วได้ค่าเดิมคืน ไม่ต้องตั้งใหม่
         duration: item.ttl_seconds === undefined
           ? newDuration('hours')
           : durationFromSeconds(item.ttl_seconds),
@@ -320,6 +327,8 @@ function rulesApp() {
     canSubmitPolicy() {
       if (!this.editingPolicy) return false
       if (!this.editingPolicy.hasTtl) return true
+      // แจ้งเตือนอย่างเดียว = ไม่ได้ใช้ระยะเวลา ไม่ต้องบังคับให้กรอกถูก
+      if (this.policyForm.response === 'alert_only') return true
       return isValidDuration(this.policyForm.duration)
     },
 
@@ -329,7 +338,12 @@ function rulesApp() {
       const item = this.editingPolicy
       const label = this.attackLabel(item.key)
 
-      const ttl_seconds = durationSeconds(this.policyForm.duration)   // null = ถาวร
+      const auto_block = this.policyForm.response !== 'alert_only'
+
+      // โหมดแจ้งเตือนอย่างเดียวซ่อนช่องเวลาไว้ — ส่งค่าเดิมกลับไปเพื่อไม่ให้ระยะเวลาที่ตั้งไว้หาย
+      const ttl_seconds = auto_block
+        ? durationSeconds(this.policyForm.duration)   // null = ถาวร
+        : item.ttl_seconds
 
       // ยิงเฉพาะฝั่งที่ค่าเปลี่ยนจริง — เปิด modal มาแก้อย่างเดียวแล้วกดบันทึก จะไม่ไปแตะ
       // updated_at ของอีกตารางและไม่ล้าง cache ของฝั่งที่ไม่ได้แก้โดยไม่จำเป็น
@@ -344,12 +358,15 @@ function rulesApp() {
         })
       }
 
-      if (item.hasTtl && ttl_seconds !== item.ttl_seconds) {
+      // ระยะเวลากับโหมดอยู่ตารางเดียวกัน ยิง endpoint เดียวจบ — เปลี่ยนอย่างใดอย่างหนึ่งก็ส่ง
+      if (item.hasTtl && (ttl_seconds !== item.ttl_seconds || auto_block !== item.auto_block)) {
         jobs.push({
-          what: 'ระยะเวลา Block',
+          what: 'การตอบสนอง',
           url: window.APP_BASE + `/api/blacklist_ttl/${item.key}`,
-          body: { ttl_seconds },
-          done: `ระยะเวลา Block = ${this.formatTtl(ttl_seconds)}`,
+          body: { ttl_seconds, auto_block },
+          done: auto_block
+            ? `Block ${this.formatTtl(ttl_seconds)}`
+            : 'แจ้งเตือนอย่างเดียว (ไม่ Block)',
         })
       }
 
@@ -388,8 +405,8 @@ function rulesApp() {
         this.$store.ui.success(`ตั้ง ${label} — ${saved.join(' · ')} แล้ว`)
 
       } catch (err) {
-        console.error('อัปเดตความรุนแรง/ระยะเวลา Block ไม่สำเร็จ', err)
-        this.$store.ui.error('อัปเดตความรุนแรง / ระยะเวลา Block ไม่สำเร็จ')
+        console.error('อัปเดตความรุนแรง/การตอบสนอง ไม่สำเร็จ', err)
+        this.$store.ui.error('อัปเดตความรุนแรง / การตอบสนอง ไม่สำเร็จ')
         await this.loadPolicy()
       } finally {
         this.isSubmittingPolicy = false

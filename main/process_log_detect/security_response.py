@@ -6,14 +6,15 @@ from datetime import datetime
 
 from database.connection import AsyncSessionLocal
 from database.crud import (
-    get_whitelist_by_ip,
+    find_whitelist_covering,
     get_blacklist_by_ip,
     save_ip_blacklist,
     reactivate_blacklist,
     upgrade_blacklist_severity,
     get_ip_whitelist,
 )
-from blacklist_ttl_cache import compute_expiry, get_ttl
+from blacklist_ttl_cache import compute_expiry, get_ttl, should_auto_block
+from ip_match import parse_entry
 from alerts import SECURITY_ALERTS_STREAM_CHANNEL
 from redis_client import publish_json
 
@@ -32,28 +33,42 @@ NON_BLOCKABLE_NETWORKS = tuple(
 )
 
 
-def is_non_blockable_ip(ip: str | None) -> bool:
-    # True ถ้า ip อยู่ในช่วงที่ห้าม block (unspecified / broadcast / loopback)
-    if not ip:
-        return False
+def overlapping_non_blockable(value):
+    # คืนช่วงต้องห้ามที่ค่านี้ "ทับอยู่" — รับได้ทั้ง IP เดี่ยวและช่วง subnet
+    #
+    # ต้องใช้ overlaps ไม่ใช่ "อยู่ใน" เพราะวงที่กินทับ loopback แค่บางส่วน (เช่น 127.0.0.0/4)
+    # ก็บล็อกไม่ได้เหมือนกัน · เทียบ version ก่อนเสมอ ไม่งั้น overlaps ข้าม v4/v6 จะโยน TypeError
+    net = parse_entry(value)
 
-    try:
-        addr = ipaddress.ip_address(str(ip).strip())
-    except ValueError:
-        return False
+    if net is None:
+        return []
 
-    return any(addr in net for net in NON_BLOCKABLE_NETWORKS)
+    return [
+        other for other in NON_BLOCKABLE_NETWORKS
+        if net.version == other.version and net.overlaps(other)
+    ]
 
 
-def non_blockable_reason(ip: str | None) -> str:
-    # ข้อความอธิบายว่าทำไม IP นี้บล็อกไม่ได้ — ใช้ตอบกลับหน้าเว็บให้ตรงกับเหตุผลจริง
-    try:
-        addr = ipaddress.ip_address(str(ip).strip())
-    except (ValueError, TypeError):
+def is_non_blockable_ip(value) -> bool:
+    # True ถ้าค่านี้อยู่/ทับช่วงที่ห้าม block (unspecified / broadcast / loopback)
+    return bool(overlapping_non_blockable(value))
+
+
+def non_blockable_reason(value) -> str:
+    # ข้อความอธิบายว่าทำไมบล็อกไม่ได้ — ใช้ตอบกลับหน้าเว็บให้ตรงกับเหตุผลจริง
+    hits = overlapping_non_blockable(value)
+
+    if not hits:
         return "ไม่ใช่ IP ที่บล็อกได้"
 
-    if addr.is_loopback:
-        return "เป็น loopback ของเครื่องเอง บล็อกแล้วเท่ากับตัดขาตัวเอง"
+    net = parse_entry(value)
+    is_range = net is not None and net.num_addresses > 1
+
+    if any(other.is_loopback for other in hits):
+        return "ครอบ loopback ของเครื่องเอง" if is_range else "เป็น loopback"
+
+    if is_range:
+        return "ครอบ address พิเศษของทราฟฟิก broadcast ซึ่งไม่ใช่เครื่องจริง"
 
     return "เป็น address พิเศษของทราฟฟิก broadcast ไม่ใช่เครื่องจริง"
 
@@ -149,10 +164,21 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
         print(f"[AUTO-BLOCK] IP {source_ip} {non_blockable_reason(source_ip)} -> ไม่ block (เก็บแค่ alert)")
         return "not_blockable"
 
+    # แอดมินตั้งชนิดนี้ไว้ที่หน้า Rules ว่า "แจ้งเตือนอย่างเดียว" — ตรวจจับและบันทึก alert ตามปกติ
+    # แต่ไม่แตะ blacklist และไม่สั่ง agent เลย · เช็คก่อนเปิด session เพราะตัดจบได้โดยไม่ต้อง query
+    if not await should_auto_block(detection_type):
+        print(
+            f"[AUTO-BLOCK] {detection_type} ตั้งไว้เป็นแจ้งเตือนอย่างเดียว "
+            f"-> ไม่ block IP {source_ip} (เก็บแค่ alert)"
+        )
+        return "alert_only"
+
     async with AsyncSessionLocal() as db:
-        whitelist_ip = await get_whitelist_by_ip(db, source_ip)
+        whitelist_ip = await find_whitelist_covering(db, source_ip)
         if whitelist_ip:
-            print(f"[AUTO-BLOCK] IP {source_ip} อยู่ใน Whitelist -> ไม่ block (เก็บแค่ alert)")
+            # แถวที่เจออาจเป็น subnet ไม่ใช่ IP ตัวนั้นเป๊ะ ๆ — print ให้เห็นว่าโดนวงไหนกัน
+            via = "" if whitelist_ip.ip_address == source_ip else f" (อยู่ในวง {whitelist_ip.ip_address})"
+            print(f"[AUTO-BLOCK] IP {source_ip} อยู่ใน Whitelist{via} -> ไม่ block (เก็บแค่ alert)")
             return "whitelisted"
 
         blacklist_ip = await get_blacklist_by_ip(db, source_ip)

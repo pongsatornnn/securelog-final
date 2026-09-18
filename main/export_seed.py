@@ -66,6 +66,7 @@ async def collect() -> dict:
         "blacklist_ttl": {
             row.detection_type: {
                 "ttl_seconds": row.ttl_seconds,
+                "auto_block": bool(row.auto_block),
                 "description": row.description,
             }
             for row in ttls

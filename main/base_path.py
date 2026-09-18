@@ -38,6 +38,20 @@ def _cookie_suffix(raw: str) -> str:
     return "_" + slug if slug else ""
 
 
+# path ของ endpoint ที่ LINE ยิง webhook เข้ามา — ตั้งได้ที่ LINE_WEBHOOK_PATH ใน .env
+#
+# อยู่ไฟล์นี้เพราะเป็นค่า "path ของ URL" เหมือน ROOT_PATH และเป็นที่เดียวที่ทั้ง 3 ฝั่ง
+# (route จริง · ตัวยกเว้น CSRF · ตัวตัดสิน HTML/JSON ของหน้า error) อ่านร่วมกันได้
+# โดยไม่ต้องลาก settings_cache/ฐาน/Redis เข้ามาใน import chain ของ CSRF middleware
+#
+# **ไม่ได้อยู่ใต้ ROOT_PATH** — app webhook (พอร์ต 8080) เป็นคนละ app ที่ไม่มี prefix
+# ส่วนบน app หลัก path นี้จะไปโผล่ใต้ prefix เองตามปกติ
+#
+# ค่าที่ normalize แล้วเหลือว่าง (ใส่ "/" หรือเว้นว่าง) ให้ถอยไปใช้ค่าเดิม — webhook ที่ราก
+# จะทำให้ตัวยกเว้น CSRF ครอบทั้งเว็บ
+LINE_WEBHOOK_PATH = _normalize(os.getenv("LINE_WEBHOOK_PATH", "")) or "/line/webhook"
+
+
 # ชื่อของระบบนี้ — ใช้ต่อท้าย cookie เมื่อเสิร์ฟที่ราก (ไม่มี prefix ให้เอามาตั้งชื่อ)
 APP_NAME = "securelog"
 

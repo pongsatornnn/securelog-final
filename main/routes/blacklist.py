@@ -14,7 +14,7 @@ from database.crud import (
     manual_unblock_blacklist,
     save_ip_blacklist,
     reactivate_blacklist,
-    get_whitelist_by_ip,
+    find_whitelist_covering,
     get_blacklist_by_ip,
     get_agent_by_agent_id,
     get_all_blacklist_ttl,
@@ -172,6 +172,7 @@ async def api_get_blacklist_ttl(
             {
                 "detection_type": r.detection_type,
                 "ttl_seconds": r.ttl_seconds,
+                "auto_block": bool(r.auto_block),
                 "description": r.description,
                 "updated_at": iso_utc(r.updated_at),
             }
@@ -246,8 +247,17 @@ async def api_set_blacklist_ttl(
             detail="ระยะเวลา Block ยาวเกินไป (สูงสุด 10 ปี) — ถ้าต้องการนานกว่านี้ให้เลือกบล็อกถาวร",
         )
 
-    result = await update_ttl(detection_type, payload.ttl_seconds)
-    return {"status": "ok", "message": f"อัปเดต TTL ของ {detection_type} สำเร็จ", "ttl": result}
+    result = await update_ttl(detection_type, payload.ttl_seconds, payload.auto_block)
+
+    mode_text = (
+        "block IP อัตโนมัติ" if result["auto_block"]
+        else "แจ้งเตือนอย่างเดียว (ไม่ block)"
+    )
+    return {
+        "status": "ok",
+        "message": f"อัปเดต {detection_type} สำเร็จ ({mode_text})",
+        "ttl": result,
+    }
 
 
 @router.post("/api/add_blacklist")
@@ -272,11 +282,12 @@ async def api_add_blacklist(
             detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
-    whitelist_ip = await get_whitelist_by_ip(db, ip_address)
+    whitelist_ip = await find_whitelist_covering(db, ip_address)
     if whitelist_ip:
+        via = "" if whitelist_ip.ip_address == ip_address else f" (อยู่ในวง {whitelist_ip.ip_address})"
         raise HTTPException(
             status_code=409,
-            detail=f"IP {ip_address} อยู่ใน Whitelist ไม่สามารถเพิ่มเข้า Blacklist ได้",
+            detail=f"IP {ip_address} อยู่ใน Whitelist{via} ไม่สามารถเพิ่มเข้า Blacklist ได้",
         )
 
     if payload.agent_id:
@@ -420,8 +431,8 @@ async def api_move_to_whitelist(
         agent_id=None,
     )
 
-    # 2) เพิ่มเข้า whitelist (ถ้ามีอยู่แล้วก็ถือว่าถึงปลายทางแล้ว ไม่ต้องเพิ่มซ้ำ)
-    whitelist_ip = await get_whitelist_by_ip(db, ip_address)
+    # 2) เพิ่มเข้า whitelist (ถ้ามีอยู่แล้ว หรือมีวงที่ครอบอยู่แล้ว ก็ถือว่าถึงปลายทาง ไม่ต้องเพิ่มซ้ำ)
+    whitelist_ip = await find_whitelist_covering(db, ip_address)
 
     if not whitelist_ip:
         whitelist_ip = await save_ip_whitelist(
@@ -614,12 +625,16 @@ async def api_add_blacklist_bulk(
             })
             continue
 
-        whitelist_ip = await get_whitelist_by_ip(db, ip_address)
+        whitelist_ip = await find_whitelist_covering(db, ip_address)
         if whitelist_ip:
             results["blocked_by_whitelist"].append({
                 "ip_address": ip_address,
                 "event": event,
-                "reason": "IP อยู่ใน Whitelist",
+                "reason": (
+                    "IP อยู่ใน Whitelist"
+                    if whitelist_ip.ip_address == ip_address
+                    else f"IP อยู่ในวง {whitelist_ip.ip_address} ที่อยู่ใน Whitelist"
+                ),
             })
             continue
 
