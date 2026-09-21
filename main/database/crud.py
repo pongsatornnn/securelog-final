@@ -28,13 +28,14 @@ async def create_user(
     db: AsyncSession,
     username: str,
     hashed_password: str,
-    role: str = "admin",
     must_change_password: bool = False,
 ):
+    # ระบบไม่มี role ให้เลือกแล้ว — ทุกบัญชีที่สร้างมีสิทธิ์เท่ากันหมด (คอลัมน์ role ยังอยู่ใน
+    # ตารางเดิม เลยเขียนค่า "admin" ลงไปตายตัวให้ข้อมูลเก่า/ใหม่เป็นแบบเดียวกัน)
     user = User(
         username=username,
         hashed_password=hashed_password,
-        role=role,
+        role="admin",
         must_change_password=must_change_password,
     )
     db.add(user)
@@ -67,14 +68,6 @@ async def set_user_name(db: AsyncSession, user: User, name: str | None):
 
 async def set_user_active(db: AsyncSession, user: User, is_active: bool):
     user.is_active = is_active
-    user.updated_at = datetime.now()
-    await db.commit()
-    await db.refresh(user)
-    return user
-
-
-async def set_user_role(db: AsyncSession, user: User, role: str):
-    user.role = role
     user.updated_at = datetime.now()
     await db.commit()
     await db.refresh(user)

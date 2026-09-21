@@ -11,7 +11,7 @@ function manageUsersApp() {
     showCreateModal: false,
     creating: false,
     createError: '',
-    createForm: { username: '', password: '', role: 'user' },
+    createForm: { username: '', password: '' },
 
     showResetModal: false,
     resetting: false,
@@ -48,7 +48,7 @@ function manageUsersApp() {
 
     openCreateModal() {
       this.createError = ''
-      this.createForm = { username: '', password: '', role: 'user' }
+      this.createForm = { username: '', password: '' }
       this.showCreateModal = true
     },
 
@@ -80,7 +80,6 @@ function manageUsersApp() {
     canCreate() {
       return this.createForm.username.trim().length >= 3
         && this.allPassed(this.createChecks())
-        && this.createForm.role.trim()
     },
 
     canReset() {
@@ -98,7 +97,6 @@ function manageUsersApp() {
           body: JSON.stringify({
             username: this.createForm.username.trim(),
             password: this.createForm.password,
-            role: this.createForm.role.trim(),
           }),
         })
 
@@ -185,41 +183,6 @@ function manageUsersApp() {
         this.deleteError = err.message
       } finally {
         this.deleting = false
-      }
-    },
-
-    async changeRole(u, newRole) {
-      if (newRole === u.role) return
-
-      const ok = await this.$store.ui.confirm({
-        title: 'เปลี่ยนสิทธิ์ผู้ใช้',
-        message: newRole === 'admin'
-          ? 'ผู้ใช้คนนี้จะได้สิทธิ์ทั้งหมดในระบบ'
-          : 'ผู้ใช้คนนี้จะเสียสิทธิ์ admin ทันที ',
-        detail: `${u.username}: ${u.role} → ${newRole}`,
-        confirmText: 'เปลี่ยนสิทธิ์',
-        danger: newRole !== 'admin',
-      })
-
-      if (!ok) {
-        await this.loadUsers()   // ยกเลิก -> รีเซ็ต dropdown กลับค่าเดิม
-        return
-      }
-
-      try {
-        const res = await fetch(window.APP_BASE + `/api/users/${u.id}/set-role`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: newRole }),
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.detail || 'เปลี่ยน role ไม่สำเร็จ')
-
-        this.$store.ui.success(`เปลี่ยน ${u.username} เป็น ${newRole} แล้ว`)
-      } catch (err) {
-        this.$store.ui.error(err.message)
-      } finally {
-        await this.loadUsers()
       }
     },
 

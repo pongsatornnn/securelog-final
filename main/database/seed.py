@@ -187,7 +187,7 @@ async def seed_admin_user(db) -> bool:
 
     await create_user(
         db, "admin", hash_password("admin"),
-        role="admin", must_change_password=True,
+        must_change_password=True,
     )
     print(f"[{LOG_PREFIX}] ไม่มี user ในระบบเลย — สร้างบัญชีเริ่มต้น admin/admin ให้แล้ว (ต้องเปลี่ยนรหัสตอน login ครั้งแรก)")
     return True

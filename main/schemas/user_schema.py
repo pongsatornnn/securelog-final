@@ -1,21 +1,12 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
-VALID_ROLES = ("admin", "user")
+# ระบบไม่มี role แล้ว — ทุกบัญชีที่สร้างได้สิทธิ์เท่ากันหมด (เท่ากับ admin เดิม)
 
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     # ความยาว/ความรัดกุมจริงตรวจด้วย password_policy (ตอบเป็นข้อความไทยบอกว่าตกข้อไหน)
     password: str = Field(min_length=1, max_length=128)
-    role: str = "user"
-
-    @field_validator("role")
-    @classmethod
-    def role_must_be_known(cls, value: str) -> str:
-        lower = value.lower().strip()
-        if lower not in VALID_ROLES:
-            raise ValueError(f"role ต้องเป็นหนึ่งใน {', '.join(VALID_ROLES)}")
-        return lower
 
 
 class ResetPasswordRequest(BaseModel):
@@ -34,15 +25,3 @@ class UpdateProfileRequest(BaseModel):
 
 class SetActiveRequest(BaseModel):
     is_active: bool
-
-
-class SetRoleRequest(BaseModel):
-    role: str
-
-    @field_validator("role")
-    @classmethod
-    def role_must_be_known(cls, value: str) -> str:
-        lower = value.lower().strip()
-        if lower not in VALID_ROLES:
-            raise ValueError(f"role ต้องเป็นหนึ่งใน {', '.join(VALID_ROLES)}")
-        return lower

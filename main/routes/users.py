@@ -1,4 +1,4 @@
-# เส้นทางจัดการ user (หน้า Manage Users) — เฉพาะ role=admin เข้าได้ (require_admin)
+# เส้นทางจัดการ user (หน้า Manage Users) — ทุกบัญชีที่ login ได้มีสิทธิ์เท่ากันหมด (ไม่มี role)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.connection import get_db
 from database.crud import (
     get_all_users, get_user, get_user_by_id, create_user, set_user_password,
-    get_first_user, delete_user, set_user_active, set_user_role,
+    get_first_user, delete_user, set_user_active,
 )
 
 from dependencies import require_admin
@@ -15,7 +15,7 @@ import password_policy
 from shared import iso_utc
 
 from schemas.user_schema import (
-    CreateUserRequest, ResetPasswordRequest, SetActiveRequest, SetRoleRequest,
+    CreateUserRequest, ResetPasswordRequest, SetActiveRequest,
 )
 
 
@@ -34,7 +34,6 @@ async def api_get_users(
         {
             "id": u.id,
             "username": u.username,
-            "role": u.role,
             "is_active": u.is_active,
             "must_change_password": u.must_change_password,
             "is_protected": u.id == protected_id,
@@ -67,13 +66,13 @@ async def api_create_user(
     # admin เป็นคนตั้งรหัสแรกให้ (ไม่ใช่รหัสที่เจ้าของบัญชีตั้งเอง) จึงบังคับเปลี่ยนตอน login
     created = await create_user(
         db, payload.username, hash_password(payload.password),
-        role=payload.role, must_change_password=True,
+        must_change_password=True,
     )
 
     return {
         "status": "ok",
         "message": f"สร้าง user {created.username} สำเร็จ",
-        "user": {"id": created.id, "username": created.username, "role": created.role},
+        "user": {"id": created.id, "username": created.username},
     }
 
 
@@ -155,31 +154,4 @@ async def api_set_user_active(
     return {
         "status": "ok",
         "message": f"{'เปิด' if payload.is_active else 'ปิด'}ใช้งาน user {target.username} สำเร็จ",
-    }
-
-
-@router.post("/api/users/{user_id}/set-role")
-async def api_set_user_role(
-    user_id: int,
-    payload: SetRoleRequest,
-    user=Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    # admin เปลี่ยน role ของ user (admin <-> user) — มีผลกับ session ที่ค้างอยู่ทันทีรอบ request ถัดไป
-    target = await get_user_by_id(db, user_id)
-    if not target:
-        raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
-
-    first_user = await get_first_user(db)
-    if first_user and target.id == first_user.id:
-        raise HTTPException(status_code=403, detail="เปลี่ยน role ของ admin เริ่มต้นไม่ได้")
-
-    if target.username == user["username"]:
-        raise HTTPException(status_code=400, detail="เปลี่ยน role ของบัญชีตัวเองไม่ได้")
-
-    await set_user_role(db, target, payload.role)
-
-    return {
-        "status": "ok",
-        "message": f"เปลี่ยน role ของ {target.username} เป็น {payload.role} สำเร็จ",
     }

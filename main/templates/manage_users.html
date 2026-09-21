@@ -45,7 +45,6 @@
     <table class="user-table stack-table">
       <colgroup>
         <col class="col-user">
-        <col class="col-role">
         <col class="col-status">
         <col class="col-pwd">
         <col class="col-created">
@@ -55,7 +54,6 @@
       <thead>
         <tr>
           <th>Username</th>
-          <th>Role</th>
           <th>สถานะบัญชี</th>
           <th>รหัสผ่าน</th>
           <th>สร้างเมื่อ</th>
@@ -68,16 +66,6 @@
           <tr>
             <td class="stack-head">
               <div class="user-name" x-text="u.username"></div>
-            </td>
-            <td data-label="Role">
-              
-              <select class="role-select"
-                      :value="u.role"
-                      :disabled="u.is_protected || u.username === currentUsername"
-                      @change="changeRole(u, $event.target.value)">
-                <option value="admin">admin</option>
-                <option value="user">user</option>
-              </select>
             </td>
             <td data-label="สถานะบัญชี">
               <span class="badge" :class="u.is_active ? 'badge-active' : 'badge-inactive'"
@@ -119,7 +107,7 @@
         <button class="btn-close" @click="closeCreateModal()" aria-label="ปิด">×</button>
       </div>
 
-      <div class="modal-help">เป็นรหัสชั่วคราว — user ต้องเปลี่ยนเองตอน login ครั้งแรก</div>
+      <div class="modal-help">เป็นรหัสชั่วคราว — user ต้องเปลี่ยนเองตอน login ครั้งแรก · ทุกบัญชีมีสิทธิ์ใช้งานเท่ากันหมด</div>
 
       <div class="form-group">
         <label class="form-label">Username</label>
@@ -138,14 +126,6 @@
             </li>
           </template>
         </ul>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Role</label>
-        <select class="form-input" x-model="createForm.role" :disabled="creating">
-          <option value="admin">admin — Full access</option>
-          <option value="user">user — Read only</option>
-        </select>
       </div>
 
       <div class="modal-actions">

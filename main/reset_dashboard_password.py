@@ -103,11 +103,11 @@ async def show_list() -> int:
         return 1
 
     say(f"ผู้ใช้ทั้งหมด {len(users)} คน")
-    say(f"  {'id':>3}  {'username':<20} {'role':<10} {'สถานะ':<12} บังคับเปลี่ยนรหัส")
+    say(f"  {'id':>3}  {'username':<20} {'สถานะ':<12} บังคับเปลี่ยนรหัส")
     for user in users:
         status = "ใช้งานอยู่" if user.is_active else "ปิดใช้งาน"
         force = "ใช่" if user.must_change_password else "-"
-        say(f"  {user.id:>3}  {user.username:<20} {user.role:<10} {status:<12} {force}")
+        say(f"  {user.id:>3}  {user.username:<20} {status:<12} {force}")
 
     rows = locked_ips()
     if rows:
@@ -137,7 +137,7 @@ async def reset(username: str, new_password: str, assume_yes: bool,
 
         say()
         say("จะทำสิ่งนี้:")
-        say(f"  ตั้งรหัสผ่านใหม่ให้ {user.username} (id={user.id}, role={user.role})")
+        say(f"  ตั้งรหัสผ่านใหม่ให้ {user.username} (id={user.id})")
         if force_change:
             say("  และบังคับให้เปลี่ยนรหัสเองตอนล็อกอินครั้งแรก")
         if not user.is_active:

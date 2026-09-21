@@ -16,15 +16,14 @@
 
 /* ความกว้างเป็น % ให้ทุกคอลัมน์ยืดหดพร้อมกัน ระยะห่างจึงสมดุลเท่ากันทุกขนาดจอ
    (ถ้าใช้ px คอลัมน์แรกจะกินที่ว่างที่เหลือทั้งหมดคนเดียวเวลาจอกว้าง) */
-.user-table .col-user    { width: 22%; }
-.user-table .col-role    { width: 13%; }
-.user-table .col-status  { width: 14%; }
-.user-table .col-pwd     { width: 15%; }
-.user-table .col-created { width: 18%; }
-.user-table .col-action  { width: 18%; }
+.user-table .col-user    { width: 26%; }
+.user-table .col-status  { width: 16%; }
+.user-table .col-pwd     { width: 17%; }
+.user-table .col-created { width: 21%; }
+.user-table .col-action  { width: 20%; }
 
-/* หัวคอลัมน์กับค่าข้างล่างจัดกึ่งกลางทั้งคู่ — ค่าในตารางนี้เป็นของสั้น ๆ (badge, วันที่,
-   dropdown) ที่สั้นกว่าความกว้างคอลัมน์มาก ถ้าชิดซ้ายจะลอยห่างจากหัวคอลัมน์ของตัวเอง */
+/* หัวคอลัมน์กับค่าข้างล่างจัดกึ่งกลางทั้งคู่ — ค่าในตารางนี้เป็นของสั้น ๆ (badge, วันที่)
+   ที่สั้นกว่าความกว้างคอลัมน์มาก ถ้าชิดซ้ายจะลอยห่างจากหัวคอลัมน์ของตัวเอง */
 .user-table th,
 .user-table td {
   text-align: center;
@@ -92,31 +91,6 @@
 
 .btn-danger:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.role-select {
-  width: 100%;
-  text-align: center;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-main);
-  background: var(--bg-raised);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  padding: 3px 8px;
-  cursor: pointer;
-  outline: none;
-}
-
-.role-select:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary);
-}
-
-.role-select:disabled {
-  background: var(--bg-main);
-  color: var(--text-dim);
   cursor: not-allowed;
 }
 
