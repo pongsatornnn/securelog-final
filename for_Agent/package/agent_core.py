@@ -84,7 +84,7 @@ CA_CERT_FILE = _find_cert(_INFO.get("CA_FILE", "ca.crt"))
 # interface ที่ใช้เป็นแหล่งของ IP เครื่องนี้ — เลือกตอนรัน setup.sh (setup.sh เขียนลง
 HOST_IFACE = str(_CONFIG.get("host_iface") or "")
 
-METRICS_INTERVAL_SECONDS = 1
+METRICS_INTERVAL_SECONDS = 4
 RECONNECT_DELAY_SECONDS = 5
 
 # ต่อ endpoint ปัจจุบันไม่ติดกี่ครั้งติดกันถึงจะเริ่มไล่ลองที่อยู่สำรอง (5 วิ/ครั้ง)
