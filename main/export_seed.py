@@ -67,6 +67,7 @@ async def collect() -> dict:
             row.detection_type: {
                 "ttl_seconds": row.ttl_seconds,
                 "auto_block": bool(row.auto_block),
+                "notify_line": bool(row.notify_line),
                 "description": row.description,
             }
             for row in ttls

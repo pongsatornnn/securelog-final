@@ -69,6 +69,8 @@ function rulesApp() {
       severity: 'LOW',
       // 'block' = block IP อัตโนมัติ · 'alert_only' = แจ้งเตือนอย่างเดียว (ตรง ๆ กับ auto_block ฝั่ง API)
       response: 'block',
+      // ส่ง LINE ไหม — ใช้ได้เฉพาะตอน response = 'alert_only' (โหมด block แจ้งเสมอ)
+      notify_line: true,
       // กรอกตัวเลขเอง + เลือกหน่วย นาที/ชั่วโมง/วัน/ถาวร (ชุดเดียวกับหน้า Blacklist/Whitelist)
       // helper อยู่ที่ static/js/common.js — ดู macro duration_picker
       duration: newDuration('hours'),
@@ -122,6 +124,8 @@ function rulesApp() {
           ttl_seconds: ttl ? ttl.ttl_seconds : undefined,   // null = ถาวร (ต่างจาก undefined = ไม่มีแถว)
           // API รุ่นก่อนไม่ส่งคีย์นี้มา — ไม่มีมา = block อัตโนมัติ (พฤติกรรมเดิม)
           auto_block: ttl ? ttl.auto_block !== false : true,
+          // เช่นกัน ไม่มีมา = แจ้ง LINE (พฤติกรรมเดิมคือแจ้งทุกชนิด)
+          notify_line: ttl ? ttl.notify_line !== false : true,
           updated_at: updated.length ? updated[updated.length - 1] : null,
         }
       })
@@ -309,6 +313,7 @@ function rulesApp() {
       this.policyForm = {
         severity: item.severity || 'LOW',
         response: item.auto_block === false ? 'alert_only' : 'block',
+        notify_line: item.notify_line !== false,
         // เก็บระยะเวลาที่ตั้งไว้เดิมไว้เสมอ แม้ตอนนี้เลือกแจ้งเตือนอย่างเดียว (ช่องถูกซ่อน)
         // สลับกลับมา block แล้วได้ค่าเดิมคืน ไม่ต้องตั้งใหม่
         duration: item.ttl_seconds === undefined
@@ -345,6 +350,10 @@ function rulesApp() {
         ? durationSeconds(this.policyForm.duration)   // null = ถาวร
         : item.ttl_seconds
 
+      // ช่อง LINE มีให้ตั้งเฉพาะโหมดแจ้งเตือนอย่างเดียว — โหมด block ส่ง LINE เสมอ
+      // ค่าที่เก็บไว้จึงคงของเดิม ไว้ใช้ตอนสลับกลับมาเป็นแจ้งเตือนอย่างเดียว
+      const notify_line = auto_block ? item.notify_line : this.policyForm.notify_line
+
       // ยิงเฉพาะฝั่งที่ค่าเปลี่ยนจริง — เปิด modal มาแก้อย่างเดียวแล้วกดบันทึก จะไม่ไปแตะ
       // updated_at ของอีกตารางและไม่ล้าง cache ของฝั่งที่ไม่ได้แก้โดยไม่จำเป็น
       const jobs = []
@@ -359,14 +368,16 @@ function rulesApp() {
       }
 
       // ระยะเวลากับโหมดอยู่ตารางเดียวกัน ยิง endpoint เดียวจบ — เปลี่ยนอย่างใดอย่างหนึ่งก็ส่ง
-      if (item.hasTtl && (ttl_seconds !== item.ttl_seconds || auto_block !== item.auto_block)) {
+      if (item.hasTtl && (ttl_seconds !== item.ttl_seconds
+                          || auto_block !== item.auto_block
+                          || notify_line !== item.notify_line)) {
         jobs.push({
           what: 'การตอบสนอง',
           url: window.APP_BASE + `/api/blacklist_ttl/${item.key}`,
-          body: { ttl_seconds, auto_block },
+          body: { ttl_seconds, auto_block, notify_line },
           done: auto_block
             ? `Block ${this.formatTtl(ttl_seconds)}`
-            : 'แจ้งเตือนอย่างเดียว (ไม่ Block)',
+            : 'แจ้งเตือนอย่างเดียว (ไม่ Block)' + (notify_line ? ' + แจ้ง LINE' : ' · ไม่แจ้ง LINE'),
         })
       }
 

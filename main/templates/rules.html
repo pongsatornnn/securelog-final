@@ -275,6 +275,19 @@
           {{ duration_picker('policyForm.duration', 'ttl',
                              label='ระยะเวลา Block',
                              expiry=false) }}
+
+          <div class="form-hint">โหมดนี้ส่งแจ้งเตือนเข้า LINE เสมอ</div>
+        </div>
+      </template>
+
+      <template x-if="editingPolicy && editingPolicy.hasTtl && policyForm.response === 'alert_only'">
+        <div class="form-group">
+          <div class="form-toggle-row">
+            <input type="checkbox" id="policy-notify-line" x-model="policyForm.notify_line">
+            <label for="policy-notify-line" style="font-size: 14px; color: var(--text-main);">
+              ส่งแจ้งเตือนเข้า LINE ด้วย
+            </label>
+          </div>
         </div>
       </template>
 

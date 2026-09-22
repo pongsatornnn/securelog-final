@@ -173,6 +173,7 @@ async def api_get_blacklist_ttl(
                 "detection_type": r.detection_type,
                 "ttl_seconds": r.ttl_seconds,
                 "auto_block": bool(r.auto_block),
+                "notify_line": bool(r.notify_line),
                 "description": r.description,
                 "updated_at": iso_utc(r.updated_at),
             }
@@ -247,15 +248,25 @@ async def api_set_blacklist_ttl(
             detail="ระยะเวลา Block ยาวเกินไป (สูงสุด 10 ปี) — ถ้าต้องการนานกว่านี้ให้เลือกบล็อกถาวร",
         )
 
-    result = await update_ttl(detection_type, payload.ttl_seconds, payload.auto_block)
+    result = await update_ttl(
+        detection_type,
+        payload.ttl_seconds,
+        payload.auto_block,
+        payload.notify_line,
+    )
 
     mode_text = (
         "block IP อัตโนมัติ" if result["auto_block"]
         else "แจ้งเตือนอย่างเดียว (ไม่ block)"
     )
+    # ชนิดที่ block ส่ง LINE เสมอ — สถานะที่บอกผู้ใช้จึงต้องดูสองค่าคู่กัน
+    line_text = (
+        " · ไม่แจ้ง LINE" if not result["auto_block"] and not result["notify_line"]
+        else " + แจ้งเตือน LINE"
+    )
     return {
         "status": "ok",
-        "message": f"อัปเดต {detection_type} สำเร็จ ({mode_text})",
+        "message": f"อัปเดต {detection_type} สำเร็จ ({mode_text}{line_text})",
         "ttl": result,
     }
 

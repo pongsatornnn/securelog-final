@@ -711,6 +711,7 @@ async def upsert_blacklist_ttl(
     ttl_seconds: int | None,
     description: str | None = None,
     auto_block: bool | None = None,
+    notify_line: bool | None = None,
 ):
     row = await get_blacklist_ttl(db, detection_type)
 
@@ -721,6 +722,9 @@ async def upsert_blacklist_ttl(
         # None = ไม่ได้สั่งเปลี่ยนโหมด (แก้แค่ระยะเวลา) — คงค่าเดิมไว้ ไม่ใช่รีเซ็ตเป็น block
         if auto_block is not None:
             row.auto_block = auto_block
+        # เช่นเดียวกัน None = ไม่ได้สั่งเปลี่ยนเรื่องการส่ง LINE
+        if notify_line is not None:
+            row.notify_line = notify_line
         row.updated_at = datetime.now()
     else:
         row = BlacklistTtl(
@@ -728,6 +732,7 @@ async def upsert_blacklist_ttl(
             ttl_seconds=ttl_seconds,
             description=description,
             auto_block=True if auto_block is None else auto_block,
+            notify_line=True if notify_line is None else notify_line,
         )
         db.add(row)
 

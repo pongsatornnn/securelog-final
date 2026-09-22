@@ -7,6 +7,7 @@ import time
 import redis
 
 from alerts import SECURITY_ALERTS_STREAM_CHANNEL
+from blacklist_ttl_cache import should_notify_line
 from database.connection import AsyncSessionLocal, wait_for_table
 from database.crud import get_approved_line_user_ids
 from redis_client import get_redis
@@ -39,8 +40,26 @@ def _is_new_alert(r: redis.Redis, alert_id) -> bool:
         return True
 
 
+async def _should_notify(alert: dict) -> bool:
+    # อ่านจาก blacklist_ttl (cache-first) — แอดมินกดบันทึกที่หน้า Rules แล้ว update_ttl
+    # เคลียร์คีย์ใน Redis ให้ worker นี้เห็นผลทันที ไม่ต้องรอ TTL ของ cache หมด
+    try:
+        return await should_notify_line(alert.get("detection_type"))
+    except Exception as e:
+        # fail-open แบบเดียวกับ dedup: อ่านค่าไม่ได้ให้ส่ง ดีกว่าเงียบหาย
+        print(f"[LINE-NOTIFY] อ่านค่าการแจ้ง LINE ไม่ได้ ({e}) — ส่งต่อ")
+        return True
+
+
 def handle_alert(alert: dict, loop: asyncio.AbstractEventLoop, r: redis.Redis) -> None:
     label = alert.get("attack_type", "-")
+
+    # ชนิดนี้เป็นโหมดแจ้งเตือนอย่างเดียว และถูกตั้งที่หน้า Rules ว่าไม่ต้องแจ้ง LINE
+    # — ออกตั้งแต่ตรงนี้ ก่อนกิน dedup key เพื่อให้เปิดกลับมาแล้ว alert แถวเดิมยังส่งได้
+    # หน้าเว็บไม่กระทบ: /api/stream/alerts ซับ channel เดียวกันนี้แยกต่างหาก ได้ครบทุกชนิด
+    if not loop.run_until_complete(_should_notify(alert)):
+        print(f"[LINE-NOTIFY] ข้าม '{label}' (ตั้งไว้ว่าไม่ต้องแจ้ง LINE)")
+        return
 
     # กันสแปม: alert แถวเดิมที่โจมตีซ้ำ (merge, id เดิม) ไม่ส่งซ้ำ
     if not _is_new_alert(r, alert.get("id")):

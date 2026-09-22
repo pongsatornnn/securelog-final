@@ -231,6 +231,12 @@ class BlacklistTtl(Base):
     # ไม่ถูกล้าง เพื่อให้สลับกลับมาเป็น block แล้วได้ระยะเวลาที่เคยตั้งไว้คืน)
     auto_block = Column(Boolean, nullable=False, default=True, server_default="true")
 
+    # เลือกได้เฉพาะชนิดที่ตั้งเป็น "แจ้งเตือนอย่างเดียว (ไม่ block)" ว่าจะส่ง LINE ด้วยไหม —
+    # ชนิดที่ block อัตโนมัติส่ง LINE เสมอ ไม่ว่าค่านี้เป็นอะไร (ยังไงก็ต้องแจ้ง)
+    # Dashboard/หน้า Alerts ได้ครบทุกชนิดอยู่แล้ว ไม่เกี่ยวกับค่านี้
+    # (ดู should_notify_line ใน blacklist_ttl_cache.py)
+    notify_line = Column(Boolean, nullable=False, default=True, server_default="true")
+
     description = Column(String(200), nullable=True)
 
     created_at = Column(DateTime, default=datetime.now)

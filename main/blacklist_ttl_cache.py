@@ -42,10 +42,12 @@ async def load_ttl_from_db(detection_type: str) -> dict:
                 default_ttl = snap.get("ttl_seconds")
                 description = snap.get("description")
                 default_auto_block = snap.get("auto_block", True)
+                default_notify_line = snap.get("notify_line", True)
             else:
                 default_ttl = base_ttl_for(detection_type)
                 description = None
                 default_auto_block = True
+                default_notify_line = True
                 if detection_type in BASE_TTL_SECONDS and BASE_TTL_SECONDS[detection_type] is None:
                     description = "ถาวร (default)"
             row = await upsert_blacklist_ttl(
@@ -54,6 +56,7 @@ async def load_ttl_from_db(detection_type: str) -> dict:
                 ttl_seconds=default_ttl,
                 description=description,
                 auto_block=default_auto_block,
+                notify_line=default_notify_line,
             )
             print(f"[{LOG_PREFIX}] seed default TTL ลง DB: {detection_type} = {default_ttl}")
 
@@ -61,6 +64,7 @@ async def load_ttl_from_db(detection_type: str) -> dict:
             "detection_type": row.detection_type,
             "ttl_seconds": row.ttl_seconds,
             "auto_block": bool(row.auto_block),
+            "notify_line": bool(row.notify_line),
         }
 
     cache_set_json(ttl_cache_key(detection_type), data, TTL_CACHE_TTL_SECONDS, log_prefix=LOG_PREFIX)
@@ -71,9 +75,9 @@ async def get_ttl(detection_type: str) -> dict:
     # Entry point: คืน {'detection_type', 'ttl_seconds', 'auto_block'} (ttl_seconds=None -> ถาวร)
     cached = cache_get_json(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
 
-    # แคชที่ค้างจากรุ่นก่อนมีโหมดแจ้งเตือนอย่างเดียวจะไม่มีคีย์ auto_block —
-    # โหลดใหม่จาก DB แทนที่จะเดาค่าให้ (เดาผิดทางไหนก็ผิดความตั้งใจของแอดมิน)
-    if cached is not None and "auto_block" in cached:
+    # แคชที่ค้างจากรุ่นก่อนจะไม่มีคีย์ auto_block/notify_line — โหลดใหม่จาก DB
+    # แทนที่จะเดาค่าให้ (เดาผิดทางไหนก็ผิดความตั้งใจของแอดมิน)
+    if cached is not None and "auto_block" in cached and "notify_line" in cached:
         return cached
 
     return await load_ttl_from_db(detection_type)
@@ -89,10 +93,29 @@ async def should_auto_block(detection_type: str | None) -> bool:
     return bool(data.get("auto_block", True))
 
 
+async def should_notify_line(detection_type: str | None) -> bool:
+    # True = ชนิดนี้ส่งแจ้งเตือนเข้า LINE ได้ (หน้าเว็บ/Dashboard ได้ครบทุกชนิดอยู่แล้ว
+    # ไม่เกี่ยวกับค่านี้ — ตัวกรองนี้อยู่ที่ worker ของ LINE ตัวเดียว)
+    #
+    # เงื่อนไขที่ผู้ใช้กำหนด: ชนิดที่ block อัตโนมัติ "ยังไงก็ต้องแจ้ง" จึงส่งเสมอโดยไม่ต้องตั้งค่า
+    # — ค่า notify_line ใช้เฉพาะกับชนิดที่เป็นแจ้งเตือนอย่างเดียว (auto_block = False)
+    # ซึ่งไม่มีการ block ให้เห็น จะเลือกว่าให้เตือนเข้า LINE ด้วยหรือดูเอาจากหน้าเว็บอย่างเดียวก็ได้
+    if not detection_type or detection_type == MANUAL_EVENT:
+        return True
+
+    data = await get_ttl(detection_type)
+
+    if bool(data.get("auto_block", True)):
+        return True
+
+    return bool(data.get("notify_line", True))
+
+
 async def update_ttl(
     detection_type: str,
     ttl_seconds: int | None,
     auto_block: bool | None = None,
+    notify_line: bool | None = None,
 ) -> dict:
     # แก้ TTL/โหมดตอบสนอง (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)
     async with AsyncSessionLocal() as db:
@@ -101,17 +124,26 @@ async def update_ttl(
             detection_type,
             ttl_seconds=ttl_seconds,
             auto_block=auto_block,
+            notify_line=notify_line,
         )
         result = {
             "detection_type": row.detection_type,
             "ttl_seconds": row.ttl_seconds,
             "auto_block": bool(row.auto_block),
+            "notify_line": bool(row.notify_line),
         }
 
     cache_delete(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
     label = "ถาวร" if ttl_seconds is None else f"{ttl_seconds}s"
     mode = "block อัตโนมัติ" if result["auto_block"] else "แจ้งเตือนอย่างเดียว (ไม่ block)"
-    print(f"[{LOG_PREFIX}] อัปเดต {detection_type}: TTL={label} · ตอบสนอง={mode} (เคลียร์ cache แล้ว)")
+    line_mode = (
+        "ส่ง LINE" if result["auto_block"] or result["notify_line"]
+        else "ไม่ส่ง LINE"
+    )
+    print(
+        f"[{LOG_PREFIX}] อัปเดต {detection_type}: TTL={label} · ตอบสนอง={mode} · "
+        f"{line_mode} (เคลียร์ cache แล้ว)"
+    )
     return result
 
 
