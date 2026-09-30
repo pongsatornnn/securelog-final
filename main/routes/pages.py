@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from dependencies import require_login_page, require_admin_page
+from dependencies import require_login_page, require_admin_page, require_primary_admin_page
 from shared import templates
 
 
@@ -112,7 +112,7 @@ async def settings_page(request: Request, user=Depends(require_admin_page)):
 
 
 @router.get("/manage-users", response_class=HTMLResponse)
-async def manage_users_page(request: Request, user=Depends(require_admin_page)):
+async def manage_users_page(request: Request, user=Depends(require_primary_admin_page)):
     return templates.TemplateResponse(
         request=request,
         name="manage_users.html",

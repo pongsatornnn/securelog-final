@@ -2,7 +2,7 @@ from fastapi import Request, HTTPException, status, Depends
 
 from auth import decode_token
 from database.connection import AsyncSessionLocal
-from database.crud import get_user
+from database.crud import get_user, get_first_user
 from base_path import strip_base, rel_url, cookie_name_for, AUTH_COOKIE_BASE
 
 
@@ -29,6 +29,7 @@ async def require_login(request: Request):
 
     async with AsyncSessionLocal() as db:
         user = await get_user(db, username)
+        first_user = await get_first_user(db)
 
     # ถูกลบออกจากระบบ หรือถูกปิดใช้งาน -> session ตายทันที เด้งไปหน้า login
     if not user or not user.is_active:
@@ -43,6 +44,8 @@ async def require_login(request: Request):
         "role": "admin",
         "name": user.name,
         "is_active": user.is_active,
+        # บัญชี admin เริ่มต้น (id น้อยสุด) — คนเดียวที่จัดการ user ได้ (หน้า Manage Users)
+        "is_primary_admin": bool(first_user and first_user.id == user.id),
         "must_change_password": bool(user.must_change_password),
     }
 
@@ -65,4 +68,21 @@ async def require_admin(user=Depends(require_login)):
 
 async def require_admin_page(user=Depends(require_login_page)):
     # เหมือน require_admin แต่ใช้กับ page route — เช็คเรื่องบังคับเปลี่ยนรหัสด้วย (require_login_page)
+    return user
+
+
+async def require_primary_admin(user=Depends(require_login)):
+    # จัดการ user ได้เฉพาะบัญชี admin เริ่มต้น — user อื่นที่ถูกเพิ่มเข้ามาใช้งานส่วนอื่นได้ครบ แต่จัดการ user ไม่ได้
+    if not user["is_primary_admin"]:
+        raise HTTPException(status_code=403, detail="เฉพาะบัญชี admin เท่านั้นที่จัดการ user ได้")
+    return user
+
+
+async def require_primary_admin_page(request: Request, user=Depends(require_login_page)):
+    # เหมือน require_primary_admin แต่ใช้กับ page route — ไม่ใช่ admin ให้เด้งกลับหน้าแรก
+    if not user["is_primary_admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_303_SEE_OTHER,
+            headers={"Location": rel_url(request, "/dashboard")},
+        )
     return user

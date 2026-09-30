@@ -1,4 +1,4 @@
-# เส้นทางจัดการ user (หน้า Manage Users) — ทุกบัญชีที่ login ได้มีสิทธิ์เท่ากันหมด (ไม่มี role)
+# เส้นทางจัดการ user (หน้า Manage Users) — เรียกได้เฉพาะบัญชี admin เริ่มต้น (id น้อยสุด) เท่านั้น
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +9,7 @@ from database.crud import (
     get_first_user, delete_user, set_user_active,
 )
 
-from dependencies import require_admin
+from dependencies import require_primary_admin
 from auth import hash_password
 import password_policy
 from shared import iso_utc
@@ -24,7 +24,7 @@ router = APIRouter()
 
 @router.get("/api/users")
 async def api_get_users(
-    user=Depends(require_admin),
+    user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
     users = await get_all_users(db)
@@ -47,7 +47,7 @@ async def api_get_users(
 @router.post("/api/users")
 async def api_create_user(
     payload: CreateUserRequest,
-    user=Depends(require_admin),
+    user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
     exists = await get_user(db, payload.username)
@@ -80,7 +80,7 @@ async def api_create_user(
 async def api_reset_password(
     user_id: int,
     payload: ResetPasswordRequest,
-    user=Depends(require_admin),
+    user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
     # admin ตั้งรหัสใหม่ให้ user คนไหนก็ได้ (รวมถึงตัวเอง) โดยไม่ต้องรู้รหัสเดิม
@@ -107,7 +107,7 @@ async def api_reset_password(
 @router.delete("/api/users/{user_id}")
 async def api_delete_user(
     user_id: int,
-    user=Depends(require_admin),
+    user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
     # admin ลบ user ออกจากระบบถาวร — กันสองเคสที่ห้ามลบ:
@@ -134,7 +134,7 @@ async def api_delete_user(
 async def api_set_user_active(
     user_id: int,
     payload: SetActiveRequest,
-    user=Depends(require_admin),
+    user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
     # admin เปิด/ปิดใช้งาน user — บัญชีที่ถูกปิด (is_active=False) จะ login ไม่ได้ และ session ที่

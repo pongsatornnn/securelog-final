@@ -191,11 +191,13 @@
         <span class="nav-label">LINE Recipients</span>
       </a>
 
+      {% if user.is_primary_admin %}
       <a href="{{ url('/manage-users') }}" class="{% if page == 'manage_users' %}active{% endif %}"
          title="Manage Users">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-users"/></svg>
         <span class="nav-label">Manage Users</span>
       </a>
+      {% endif %}
 
       <a href="{{ url('/settings') }}" class="{% if page == 'settings' %}active{% endif %}"
          title="System Settings">
