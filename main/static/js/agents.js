@@ -9,6 +9,7 @@ function agentsApp() {
       showEditModal: false,
       showRegenModal: false,
       showGuideModal: false,
+      copiedGuideLine: '',
       selectedAgent: null,
       editAgentId: '',
       editError: '',
@@ -191,10 +192,21 @@ function agentsApp() {
           document.body.removeChild(textarea)
         }
 
+        if (!copiedKey) return
         this[copiedKey] = true
 
         setTimeout(() => {
           this[copiedKey] = false
+        }, 1800)
+      },
+
+      // ปุ่ม Copy ท้ายคำสั่งแต่ละบรรทัดในคู่มือ — คำสั่งคือ <code> ที่อยู่ก่อนปุ่ม
+      async copyGuideLine(btn) {
+        const text = btn.previousElementSibling.textContent
+        await this.copyTextToClipboard(text)
+        this.copiedGuideLine = text
+        setTimeout(() => {
+          if (this.copiedGuideLine === text) this.copiedGuideLine = ''
         }, 1800)
       },
 

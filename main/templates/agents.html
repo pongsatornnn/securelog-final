@@ -455,8 +455,26 @@
           <div class="guide-step-num">2</div>
           <div class="guide-step-body">
             <div class="guide-step-title">แตก zip บนเครื่อง Client Server</div>
-            <div class="guide-code">sudo mkdir -p /opt/securelog-agent
-sudo unzip agent_package.zip -d /opt/securelog-agent</div>
+            <div class="guide-code">
+              <div class="guide-code-line">
+                <code>sudo mkdir -p /opt/securelog-agent</code>
+                <button type="button" class="btn-copy-line" @click="copyGuideLine($el)"
+                        x-data="{ get done() { return copiedGuideLine === $el.previousElementSibling.textContent } }"
+                        :class="{ copied: done }" :title="done ? 'คัดลอกแล้ว' : 'คัดลอกคำสั่ง'" aria-label="คัดลอกคำสั่ง">
+                  <svg x-show="!done" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+                  <svg x-show="done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </div>
+              <div class="guide-code-line">
+                <code>sudo unzip agent_package.zip -d /opt/securelog-agent</code>
+                <button type="button" class="btn-copy-line" @click="copyGuideLine($el)"
+                        x-data="{ get done() { return copiedGuideLine === $el.previousElementSibling.textContent } }"
+                        :class="{ copied: done }" :title="done ? 'คัดลอกแล้ว' : 'คัดลอกคำสั่ง'" aria-label="คัดลอกคำสั่ง">
+                  <svg x-show="!done" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+                  <svg x-show="done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -464,8 +482,26 @@ sudo unzip agent_package.zip -d /opt/securelog-agent</div>
           <div class="guide-step-num">3</div>
           <div class="guide-step-body">
             <div class="guide-step-title">รัน setup.sh (เป็น root, รันซ้ำได้)</div>
-            <div class="guide-code">cd /opt/securelog-agent
-sudo ./setup.sh</div>
+            <div class="guide-code">
+              <div class="guide-code-line">
+                <code>cd /opt/securelog-agent</code>
+                <button type="button" class="btn-copy-line" @click="copyGuideLine($el)"
+                        x-data="{ get done() { return copiedGuideLine === $el.previousElementSibling.textContent } }"
+                        :class="{ copied: done }" :title="done ? 'คัดลอกแล้ว' : 'คัดลอกคำสั่ง'" aria-label="คัดลอกคำสั่ง">
+                  <svg x-show="!done" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+                  <svg x-show="done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </div>
+              <div class="guide-code-line">
+                <code>sudo ./setup.sh</code>
+                <button type="button" class="btn-copy-line" @click="copyGuideLine($el)"
+                        x-data="{ get done() { return copiedGuideLine === $el.previousElementSibling.textContent } }"
+                        :class="{ copied: done }" :title="done ? 'คัดลอกแล้ว' : 'คัดลอกคำสั่ง'" aria-label="คัดลอกคำสั่ง">
+                  <svg x-show="!done" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+                  <svg x-show="done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -473,8 +509,26 @@ sudo ./setup.sh</div>
           <div class="guide-step-num">4</div>
           <div class="guide-step-body">
             <div class="guide-step-title">เช็คผล — ต้อง active ทั้งคู่ และขึ้น Online ใน ~15 วินาที</div>
-            <div class="guide-code">systemctl status securelog-agent filebeat
-journalctl -u securelog-agent -f</div>
+            <div class="guide-code">
+              <div class="guide-code-line">
+                <code>systemctl status securelog-agent filebeat</code>
+                <button type="button" class="btn-copy-line" @click="copyGuideLine($el)"
+                        x-data="{ get done() { return copiedGuideLine === $el.previousElementSibling.textContent } }"
+                        :class="{ copied: done }" :title="done ? 'คัดลอกแล้ว' : 'คัดลอกคำสั่ง'" aria-label="คัดลอกคำสั่ง">
+                  <svg x-show="!done" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+                  <svg x-show="done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </div>
+              <div class="guide-code-line">
+                <code>journalctl -u securelog-agent -f</code>
+                <button type="button" class="btn-copy-line" @click="copyGuideLine($el)"
+                        x-data="{ get done() { return copiedGuideLine === $el.previousElementSibling.textContent } }"
+                        :class="{ copied: done }" :title="done ? 'คัดลอกแล้ว' : 'คัดลอกคำสั่ง'" aria-label="คัดลอกคำสั่ง">
+                  <svg x-show="!done" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+                  <svg x-show="done" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

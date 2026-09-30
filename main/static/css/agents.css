@@ -613,6 +613,71 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+/* คู่มือ: แยกคำสั่งทีละบรรทัด แต่ละบรรทัดมีปุ่ม Copy ของตัวเอง */
+.guide-code {
+  white-space: normal;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-code-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 5px;
+  border-radius: 4px;
+}
+
+.guide-code-line:hover {
+  background: var(--bg-raised);
+}
+
+.guide-code-line code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: inherit;
+}
+
+.btn-copy-line {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-copy-line svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.btn-copy-line:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btn-copy-line.copied {
+  border-color: var(--success);
+  color: var(--success);
+}
+
 /* ─── ฟอร์มในกล่องเพิ่ม/แก้ไข agent ─── */
 
 .form-grid {
