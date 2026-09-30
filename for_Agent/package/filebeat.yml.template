@@ -19,7 +19,7 @@ filebeat.inputs:
   enabled: true
   paths:
     - /var/log/apache2/access.log
-  #  - /var/log/apache2/apache_ssl_access.log
+    - /var/log/apache2/apache_ssl_access.log
   fields:
     log_type: apache_access
     service_name: apache2
@@ -31,7 +31,7 @@ filebeat.inputs:
   enabled: true
   paths:
     - /var/log/nginx/access.log
-  # - /var/log/nginx/nginx_ssl_access.log
+    - /var/log/nginx/nginx_ssl_access.log
   fields:
     log_type: nginx_access
     service_name: nginx

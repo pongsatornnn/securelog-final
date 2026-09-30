@@ -454,7 +454,7 @@ else
 fi
 
 # log file ที่มีจริงบนเครื่องนี้ อ่านได้ไหม (filebeat รันเป็น root ปกติไม่ติด แต่บาง distro ตั้ง ACL แปลก)
-for f in /var/log/auth.log /var/log/apache2/access.log /var/log/nginx/access.log /var/log/ufw.log /var/log/iptables.log; do
+for f in /var/log/auth.log /var/log/apache2/access.log /var/log/apache2/apache_ssl_access.log /var/log/nginx/access.log /var/log/nginx/nginx_ssl_access.log /var/log/ufw.log /var/log/iptables.log; do
     if [ -e "$f" ] && [ ! -r "$f" ]; then
         warn "$f exists but is not readable - filebeat cannot collect this log"
     fi
