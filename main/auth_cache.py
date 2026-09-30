@@ -3,7 +3,6 @@
 import time
 import hmac
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from database.connection import AsyncSessionLocal
 from database.crud import (
@@ -15,8 +14,6 @@ from manage_agent.token_utils import hash_token
 from redis_client import cache_get_json, cache_set_json, cache_delete
 
 
-TZ = ZoneInfo("Asia/Bangkok")
-
 AUTH_CACHE_TTL_SECONDS = 60
 DB_LAST_SEEN_UPDATE_SECONDS = 30
 
@@ -26,10 +23,6 @@ IP_MISMATCH_RECORD_SECONDS = 60
 CACHE_KEY_PREFIX = "agent_auth:"
 
 LOG_PREFIX = "CACHE"
-
-
-def now_thai_naive() -> datetime:
-    return datetime.now(TZ).replace(tzinfo=None)
 
 
 def agent_auth_cache_key(agent_id: str) -> str:
@@ -83,8 +76,10 @@ async def update_agent_last_seen(agent_id: str) -> bool:
             return False
 
         agent.status = "online"
-        agent.last_seen = now_thai_naive()
-        agent.updated_at = now_thai_naive()
+        # เวลาเครื่อง (UTC) เหมือนตารางอื่น — iso_utc() ถือว่าค่าใน DB เป็น UTC
+        now = datetime.now()
+        agent.last_seen = now
+        agent.updated_at = now
 
         await db.commit()
         return True

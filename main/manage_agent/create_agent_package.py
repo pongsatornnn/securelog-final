@@ -253,7 +253,8 @@ async def create_agent_package(
     description: str | None = None,
 ):
     # สร้าง agent ใหม่ + cert + zip
-    current_time = now_thai()
+    # เวลาที่ลง DB ต้องเป็นเวลาเครื่อง (UTC) เหมือนตารางอื่น — iso_utc() ต่อ "Z" ให้ตอนส่งออกหน้าเว็บ
+    current_time = datetime.now()
 
     secret_token = generate_token()
     download_token = generate_token()
@@ -320,7 +321,8 @@ async def create_agent_package(
 
 
 async def regenerate_agent_package(agent: Agent):
-    current_time = now_thai()
+    # เวลาที่ลง DB ต้องเป็นเวลาเครื่อง (UTC) เหมือนตารางอื่น — iso_utc() ต่อ "Z" ให้ตอนส่งออกหน้าเว็บ
+    current_time = datetime.now()
 
     secret_token = generate_token()
     download_token = generate_token()
