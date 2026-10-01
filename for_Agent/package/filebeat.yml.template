@@ -18,8 +18,7 @@ filebeat.inputs:
 - type: log
   enabled: true
   paths:
-    - /var/log/apache2/access.log
-    - /var/log/apache2/apache_ssl_access.log
+    - /var/log/apache2/*access.log
   fields:
     log_type: apache_access
     service_name: apache2
@@ -30,8 +29,7 @@ filebeat.inputs:
 - type: log
   enabled: true
   paths:
-    - /var/log/nginx/access.log
-    - /var/log/nginx/nginx_ssl_access.log
+    - /var/log/nginx/*access.log
   fields:
     log_type: nginx_access
     service_name: nginx
@@ -42,7 +40,7 @@ filebeat.inputs:
 - type: log
   enabled: true
   paths:
-    - /var/log/tomcat10/localhost_access_log.*.txt
+    - /var/log/tomcat*/*access_log*.txt
   fields:
     log_type: tomcat_access
     service_name: tomcat10
