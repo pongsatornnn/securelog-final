@@ -1,6 +1,8 @@
 # เก็บ signature (regex) ของ Signature-based detector ใน DB (ตาราง detection_signatures)
 
+import json
 import re
+from pathlib import Path
 
 from database.connection import AsyncSessionLocal
 from database.defaults import snapshot_signatures
@@ -70,6 +72,32 @@ DEFAULT_SIGNATURES = {
         # stacked query: ต่อคำสั่งที่สองหลัง ;
         r";\s*(drop|truncate|alter|create)\s+(table|database|user)\b",
         r"sp_executesql",
+        # เลี่ยง filter ด้วย comment / ตัวคั่นแปลก ๆ ระหว่าง UNION กับ SELECT
+        r"\bunion\b(\s|/\*.{0,20}?\*/|\+|\(){1,10}(all|distinct)?(\s|/\*.{0,20}?\*/|\+|\()*select\b",
+        r"/\*.{0,20}?\*/\s*(select|union|and|or|from|where|order)\b",
+        # boolean-based blind ที่ sqlmap ใช้
+        r"\bcase\s+when\b.{1,80}?\bthen\b",
+        r"'\s*(and|or|xor)\s+'[^']{0,20}'\s*(=|like\b)",
+        r"'\s*(and|or)\s+(true|false|not)\b",
+        r"\b(and|or)\s+\d+\s*(<>|!=|<|>)\s*\d+",
+        r"\bwhere\s+\d+\s*=\s*\d+",
+        # ดึงข้อมูลทีละตัวอักษร
+        r"\b(ascii|ord|hex|unhex|mid|substr(ing)?|length)\s*\(\s*\(?\s*select\b",
+        r"\bselect\s+(\*|null\b|@@|\d+\s*,|count\s*\(|char\s*\()",
+        r"\b(database|current_user|session_user|system_user|schema_name)\s*\(\s*\)",
+        # เดาตารางระบบของ DB แต่ละยี่ห้อ
+        r"\bmysql\.(user|db)\b|\bpg_(catalog|shadow|user)\b|\bsqlite_master\b|\ball_tab(les|_columns)\b|\bsysibm\.\w+",
+        # อ่าน/เขียนไฟล์ และรันคำสั่งผ่าน DB
+        r"\binto\s+dumpfile\b",
+        r"\bpg_read_file\s*\(|\bcopy\s+\w+\s+(from|to)\s+program\b",
+        r"\b(exec|execute)\s+(master\.|sp_|xp_)",
+        r"\bopen(rowset|datasource|query)\s*\(",
+        r"\butl_(http|inaddr|file)\.|\bdbms_(lock|xmlgen|java)\.",
+        r"\bwaitfor\s+time\b",
+        r"\bprocedure\s+analyse\s*\(",
+        # NoSQL injection (MongoDB operator ใน query string / JSON)
+        r"\[\s*\$(ne|eq|gt|gte|lt|lte|regex|where|in|nin|exists|or|and)\s*\]",
+        r"\{\s*[\"']?\$(ne|gt|gte|lt|lte|regex|where|or|and)[\"']?\s*:",
     ],
     "xss": [
         r"<\s*script",
@@ -111,6 +139,27 @@ DEFAULT_SIGNATURES = {
         r"\bnew\s+Function\s*\(",
         r"\bfetch\s*\(|XMLHttpRequest",
         r"\bset(Timeout|Interval)\s*\(",
+        # tag ใด ๆ ที่มี event handler (ครอบ tag ที่ชุดเดิมไม่ได้ระบุ เช่น input/form/details)
+        r"<\s*[a-z][a-z0-9]{0,15}\b[^>]{0,160}?\bon[a-z]{3,25}\s*=",
+        # event handler ที่ชุดเดิมยังไม่ครอบ
+        r"\bon(blur|change|dblclick|drag\w{0,5}|drop|input|invalid|key(down|up|press)|mouse(down|up|move|out|enter|leave)|pointer\w{2,8}|animation(start|end|iteration)|transition(end|start|run)|begin|unload|beforeunload|resize|scroll|wheel|copy|paste|cut|hashchange|pageshow|popstate|play|playing|canplay|message|search|select|auxclick|contextmenu)\s*=",
+        r"<\s*style\b[^>]{0,80}>.{0,120}?(expression\s*\(|@import|behavior\s*:|-moz-binding)",
+        r"<\s*(input|form|button|textarea|keygen|isindex)\b[^>]{0,120}\b(autofocus|formaction|action)\b",
+        # template injection ฝั่ง client (AngularJS / Vue)
+        r"\{\{.{0,60}?(constructor|\$on|\$eval|_c\.|alert|prompt|confirm|\$emit)",
+        # JS sink ที่ชุดเดิมยังไม่ครอบ
+        r"\b(inner|outer)HTML\s*=",
+        r"\binsertAdjacentHTML\s*\(",
+        r"\b(window|self|top|parent|globalThis|frames)\s*\[\s*[\"'`]",
+        r"\b(alert|prompt|confirm|eval)\s*`",
+        r"\bimport\s*\(\s*[\"'`]",
+        r"\bdocument\s*\.\s*(body|forms|getElementById|querySelector|head)\b",
+        r"\blocalStorage\s*\.|\bsessionStorage\s*\.",
+        r"\bnavigator\s*\.\s*sendBeacon\s*\(",
+        # encoding ที่ใช้ซ่อน < ของ tag
+        r"&lt;\s*/?\s*(script|svg|img|iframe|body)\b",
+        r"\\(u003c|x3c)\s*/?\s*(script|svg|img|iframe)",
+        r"\+ADw-\s*script",
     ],
     "path_traversal": [
         r"\.\./",
@@ -149,6 +198,37 @@ DEFAULT_SIGNATURES = {
         # PHP stream wrapper — LFI/RFI ที่มาคู่กับ traversal
         r"php://(filter|input|memory)",
         r"\b(file|expect|zip|phar|data)://",
+        # encoding bypass แบบ unicode / IIS / overlong UTF-8
+        r"%u002e%u002e|%u2215|%u2216",
+        r"\.\.%255c|\.\.%c1%(1c|9c)|%c0%(2f|5c|9v)|%e0%80%af",
+        r"\.\.(\\|/){1,3}\.\.(\\|/)|(\.\.\\){2}",
+        r"\.{2,}\\{2,}|\.\.//+",
+        # ค่าพารามิเตอร์เป็น path ไฟล์ระบบตรง ๆ (LFI ไม่ใช้ ../)
+        r"=\s*(file:)?/+(etc|proc|root)/",
+        r"\bfile:/+(etc|proc|c:|windows)",
+        # ไฟล์ config ของเว็บ/DB บน Linux
+        r"/etc/(nginx|apache2|httpd|mysql|php[\d.]*|ssl|sudoers|security)/",
+        r"/etc/(sudoers|fstab|environment|profile|bashrc|my\.cnf|redis\.conf)\b",
+        r"/proc/(version|cpuinfo|meminfo|mounts|net/(tcp|udp|arp|route)|\d+/(environ|cmdline|cwd|root))\b",
+        r"/var/run/secrets/kubernetes|/\.kube/config\b|/\.aws/credentials\b|/\.docker/config\.json\b",
+        r"/home/\w+/\.(ssh|bash_history|bashrc|profile)\b",
+        r"/(root|home/\w+)/\.ssh/(authorized_keys|known_hosts|id_\w+)",
+        # ไฟล์ลับ / source control ที่ scanner ชอบเดา
+        r"/\.(svn|hg|bzr)/(entries|wc\.db|store|dirstate)\b|/\.svn/|/\.hg/",
+        r"/\.git/(logs|refs|objects|packed-refs|description|COMMIT_EDITMSG)\b",
+        r"/\.(DS_Store|npmrc|pgpass|my\.cnf|netrc|bash_history)\b",
+        r"\bwp-config\.php(\.bak|\.old|\.save|\.swp|~|\.txt|\.orig)\b",
+        r"\bweb\.config(?![\w.-])|\bconfig/database\.yml\b|/settings\.py(?![\w.-])|\blocalsettings\.php\b",
+        r"WEB-INF/(lib|jboss-web\.xml|weblogic\.xml|spring)|META-INF/(MANIFEST\.MF|context\.xml)",
+        # path ของ Windows
+        r"\b[c-e]:(\\|/|%5c|%2f)+(windows|winnt|boot|inetpub|users|program\s?files)\b",
+        r"\\(system32|syswow64)\\(drivers|config)\\",
+        r"\b(system\.ini|repair\\sam|config\\sam|php\.ini|httpd\.conf|my\.ini)\b",
+        # โฟลเดอร์ลับของ Java webapp (Tomcat ไม่เสิร์ฟให้ใครอยู่แล้ว) รวมแบบเลี่ยงด้วย \ หรือ . ต่อท้าย
+        # (apache เขียน \ ลง log เป็น \\ เลยรับได้ถึง 2 ตัว)
+        r"/(WEB|META)\\{0,2}-INF(?:[\\/.;]|%2f|%5c)",
+        # null byte — ใช้ตัดนามสกุลไฟล์ที่แอปต่อท้ายให้ (เช่น ?file=/etc/hosts%00) request ปกติไม่มี
+        r"%00|\x00",
     ],
     "command_injection": [
         r";\s*(cat|ls|id|whoami|uname|pwd|wget|curl|nc|bash|sh|rm|chmod|cp|mv|ping|kill|touch)\b",
@@ -185,8 +265,78 @@ DEFAULT_SIGNATURES = {
         # ฟังก์ชันรันคำสั่งฝั่งแอป (RCE ผ่านพารามิเตอร์)
         r"\b(system|shell_exec|passthru|proc_open|popen)\s*\(",
         r"\b(cat|more|less|head|tail)\s+/etc/(passwd|shadow)\b",
+        # metachar + คำสั่งสำรวจเครื่องที่ชุดเดิมยังไม่ครอบ
+        r";\s*(echo|printf|nslookup|dig|ifconfig|netstat|hostname|tftp|telnet|find|which|whoami|sleep)\b",
+        r"\|\s*(echo|nslookup|dig|ifconfig|netstat|hostname|whoami|uname|id|sleep|tftp|telnet|sh)\b",
+        r"&&\s*(echo|nslookup|dig|ifconfig|netstat|hostname|uname|id|tftp|telnet)\b",
+        r"%0[ad]\s*(echo|nslookup|ping|sleep|bash|sh|nc|uname)\b",
+        # ยิงออก OOB ไปโดเมน collaborator / dnslog
+        r"\b(burpcollaborator\.net|oastify\.com|interact\.sh|oast\.(pro|live|site|online|fun|me)|dnslog\.(cn|link)|ceye\.io|requestbin\.net|pipedream\.net|webhook\.site)\b",
+        # โหลดไฟล์จาก IP ตรง ๆ / ต่อ reverse shell ไป IP:port
+        # [ \t] แทน \s — detector เอา path/UA/raw log มาต่อกันด้วย \n ถ้าใช้ \s จะจับข้ามบรรทัดได้
+        # (เช่น UA ที่เป็นคำว่า "curl" เฉย ๆ ไปต่อกับ IP ต้นบรรทัด raw log แล้วนับเป็น Command Injection)
+        r"\b(wget|curl|fetch|tftp|lwp-download)[ \t]+(-\S+[ \t]+){0,4}(https?://)?\d{1,3}(\.\d{1,3}){3}",
+        r"\b(nc|ncat|netcat)[ \t]+(-\w+[ \t]+){0,4}\d{1,3}(\.\d{1,3}){3}[ \t]+\d{2,5}\b",
+        r"\bsocat\s+(tcp|exec|file|openssl)",
+        r"\btelnet[ \t]+\d{1,3}(\.\d{1,3}){3}",
+        r"\b(wget|curl)\b.{0,80}?(-O\s*/tmp|-o\s*/tmp|>\s*/tmp)",
+        r"/tmp/[\w.-]{1,40}\s*;\s*(chmod|sh|bash|\./)",
+        # obfuscation ของ commix / payload สำเร็จรูป
+        r"/\?{2,}/\?{2,}|/b\?n/|/\?in/",
+        r"\b(cat|tac|nl|head|tail)\s*<\s*/",
+        r"\becho\s+-[ne]\s",
+        # Shellshock (CVE-2014-6271)
+        r"\(\s*\)\s*\{\s*:?\s*;?\s*\}\s*;",
+        # Log4Shell (CVE-2021-44228) รวมแบบ obfuscate
+        r"\$\{\s*(jndi|\$\{\s*(lower|upper|::-j|env:|sys:|date:)|ctx:|java:)",
+        r"\bjndi\s*:\s*(ldaps?|rmi|dns|iiop|corba|nds|http)\s*:",
+        # Server-side template injection ที่นำไปสู่ RCE
+        r"\{\{.{0,60}?(__class__|__globals__|__builtins__|__import__|__subclasses__|os\.popen|subprocess|config\.items|self\._TemplateReference|request\.application)",
+        r"\{\{\s*\d+\s*\*\s*['\"]?\d+['\"]?\s*\}\}|\$\{\s*\d+\s*\*\s*\d+\s*\}|<%=\s*\d+\s*\*\s*\d+\s*%>",
+        r"\$\{.{0,30}?(Runtime|getRuntime|ProcessBuilder|T\(java\.lang)",
+        r"#\{.{0,40}?(exec|system|popen|spawn)\b",
+        # Java / OGNL (Struts) / Spring4Shell
+        r"java\.lang\.(Runtime|ProcessBuilder)|getRuntime\s*\(\s*\)\s*\.\s*exec",
+        r"#_memberAccess|@ognl\.OgnlContext|%\{\s*\(?#",
+        r"\bclass\.module\.classLoader",
+        # PHP: รันโค้ดจาก input / PHP-CGI argument injection
+        r"<\?php|<\?=",
+        r"\b(eval|assert|create_function)\s*\(\s*(\$_|base64_decode|gzinflate|str_rot13)",
+        r"\$_(GET|POST|REQUEST|COOKIE|SERVER)\s*\[",
+        r"\bbase64_decode\s*\(|\bgzinflate\s*\(",
+        r"allow_url_include|auto_prepend_file|-d\s*\+?\s*allow_url",
+        # Windows
+        r"\bcmd(\.exe)?\s*/[ck]\b",
+        r"\bpowershell(\.exe)?\s+(-\w+\s+){0,4}-(e|enc|encodedcommand|nop|noprofile|w|windowstyle|c|command|ep|executionpolicy)\b",
+        r"\b(certutil|bitsadmin|mshta|regsvr32|rundll32|wmic)(\.exe)?\s+[-/\w]",
+        r"\bIEX\s*\(|Invoke-(Expression|WebRequest)|DownloadString\s*\(|Net\.WebClient",
     ],
 }
+
+# ชุดที่นำเข้าจาก OWASP Core Rule Set (Apache-2.0) — regex ยาวมาก เลยแยกไว้ในไฟล์ JSON
+# แทนการฝังในโค้ด · คำอธิบายเก็บเลข rule ของ CRS ไว้ (เช่น "OWASP CRS 942140 (PL1): ...")
+CRS_SIGNATURES_PATH = Path(__file__).resolve().parent / "database" / "crs_signatures.json"
+
+DEFAULT_DESCRIPTIONS: dict[str, dict[str, str]] = {}
+
+
+def _load_crs_signatures() -> None:
+    try:
+        with CRS_SIGNATURES_PATH.open(encoding="utf-8") as f:
+            data = json.load(f).get("signatures") or {}
+    except (OSError, ValueError) as exc:
+        print(f"[{LOG_PREFIX}] อ่าน {CRS_SIGNATURES_PATH.name} ไม่ได้ ({exc}) — ข้ามชุด OWASP CRS")
+        return
+
+    for detection_type, rows in data.items():
+        patterns = DEFAULT_SIGNATURES.setdefault(detection_type, [])
+        for row in rows:
+            if row.get("pattern") and row["pattern"] not in patterns:
+                patterns.append(row["pattern"])
+                DEFAULT_DESCRIPTIONS.setdefault(detection_type, {})[row["pattern"]] = row.get("description")
+
+
+_load_crs_signatures()
 
 # ชนิดการโจมตี -> กลุ่ม detector (สำหรับ seed แถวใหม่)
 CATEGORY_BY_TYPE = {
@@ -228,7 +378,12 @@ def effective_default_signatures(detection_type: str) -> list[dict]:
         ]
 
     return [
-        {"pattern": pattern, "category": category, "description": None, "is_active": True}
+        {
+            "pattern": pattern,
+            "category": category,
+            "description": DEFAULT_DESCRIPTIONS.get(detection_type, {}).get(pattern),
+            "is_active": True,
+        }
         for pattern in DEFAULT_SIGNATURES.get(detection_type, [])
     ]
 

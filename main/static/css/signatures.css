@@ -98,3 +98,10 @@ textarea.form-input {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* pattern ที่นำเข้าจาก OWASP CRS ยาวได้หลายพันตัวอักษร — จำกัดความสูงแล้วให้เลื่อนดูในกล่องแทน
+   (pattern สั้นไม่ถึงความสูงนี้ หน้าตาเหมือนเดิม) */
+.pattern-code {
+  max-height: 7.5em;
+  overflow-y: auto;
+}
