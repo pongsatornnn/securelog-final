@@ -38,7 +38,8 @@ DEFAULT_SIGNATURES = {
         r"\bor\b\s+\d+\s*=\s*\d+",
         r"\band\b\s+\d+\s*=\s*\d+",
         r"'\s*;\s*--",
-        r"'\s*--",
+        # '-- ต้องตามด้วยช่องว่าง/ขีด/จบสตริง — กันข้อความอย่าง '--with-foo' ในช่องค้นหา
+        r"'\s*--(\s|-|$)",
         r"sleep\s*\(\s*\d+",
         r"benchmark\s*\(",
         r"waitfor\s+delay",
@@ -98,6 +99,13 @@ DEFAULT_SIGNATURES = {
         # NoSQL injection (MongoDB operator ใน query string / JSON)
         r"\[\s*\$(ne|eq|gt|gte|lt|lte|regex|where|in|nin|exists|or|and)\s*\]",
         r"\{\s*[\"']?\$(ne|gt|gte|lt|lte|regex|where|or|and)[\"']?\s*:",
+        # quote เดี่ยวเป็นค่าพารามิเตอร์ทั้งค่า (?id=' / ?q='&t=') — probe หา SQL error ของ nikto/คนยิงมือ
+        r"=\s*\\?'\s*(&|$)",
+        # quote ปิดค่าแล้วเปิด comment / AND col LIKE 'a%' (ต้องมี % — ข้อความอย่าง "cats and dogs like 'fish'" ไม่นับ)
+        r"'\s*/\*",
+        r"\b(and|or)\s+[\w.]+\s+like\s+['\"][^'\"]{0,40}%",
+        # probe ของ sqlmap (heuristic check): quote เดี่ยว+คู่ ปนวงเล็บ/จุด/จุลภาค เช่น 1,,'(.,),") หรือ '">
+        r"'[(),.]{0,8}\\?\"|\\?\"[(),.]{0,8}'",
     ],
     "xss": [
         r"<\s*script",
@@ -160,6 +168,10 @@ DEFAULT_SIGNATURES = {
         r"&lt;\s*/?\s*(script|svg|img|iframe|body)\b",
         r"\\(u003c|x3c)\s*/?\s*(script|svg|img|iframe)",
         r"\+ADw-\s*script",
+        # ค่าพารามิเตอร์ขึ้นต้นด้วย tag HTML (เช่น ?id=<div id="x"> หรือ ?<b>) — probe หา HTML injection ของ XSStrike/nikto
+        r"[?&]([\w\[\].-]{1,40}=)?\s*<\s*/?\s*[a-z][a-z0-9]{0,10}(\s+[\w:-]+\s*=[^<>]{0,120})?\s*/?>",
+        # tag ที่มี attribute อยู่ใน URL (nikto: <font size=50>DEFACED) — URL ปกติไม่มี "<คำ คำ=" ดิบ ๆ
+        r"<[a-z][a-z0-9]{0,10}\s+[\w:-]+\s*=",
     ],
     "path_traversal": [
         r"\.\./",
@@ -197,6 +209,10 @@ DEFAULT_SIGNATURES = {
         r"/\.(env|htpasswd|htaccess)\b",
         # PHP stream wrapper — LFI/RFI ที่มาคู่กับ traversal
         r"php://(filter|input|memory)",
+        # Remote File Inclusion: ค่าพารามิเตอร์ชื่อแนว path/dir/include เป็น URL ภายนอก (nikto: ?mosConfig_absolute_path=https://.../rfiinc.txt)
+        # ต้องชี้ไปไฟล์สคริปต์/ข้อความ (.txt .php .inc …) — ?base_url=https://site.com หรือ ?image_path=…/a.jpg ไม่นับ
+        # ไม่นับชื่อ return/redirect/callback — พวก ?returnpath=https://... เป็นการใช้งานปกติ
+        r"[?&](?![\w\[\]\\\"']*(return|redirect|callback|next|continue))[\w\[\]\\\"']*(path|dir|root|inc|include|lib|base|depth|racine|module|config|cfg|template|tpl|DDS)[\w\[\]\\\"']*=+\s*['\"]?(https?|ftps?)://[^&\s'\"]*\.(txt|php\d?|phtml|inc|sh|pl|py|cgi)(\?|&|%00|\s|['\"]|$)",
         r"\b(file|expect|zip|phar|data)://",
         # encoding bypass แบบ unicode / IIS / overlong UTF-8
         r"%u002e%u002e|%u2215|%u2216",
@@ -235,7 +251,8 @@ DEFAULT_SIGNATURES = {
         r"\|\s*(cat|ls|id|whoami|uname|nc|bash|sh|wget|curl|grep|awk)\b",
         r"&&\s*(cat|ls|id|whoami|wget|curl|bash|sh|nc|ping)\b",
         r"\|\|\s*(cat|ls|id|whoami|wget|curl)\b",
-        r"`[^`]{1,80}`",
+        # backtick ต้องมีคำสั่งอยู่ข้างใน — `ข้อความ` เฉย ๆ (เช่นคัดลอกจาก markdown) ไม่นับ
+        r"`\s*(id|whoami|uname|cat|ls|pwd|wget|curl|nc|bash|sh|ping|sleep|echo|nslookup|hostname|ifconfig)(?![\w-])[^`]{0,80}`",
         r"\$\([^)]{1,80}\)",
         r"/bin/(ba)?sh\b",
         r"\bnc\s+-e\b",
@@ -263,7 +280,12 @@ DEFAULT_SIGNATURES = {
         r"\bphp\s+-r\s",
         r"\bbase64\s+-d\b",
         # ฟังก์ชันรันคำสั่งฝั่งแอป (RCE ผ่านพารามิเตอร์)
-        r"\b(system|shell_exec|passthru|proc_open|popen)\s*\(",
+        # system/exec/eval ต้องตามด้วย quote/$ หรือเรียกฟังก์ชันซ้อน (commix: system(phpinfo())) — "system (s)" ในข้อความไม่นับ
+        # \\{0,2} รับ \( ที่ apache escape ลง log (escape ซ้อนได้ 2 ชั้น)
+        r"\b(system|exec|eval|assert)\s*\\{0,2}\(\s*(\\{0,2}[\"'`$]|[a-z_]\w*\s*\\{0,2}\()|\b(shell_exec|passthru|proc_open|popen)\s*\(",
+        # PHP complex syntax {${...}} / ${func(...)} — commix ใช้รันโค้ดผ่าน string interpolation
+        r"\{\s*\$\{|\$\{\s*(system|exec|passthru|shell_exec|phpinfo|eval|assert|popen|proc_open)\s*\(",
+        r"\bphpinfo\s*\(\s*\)",
         r"\b(cat|more|less|head|tail)\s+/etc/(passwd|shadow)\b",
         # metachar + คำสั่งสำรวจเครื่องที่ชุดเดิมยังไม่ครอบ
         r";\s*(echo|printf|nslookup|dig|ifconfig|netstat|hostname|tftp|telnet|find|which|whoami|sleep)\b",
@@ -273,8 +295,8 @@ DEFAULT_SIGNATURES = {
         # ยิงออก OOB ไปโดเมน collaborator / dnslog
         r"\b(burpcollaborator\.net|oastify\.com|interact\.sh|oast\.(pro|live|site|online|fun|me)|dnslog\.(cn|link)|ceye\.io|requestbin\.net|pipedream\.net|webhook\.site)\b",
         # โหลดไฟล์จาก IP ตรง ๆ / ต่อ reverse shell ไป IP:port
-        # [ \t] แทน \s — detector เอา path/UA/raw log มาต่อกันด้วย \n ถ้าใช้ \s จะจับข้ามบรรทัดได้
-        # (เช่น UA ที่เป็นคำว่า "curl" เฉย ๆ ไปต่อกับ IP ต้นบรรทัด raw log แล้วนับเป็น Command Injection)
+        # [ \t] แทน \s — กันจับข้ามบรรทัด (เดิม detector ต่อ path/UA/raw log ด้วย \n จน UA "curl"
+        # ไปต่อกับ IP ต้นบรรทัดแล้วนับเป็น Command Injection · ตอนนี้ตรวจทีละช่องแล้ว แต่ยังคงไว้กันพลาด)
         r"\b(wget|curl|fetch|tftp|lwp-download)[ \t]+(-\S+[ \t]+){0,4}(https?://)?\d{1,3}(\.\d{1,3}){3}",
         r"\b(nc|ncat|netcat)[ \t]+(-\w+[ \t]+){0,4}\d{1,3}(\.\d{1,3}){3}[ \t]+\d{2,5}\b",
         r"\bsocat\s+(tcp|exec|file|openssl)",
@@ -310,6 +332,8 @@ DEFAULT_SIGNATURES = {
         r"\bpowershell(\.exe)?\s+(-\w+\s+){0,4}-(e|enc|encodedcommand|nop|noprofile|w|windowstyle|c|command|ep|executionpolicy)\b",
         r"\b(certutil|bitsadmin|mshta|regsvr32|rundll32|wmic)(\.exe)?\s+[-/\w]",
         r"\bIEX\s*\(|Invoke-(Expression|WebRequest)|DownloadString\s*\(|Net\.WebClient",
+        # commix บน Windows: |set /a (1+2) ทดสอบว่าคำสั่งรันจริงไหม
+        r"[|&;]\s*set\s+/a\s",
     ],
 }
 

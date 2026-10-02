@@ -108,32 +108,38 @@ def clear_web_count(key: str) -> None:
 
 # ============================================================
 
-def decode_url(value: str) -> str:
+def decode_url(value: str) -> list[str]:
     # decode URL-encoding สองชั้น เพื่อดัก payload ที่ encode มา (เช่น %2e%2e%2f, %253c)
     try:
         once = unquote_plus(value)
         twice = unquote_plus(once)
-        return f"{once}\n{twice}"
+        return [once, twice]
     except Exception:
-        return value
+        return []
 
 
-def build_haystack(log: dict) -> str:
-    # รวมทุกจุดที่ payload อาจซ่อนอยู่ (path ดิบ + path decode + user_agent + raw)
+# request line ใน raw log — ใช้แทน path เมื่อ normalize แยก path ไม่ได้ (เช่น payload มีช่องว่างดิบ)
+RAW_REQUEST_RE = re.compile(r'"[A-Z]+ (.*?)(?: HTTP/[\d.]+)?"')
+
+
+def build_haystack(log: dict) -> list[str]:
+    # จุดที่ payload ซ่อนได้: path ดิบ + path decode + user_agent
+    # ไม่ตรวจ raw log ทั้งบรรทัด — Referer คือ URL ของหน้าก่อนหน้า ทำให้ไฟล์ css/รูปที่โหลดตาม
+    # หน้านั้นโดนนับซ้ำ และวันที่/ขนาด/สถานะในบรรทัดก็ไปชน signature ได้
+    # คืนเป็นรายการแยกช่อง ตรวจทีละช่อง — ถ้าต่อกันเป็นสตริงเดียว regex ที่มี \s จะจับข้ามช่องได้
     path = str(log.get("path") or "")
     user_agent = str(log.get("user_agent") or "")
-    raw_message = str(log.get("raw_message") or "")
 
-    return "\n".join([
-        path,
-        decode_url(path),
-        user_agent,
-        decode_url(user_agent),
-        raw_message,
-    ])
+    if not path:
+        found = RAW_REQUEST_RE.search(str(log.get("raw_message") or ""))
+        path = found.group(1) if found else ""
+
+    parts = [path, *decode_url(path), user_agent, *decode_url(user_agent)]
+
+    return list(dict.fromkeys(p for p in parts if p))
 
 
-def detect_attack_types(haystack: str) -> list[tuple[str, str]]:
+def detect_attack_types(haystack: list[str]) -> list[tuple[str, str]]:
     # คืน list ของ (detection_type, signature ที่ match) เรียงตามความสำคัญ
     matches: list[tuple[str, str]] = []
 
@@ -142,9 +148,11 @@ def detect_attack_types(haystack: str) -> list[tuple[str, str]]:
         if pattern is None:
             continue
 
-        found = pattern.search(haystack)
-        if found:
-            matches.append((detection_type, found.group(0)))
+        for part in haystack:
+            found = pattern.search(part)
+            if found:
+                matches.append((detection_type, found.group(0)))
+                break
 
     return matches
 
