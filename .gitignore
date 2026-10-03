@@ -45,3 +45,6 @@ for_Agent/package/site.conf.bak.*
 # กุญแจเข้ารหัสค่า secret ในตาราง app_settings (main/secret_box.py)
 # ต้องอยู่นอก git และนอก DB — สำรองไว้คู่กับ .env ถ้าย้ายเครื่อง
 .settings_key
+
+# ฐานข้อมูลประเทศของ IP (~8 MB, ออกใหม่ทุกเดือน) — update_geoip.sh / setup-server.sh โหลดให้ตอนติดตั้ง
+main/database/geoip/

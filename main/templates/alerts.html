@@ -206,7 +206,15 @@
             </td>
 
             <td x-text="alert.attack_type"></td>
-            <td x-text="alert.source_ip || '-'" class="host-ip-text"></td>
+            <td class="host-ip-text">
+              <span class="ip-with-flag">
+                <template x-if="alert.source_country">
+                  <img class="ip-flag" :src="flagUrl(alert.source_country)"
+                       :alt="alert.source_country.code || 'LAN'" :title="alert.source_country.name" loading="lazy">
+                </template>
+                <span x-text="alert.source_ip || '-'"></span>
+              </span>
+            </td>
             <td x-text="alert.fail_count + ' ครั้ง'"></td>
 
             <td>
@@ -305,7 +313,13 @@
 
           
           <div class="detail-sub">
-            <span class="strong mono" x-text="detail.source_ip || 'ไม่ทราบ IP'"></span>
+            <span class="ip-with-flag">
+              <template x-if="detail.source_country">
+                <img class="ip-flag" :src="flagUrl(detail.source_country)"
+                     :alt="detail.source_country.code || 'LAN'" :title="detail.source_country.name">
+              </template>
+              <span class="strong mono" x-text="detail.source_ip || 'ไม่ทราบ IP'"></span>
+            </span>
             <span class="detail-sep" aria-hidden="true">→</span>
             <span class="strong" x-text="detail.hostname || '-'"></span>
             <span class="detail-sep" aria-hidden="true">·</span>
@@ -328,6 +342,22 @@
             <div class="fact-row">
               <div class="fact-key">Attacker IP</div>
               <div class="fact-val mono" x-text="detail.source_ip || '-'"></div>
+            </div>
+
+            <div class="fact-row">
+              <div class="fact-key">ประเทศของ Attacker IP</div>
+              <div class="fact-val">
+                <template x-if="detail.source_country">
+                  <span class="ip-with-flag">
+                    <img class="ip-flag" :src="flagUrl(detail.source_country)"
+                         :alt="detail.source_country.code || 'LAN'">
+                    <span x-text="detail.source_country.name"></span>
+                    <span class="ip-country-code" x-show="detail.source_country.code"
+                          x-text="'(' + detail.source_country.code + ')'"></span>
+                  </span>
+                </template>
+                <span x-show="!detail.source_country">ไม่ทราบ</span>
+              </div>
             </div>
 
             <div class="fact-row"

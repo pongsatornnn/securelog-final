@@ -179,7 +179,15 @@
             </td>
             <td x-text="alert.hostname || '-'"></td>
             <td x-text="alert.attack_type"></td>
-            <td x-text="alert.source_ip || '-'" class="host-ip-text"></td>
+            <td class="host-ip-text">
+              <span class="ip-with-flag">
+                <template x-if="alert.source_country">
+                  <img class="ip-flag" :src="flagUrl(alert.source_country)"
+                       :alt="alert.source_country.code || 'LAN'" :title="alert.source_country.name" loading="lazy">
+                </template>
+                <span x-text="alert.source_ip || '-'"></span>
+              </span>
+            </td>
             <td>
               <span class="badge" :class="'badge-' + alert.severity" x-text="alert.severity"></span>
             </td>

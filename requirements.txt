@@ -29,3 +29,6 @@ python-jose==3.5.0       # JWT (HS256) — สร้าง/ตรวจ access_t
 bcrypt==5.0.0            # hash รหัสผ่าน user
 cryptography==48.0.1     # เข้ารหัสค่า secret ในตาราง app_settings (main/secret_box.py)
 python-dotenv==1.2.2     # โหลด .env (secret/DB/Redis config)
+
+# --- GeoIP (ธงประเทศข้าง Attacker IP) ---
+maxminddb==3.2.0         # อ่านไฟล์ main/database/geoip/*.mmdb (โหลดด้วย update_geoip.sh) — ไม่มีก็ไม่ล้ม แค่ไม่โชว์ธง

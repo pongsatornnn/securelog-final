@@ -9,6 +9,13 @@
     })
   }
 
+  // URL รูปธงประเทศของ source_country ที่ API ส่งมา (static/flags/<code>.svg — ชุด flag-icons)
+  // IP ภายใน (code = null) ใช้ไอคอนเครือข่ายแทนธง
+  window.flagUrl = function (country) {
+    var name = country && country.code ? String(country.code).toLowerCase() : '_lan'
+    return window.APP_BASE + '/static/flags/' + name + '.svg'
+  }
+
   // IPv4 แบบ 4 octet 0-255 และไม่ยอมรับเลข 0 นำหน้า (01.2.3.4)
   var IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/
 

@@ -2006,3 +2006,24 @@ tr.unread td:first-child {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
+
+/* ธงประเทศข้าง Attacker IP (หน้า Alerts / Dashboard) — รูปจาก static/flags/ สัดส่วน 4:3 */
+.ip-with-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ip-flag {
+  width: 18px;
+  height: 13.5px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px var(--border-color);
+}
+
+.ip-country-code {
+  color: var(--text-muted);
+  font-weight: 500;
+}

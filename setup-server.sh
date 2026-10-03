@@ -186,25 +186,37 @@ DB_PORT="${DB_PORT:-5432}"
 
 # ---------------------------------------------------------------------------
 RECONFIGURE="${RECONFIGURE:-}"
-if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ]; then
+# ข้อ 3 ของเมนูข้างล่าง (หรือ preset UPDATE_GEOIP_ONLY=1 ตอนไม่มี tty) — อัปเดตไฟล์ GeoIP อย่างเดียวแล้วจบ
+UPDATE_GEOIP_ONLY="${UPDATE_GEOIP_ONLY:-0}"
+GEOIP_DB="$PROJECT_DIR/main/database/geoip/dbip-country-lite.mmdb"
+if [ -s "$GEOIP_DB" ]; then
+    GEOIP_STATE="$(date -r "$GEOIP_DB" +%Y-%m-%d) ($(( ($(date +%s) - $(stat -c %Y "$GEOIP_DB")) / 86400 )) days old)"
+else
+    GEOIP_STATE="not downloaded yet"
+fi
+if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ] && [ "$UPDATE_GEOIP_ONLY" != "1" ]; then
     if [ -t 0 ]; then
         log "This machine has been set up before (.env found)"
         echo "  What it runs on right now:"
         echo "    central address : ${CURRENT_BIND_HOST:-?}"
         echo "    database        : ${OLD_DB_NAME:-?} as ${OLD_DB_USER:-?} at ${OLD_DB_HOST:-?}:${OLD_DB_PORT:-?}"
         echo "    Redis user      : ${OLD_REDIS_USER:-?}"
+        echo "    GeoIP database  : $GEOIP_STATE"
         echo ""
         echo "    1) Keep these settings      - reuse what is in .env, only repair what is missing  <- default"
         echo "    2) Reset configuration      - ask every question again: another database, another"
         echo "                                  postgres user, new Redis passwords, another IP"
         echo "                                  (Enter on a question = keep what it is now)"
+        echo "    3) Update GeoIP only        - download this month's country database for the flags"
+        echo "                                  next to attacker IPs, touch nothing else, then stop"
         echo ""
         while :; do
             read -rp "  Pick a number [1]: " _rc_ans
             case "${_rc_ans:-1}" in
                 1) RECONFIGURE=0; break ;;
                 2) RECONFIGURE=1; break ;;
-                *) echo "    !! No option '$_rc_ans' in the list (1-2) - try again" ;;
+                3) UPDATE_GEOIP_ONLY=1; break ;;
+                *) echo "    !! No option '$_rc_ans' in the list (1-3) - try again" ;;
             esac
         done
     else
@@ -212,6 +224,23 @@ if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ]; then
     fi
 fi
 RECONFIGURE="${RECONFIGURE:-0}"
+
+if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
+    log "Updating the GeoIP database only (nothing else is touched)"
+    echo "  now: $GEOIP_STATE"
+    # รันเป็นเจ้าของโฟลเดอร์โปรเจกต์ (= user ที่ service รัน) ไม่ใช่ root — ไฟล์ที่ได้ service อ่านได้แน่นอน
+    # service เปิดไฟล์ใหม่เองเมื่อไฟล์เปลี่ยน ไม่ต้อง restart
+    GEOIP_OWNER="$(stat -c %U "$PROJECT_DIR/main")"
+    mkdir -p "$(dirname "$GEOIP_DB")" && chown "$GEOIP_OWNER": "$(dirname "$GEOIP_DB")"
+    if GEOIP_OUT="$(runuser -u "$GEOIP_OWNER" -- bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
+        ok "$GEOIP_OUT"
+        ok "Done - the dashboard picks the new file up by itself, no restart needed"
+        exit 0
+    fi
+    err "Could not update the GeoIP database: ${GEOIP_OUT##*$'\n'}"
+    [ -s "$GEOIP_DB" ] && echo "  the existing file is kept - the flags keep working with it"
+    exit 1
+fi
 
 # ย้ายค่าที่โหลดมาจาก .env ไปเป็น "ค่าตั้งต้นของคำถาม" แทนการเอาไปใช้เงียบ ๆ
 reask() {  # reask VAR
@@ -1585,6 +1614,25 @@ EOF
     fi
 else
     ok "site.conf already matches this run - left untouched"
+fi
+
+# ---------------------------------------------------------------------------
+log "GeoIP database (country flag next to the attacker IP)"
+# ไฟล์ .mmdb ของ DB-IP Lite ~8 MB — ใช้แสดงธงประเทศหน้า Alerts/Dashboard (main/geoip.py)
+# ไม่มีไฟล์ = แค่ไม่โชว์ธง ระบบอื่นทำงานปกติ จึง "เตือนแล้วไปต่อ" เสมอ ไม่ล้มทั้งสคริปต์
+# รันซ้ำ: ไฟล์ยังใหม่ (< 30 วัน) = ไม่ออกเน็ต · บังคับโหลดใหม่ FORCE_GEOIP_UPDATE=1 · ข้ามทั้งขั้น SKIP_GEOIP=1
+# ไม่ใช้ run_step — ล้มเหลวแล้ว run_step นับเป็น [ERR] ของสคริปต์ ทั้งที่ขั้นนี้แค่ "เตือน"
+if [ "${SKIP_GEOIP:-0}" = "1" ]; then
+    warn "SKIP_GEOIP=1 - skipped (no country flags until you run: bash update_geoip.sh)"
+elif [ -s "$GEOIP_DB" ] && [ "${FORCE_GEOIP_UPDATE:-0}" != "1" ] &&
+     [ -n "$(find "$GEOIP_DB" -mtime -30 2>/dev/null)" ]; then
+    ok "GeoIP database is recent - left untouched (force a refresh with FORCE_GEOIP_UPDATE=1)"
+elif GEOIP_OUT="$(bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
+    ok "$GEOIP_OUT"
+elif [ -s "$GEOIP_DB" ]; then
+    warn "Could not refresh the GeoIP database - keeping the existing file (${GEOIP_OUT##*$'\n'})"
+else
+    warn "Could not download the GeoIP database - country flags stay hidden until you run: bash update_geoip.sh (${GEOIP_OUT##*$'\n'})"
 fi
 
 # ---------------------------------------------------------------------------

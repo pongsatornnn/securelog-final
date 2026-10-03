@@ -1,5 +1,6 @@
 # ตัวกลางแปลง SecurityAlert (DB model) ให้เป็น dict ที่ dashboard.html ใช้แสดงผล
 
+from geoip import lookup_country
 from shared import iso_utc
 from severity_cache import get_severity
 
@@ -46,6 +47,8 @@ async def build_alert_summary(alert, agent=None) -> dict:
         "detection_type": alert.detection_type,
         "attack_type": get_attack_type_label(alert.detection_type, alert.mode),
         "source_ip": alert.source_ip,
+        # ประเทศของ Attacker IP (หาจากไฟล์ GeoIP บนเครื่อง) — None = ไม่รู้ หน้าเว็บจะไม่โชว์ธง
+        "source_country": lookup_country(alert.source_ip),
         "username": alert.username,
         "fail_count": alert.event_count,
         "severity": await get_severity(alert.detection_type, alert.mode),
