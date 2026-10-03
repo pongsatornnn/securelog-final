@@ -64,6 +64,22 @@
           </template>
         </button>
 
+        {% if view_enabled %}
+        <div class="view-divider"><span>หรือ</span></div>
+
+        <button class="btn btn-view"
+                @click="viewLogin"
+                :disabled="loading">
+          <span x-show="!viewLoading">View mode</span>
+          <template x-if="viewLoading">
+            <span style="display:flex;align-items:center;gap:8px">
+              <div class="spinner"></div>
+              กำลังเข้าสู่โหมด View...
+            </span>
+          </template>
+        </button>
+        {% endif %}
+
       </div>
     </div>
   </div>

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.connection import get_db
+from database.connection import get_db, AsyncSessionLocal
 from database.crud import (
     get_security_alerts,
     count_security_alerts,
@@ -23,6 +23,7 @@ from database.crud import (
     mark_alerts_read,
     get_user_last_seen_alert_id,
     set_user_last_seen_alert_id,
+    get_user,
 )
 
 from dependencies import require_login, require_admin
@@ -330,13 +331,28 @@ async def api_generate_alert_ai_summary(
     }
 
 
-async def alert_event_stream(request: Request):
+# ทุก ๆ กี่ heartbeat (ครั้งละ ~5 วิ) ถึงเช็คว่าบัญชียังเปิดใช้งานอยู่ — ปิดบัญชี (เช่นปิดบัญชี View)
+# แล้วสตรีมที่เปิดค้างอยู่จะถูกตัดภายใน ~1 นาที ไม่ต้องรอผู้ใช้รีโหลดหน้า
+STREAM_RECHECK_HEARTBEATS = 12
+
+
+async def _user_still_active(username: str) -> bool:
+    try:
+        async with AsyncSessionLocal() as db:
+            db_user = await get_user(db, username)
+        return bool(db_user and db_user.is_active)
+    except Exception:
+        return True  # DB สะดุดชั่วคราว ไม่ใช่เหตุผลที่จะตัดสตรีมของคนที่ยังมีสิทธิ์
+
+
+async def alert_event_stream(request: Request, username: str):
     r = aioredis.Redis(**REDIS_CONFIG)
     pubsub = r.pubsub()
     await pubsub.subscribe(SECURITY_ALERTS_STREAM_CHANNEL)
 
     try:
         yield ": connected\n\n"
+        heartbeats = 0
 
         while True:
             if await request.is_disconnected():
@@ -346,6 +362,9 @@ async def alert_event_stream(request: Request):
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5)
 
             if message is None:
+                heartbeats += 1
+                if heartbeats % STREAM_RECHECK_HEARTBEATS == 0 and not await _user_still_active(username):
+                    break
                 yield ": heartbeat\n\n"
                 continue
 
@@ -375,7 +394,7 @@ async def stream_alerts(
     user=Depends(require_login),
 ):
     return StreamingResponse(
-        alert_event_stream(request),
+        alert_event_stream(request, user["username"]),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

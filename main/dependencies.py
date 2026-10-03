@@ -4,6 +4,7 @@ from auth import decode_token
 from database.connection import AsyncSessionLocal
 from database.crud import get_user, get_first_user
 from base_path import strip_base, rel_url, cookie_name_for, AUTH_COOKIE_BASE
+from view_account import is_view_role, view_may
 
 
 def _redirect_login(request: Request) -> HTTPException:
@@ -35,17 +36,31 @@ async def require_login(request: Request):
     if not user or not user.is_active:
         raise _redirect_login(request)
 
+    # บัญชี View: ห้ามทุกอย่าง ยกเว้นรายการใน view_account.VIEW_ALLOWED (Dashboard / Alerts แบบอ่าน)
+    # หน้าเว็บที่ไม่อนุญาต = เด้งกลับ Dashboard · API = 403
+    is_viewer = is_view_role(user.role)
+    if is_viewer:
+        path = strip_base(request.url.path)
+        if not view_may(request.method, path):
+            if path.startswith("/api/"):
+                raise HTTPException(status_code=403, detail="บัญชี View ดูได้อย่างเดียว")
+            raise HTTPException(
+                status_code=status.HTTP_303_SEE_OTHER,
+                headers={"Location": rel_url(request, "/dashboard")},
+            )
+
     return {
         # id ไว้ให้ endpoint ที่เก็บสถานะรายบัญชี (เช่น สถานะอ่านแล้วของ alert) อ้างถึง user
         "id": user.id,
         "username": user.username,
         # ระบบไม่มี role แล้ว — ทุกบัญชีที่ login ได้มีสิทธิ์เท่ากันหมด คีย์นี้เลยตอบ "admin"
         # ตายตัว ไม่ได้อ่านจาก DB (บัญชีเก่าที่ยังเป็น role=user ในตารางจึงได้สิทธิ์เท่ากันทันที)
-        "role": "admin",
+        # ยกเว้นบัญชี View ตอบ "viewer" — template ใช้ซ่อนเมนู/ปุ่มที่บัญชีนี้ใช้ไม่ได้
+        "role": "viewer" if is_viewer else "admin",
         "name": user.name,
         "is_active": user.is_active,
         # บัญชี admin เริ่มต้น (id น้อยสุด) — คนเดียวที่จัดการ user ได้ (หน้า Manage Users)
-        "is_primary_admin": bool(first_user and first_user.id == user.id),
+        "is_primary_admin": bool(first_user and first_user.id == user.id) and not is_viewer,
         "must_change_password": bool(user.must_change_password),
     }
 
@@ -63,6 +78,9 @@ async def require_login_page(request: Request, user=Depends(require_login)):
 async def require_admin(user=Depends(require_login)):
     # เดิมกันไว้ให้เฉพาะ role=admin — ตอนนี้ระบบไม่มี role แล้ว ทุกบัญชีที่ login ได้เรียกได้หมด
     # (คงชื่อเดิมไว้เพราะมี endpoint เรียกใช้อยู่หลายสิบจุด ความหมาย = ต้อง login เท่านั้น)
+    # บัญชี View ถูกกันที่ require_login แล้ว — กันซ้ำอีกชั้นเผื่อวันหนึ่งมีคนเพิ่ม path ลง VIEW_ALLOWED พลาด
+    if user["role"] == "viewer":
+        raise HTTPException(status_code=403, detail="บัญชี View ดูได้อย่างเดียว")
     return user
 
 

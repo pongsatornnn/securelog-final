@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from slowapi.util import get_remote_address
 
-from database.connection import get_db
-from database.crud import get_user, set_user_password, set_user_name
+from database.connection import get_db, AsyncSessionLocal
+from database.crud import get_user, set_user_password, set_user_name, get_view_user
 from auth import (
     authenticate_user_db,
     create_access_token,
@@ -140,9 +140,21 @@ async def root(request: Request):
     return RedirectResponse(url=rel_url(request, "/login"), status_code=302)
 
 
+async def view_login_enabled() -> bool:
+    # ปุ่ม View ที่หน้า login โชว์เฉพาะตอนที่บัญชี View เปิดใช้งานอยู่
+    # DB ล่มก็ยังต้องเปิดหน้า login ได้ (เดิมหน้านี้ไม่แตะ DB เลย) -> ถือว่าปิดไว้
+    try:
+        async with AsyncSessionLocal() as db:
+            view_user = await get_view_user(db)
+        return bool(view_user and view_user.is_active)
+    except Exception:
+        return False
+
+
 @router.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     token = request.cookies.get(cookie_name_for(request, AUTH_COOKIE_BASE))
+    context = {"view_enabled": await view_login_enabled()}
 
     if token:
         payload = decode_token(token)
@@ -153,7 +165,7 @@ async def login_page(request: Request):
         response = templates.TemplateResponse(
             request=request,
             name="login.html",
-            context={},
+            context=context,
         )
         clear_auth_cookie(request, response)
         return response
@@ -161,7 +173,7 @@ async def login_page(request: Request):
     response = templates.TemplateResponse(
         request=request,
         name="login.html",
-        context={},
+        context=context,
     )
     clear_legacy_cookies(request, response)
     clear_shadow_cookies(request, response)
@@ -225,6 +237,37 @@ async def do_login(
             "role": user.role,
             "must_change_password": bool(user.must_change_password),
             "name": user.name,
+        }
+    )
+
+    set_auth_cookie(request, response, token)
+
+    return {"status": "ok"}
+
+
+@router.post("/api/login/view")
+@limiter.limit("10/minute")
+async def do_view_login(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    # ปุ่ม View ที่หน้า login — เข้าบัญชี View (ดูได้อย่างเดียว) โดยไม่ต้องกรอกรหัส
+    # ได้เฉพาะตอนที่ admin เปิดบัญชีนี้ไว้ · สิทธิ์ของ session นี้ถูกจำกัดที่ dependencies.require_login
+    view_user = await get_view_user(db)
+
+    if not view_user or not view_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="โหมด View ถูกปิดใช้งานอยู่",
+        )
+
+    token = create_access_token(
+        {
+            "sub": view_user.username,
+            "role": view_user.role,
+            "must_change_password": False,
+            "name": view_user.name,
         }
     )
 

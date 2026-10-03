@@ -11,7 +11,7 @@
 
 {% block content %}
 
-<div x-data="manageUsersApp()" x-init="loadUsers()">
+<div x-data="manageUsersApp()" x-init="loadUsers(); loadViewAccount()">
 
   <div class="page-header">
     <div>
@@ -97,6 +97,22 @@
         </template>
       </tbody>
     </table>
+  </div>
+
+  {# บัญชี View — บัญชีเบื้องหลังที่ระบบสร้างให้ ไม่อยู่ในตารางข้างบน (แก้รหัส/ลบไม่ได้ มีแค่เปิด/ปิด) #}
+  <div class="view-card" x-show="viewAccount.exists" x-cloak>
+    <div class="view-card-text">
+      <div class="view-card-title">
+        View mode
+        <span class="badge" :class="viewAccount.enabled ? 'badge-active' : 'badge-inactive'"
+              x-text="viewAccount.enabled ? 'เปิดอยู่' : 'ปิดอยู่'"></span>
+      </div>
+      <div class="view-card-desc">โหมดสำหรับเข้าดู Dashboard และ Alerts</div>
+    </div>
+    <button :class="viewAccount.enabled ? 'btn-toggle' : 'btn-primary'"
+            :disabled="viewSaving"
+            @click="toggleViewAccount()"
+            x-text="viewAccount.enabled ? 'ปิดโหมด View' : 'เปิดโหมด View'"></button>
   </div>
 
   

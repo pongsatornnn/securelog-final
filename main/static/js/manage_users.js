@@ -22,6 +22,10 @@ function manageUsersApp() {
 
     currentUsername: window.PAGE_DATA.username,
 
+    // บัญชี View (ดูอย่างเดียว) — ไม่อยู่ใน users[] มีแค่สถานะเปิด/ปิด
+    viewAccount: { exists: false, enabled: false },
+    viewSaving: false,
+
     showDeleteModal: false,
     deleting: false,
     deleteError: '',
@@ -43,6 +47,48 @@ function manageUsersApp() {
         console.error('โหลด users ไม่สำเร็จ', err)
       } finally {
         this.loading = false
+      }
+    },
+
+    async loadViewAccount() {
+      try {
+        const res = await fetch(window.APP_BASE + '/api/users/view-account')
+        if (res.ok) this.viewAccount = await res.json()
+      } catch (err) {
+        console.error('โหลดสถานะโหมด View ไม่สำเร็จ', err)
+      }
+    },
+
+    async toggleViewAccount() {
+      const next = !this.viewAccount.enabled
+
+      const ok = await this.$store.ui.confirm(next ? {
+        title: 'เปิดโหมด View',
+        message: 'ยืนยันที่จะเปิดโหมด View',
+        confirmText: 'เปิดโหมด View',
+      } : {
+        title: 'ปิดโหมด View',
+        message: 'ปุ่ม View จะหายจากหน้า login และคนที่เปิดดูอยู่จะถูกเด้งออกในคำขอถัดไป',
+        confirmText: 'ปิดโหมด View',
+        danger: true,
+      })
+      if (!ok) return
+
+      this.viewSaving = true
+      try {
+        const res = await fetch(window.APP_BASE + '/api/users/view-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_active: next }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data.detail || 'อัปเดตโหมด View ไม่สำเร็จ')
+        this.$store.ui.success(data.message)
+      } catch (err) {
+        this.$store.ui.error(err.message)
+      } finally {
+        this.viewSaving = false
+        await this.loadViewAccount()
       }
     },
 

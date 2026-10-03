@@ -150,6 +150,8 @@
               :title="$store.alerts.unread + ' การโจมตีใหม่ที่ยังไม่ได้ดู'"></span>
       </a>
 
+      {# บัญชี View เห็นแค่ Dashboard + Alerts — เมนูที่เหลือซ่อนทั้งก้อน (server ก็กันซ้ำที่ require_login) #}
+      {% if user.role != 'viewer' %}
       <div class="nav-group">ตอบสนองและป้องกัน</div>
 
       {% if user.role == 'admin' %}
@@ -211,6 +213,7 @@
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-profile"/></svg>
         <span class="nav-label">Profile Setting</span>
       </a>
+      {% endif %}
     </nav>
 
     <div class="sidebar-footer">
@@ -250,7 +253,8 @@
 
       <div class="topbar-right">
         <span class="nav-user">
-          <strong id="topbarName">{{ user.name or user.username }}</strong>
+          {# บัญชี View แสดงชื่อตายตัว — ไม่อ่านจากคอลัมน์ name (เครื่องที่สร้างบัญชีไว้ก่อนจะได้ชื่อเดียวกัน) #}
+          <strong id="topbarName">{% if user.role == 'viewer' %}View mode{% else %}{{ user.name or user.username }}{% endif %}</strong>
         </span>
 
         <button class="btn-logout" type="button"

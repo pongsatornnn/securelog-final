@@ -12,6 +12,9 @@ from database.crud import (
     create_detection_signature,
     get_all_users,
     create_user,
+    get_user,
+    get_view_user,
+    create_view_user,
 )
 from database.defaults import (
     snapshot_section,
@@ -196,6 +199,24 @@ async def seed_admin_user(db) -> bool:
     return True
 
 
+async def seed_view_user(db) -> bool:
+    # บัญชี View (ดูได้อย่างเดียว) — สร้างครั้งเดียว ปิดใช้งานไว้ก่อน admin เปิดเองที่หน้า Manage Users
+    from auth import hash_password
+    from view_account import VIEW_USERNAME, unusable_password
+
+    if await get_view_user(db):
+        return False
+
+    if await get_user(db, VIEW_USERNAME):
+        # มี user ชื่อ view ที่คนสร้างไว้เองอยู่แล้ว — ไม่ไปแตะบัญชีของเขา ปุ่ม View จะไม่ขึ้น
+        print(f"[{LOG_PREFIX}] มี user ชื่อ '{VIEW_USERNAME}' ที่สร้างไว้เองอยู่แล้ว — ข้ามการสร้างบัญชี View")
+        return False
+
+    await create_view_user(db, hash_password(unusable_password()))
+    print(f"[{LOG_PREFIX}] สร้างบัญชี View (อ่านอย่างเดียว) แล้ว — ปิดใช้งานไว้ เปิดได้ที่หน้า Manage Users")
+    return True
+
+
 async def seed_defaults() -> None:
     # เรียกจาก lifespan ตอน start — เงียบถ้าไม่มีอะไรต้องเติม
     async with AsyncSessionLocal() as db:
@@ -204,6 +225,8 @@ async def seed_defaults() -> None:
         severities = await seed_alert_severity(db)
         signatures = await seed_detection_signatures(db)
         admin_created = await seed_admin_user(db)
+        # ต่อจาก admin เสมอ — ให้ admin ได้ id น้อยสุดบนเครื่องใหม่
+        await seed_view_user(db)
 
     total = rules + ttls + severities + signatures
 

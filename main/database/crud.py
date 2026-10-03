@@ -7,6 +7,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from database.models import *
 from ip_match import entry_covers, entry_contains
+from view_account import VIEW_ROLE, VIEW_USERNAME, VIEW_DISPLAY_NAME
 
 
 async def get_user(db: AsyncSession, username: str):
@@ -20,8 +21,32 @@ async def get_user_by_id(db: AsyncSession, user_id: int):
 
 
 async def get_all_users(db: AsyncSession):
-    result = await db.execute(select(User).order_by(User.username))
+    # ไม่รวมบัญชี View (บัญชีเบื้องหลังของระบบ) — ไม่โผล่ในหน้า Manage Users และไม่นับเป็น "มี user แล้ว"
+    result = await db.execute(
+        select(User).where(User.role.is_distinct_from(VIEW_ROLE)).order_by(User.username)
+    )
     return result.scalars().all()
+
+
+async def get_view_user(db: AsyncSession):
+    result = await db.execute(select(User).where(User.role == VIEW_ROLE).limit(1))
+    return result.scalar_one_or_none()
+
+
+async def create_view_user(db: AsyncSession, hashed_password: str):
+    # บัญชี View ปิดไว้ก่อนเสมอ — admin เป็นคนเลือกเปิดเอง
+    user = User(
+        username=VIEW_USERNAME,
+        name=VIEW_DISPLAY_NAME,
+        hashed_password=hashed_password,
+        role=VIEW_ROLE,
+        is_active=False,
+        must_change_password=False,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 async def create_user(
@@ -76,7 +101,10 @@ async def set_user_active(db: AsyncSession, user: User, is_active: bool):
 
 async def get_first_user(db: AsyncSession):
     # บัญชีแรกสุดของระบบ (id น้อยสุด) = admin เริ่มต้นที่ seed ตอน DB ว่าง — ห้ามลบ
-    result = await db.execute(select(User).order_by(User.id.asc()).limit(1))
+    # (ไม่นับบัญชี View — ต่อให้มี id น้อยกว่าก็ไม่ใช่ admin)
+    result = await db.execute(
+        select(User).where(User.role.is_distinct_from(VIEW_ROLE)).order_by(User.id.asc()).limit(1)
+    )
     return result.scalar_one_or_none()
 
 

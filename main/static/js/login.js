@@ -4,6 +4,7 @@ function loginApp() {
     username: '',     
     password: '',     
     loading : false,  
+    viewLoading: false,
     error   : '',     
     shaking : false,  
 
@@ -41,6 +42,31 @@ function loginApp() {
         this.setError(err.message)
       } finally {
         this.loading = false
+      }
+    },
+
+    // ปุ่ม View — เข้าบัญชีดูอย่างเดียวโดยไม่ต้องกรอกรหัส (ขึ้นเฉพาะตอน admin เปิดโหมด View ไว้)
+    async viewLogin() {
+      if (this.loading) return
+
+      this.loading = true
+      this.viewLoading = true
+      this.error = ''
+
+      try {
+        const res = await fetch(window.APP_BASE + '/api/login/view', { method: 'POST' })
+        const data = await res.json().catch(() => ({}))
+
+        if (res.status === 429) throw new Error('ลองใหม่อีกครั้งในภายหลัง')
+        if (!res.ok)           throw new Error(data.detail || 'เข้าโหมด View ไม่สำเร็จ')
+
+        window.location.href = window.APP_BASE + '/dashboard'
+
+      } catch (err) {
+        this.setError(err.message)
+      } finally {
+        this.loading = false
+        this.viewLoading = false
       }
     },
 

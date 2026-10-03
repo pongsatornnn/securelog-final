@@ -208,6 +208,9 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
+    # ปิด /openapi.json ด้วย — เดิมปิดแค่หน้า docs แต่ตัว schema ยังเปิดให้ใครก็ได้ดูรายชื่อ endpoint
+    # ทั้งหมดโดยไม่ต้อง login (ระบบไม่ได้ใช้ schema นี้ที่ไหน)
+    openapi_url=None,
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -265,7 +268,7 @@ if BASE_PATH and not STRIPPED_BY_PROXY:
 
     # ⚠️ app ที่ถูก mount ไม่ได้รับ lifespan event ของ starlette — ต้องผูก lifespan ไว้กับ app ชั้นนอก
     # ไม่งั้น create_all / ALTER / seed ค่าเริ่มต้น / โหลด settings cache จะไม่ทำงานเลยตอน start
-    app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.mount(BASE_PATH, inner_app)
 
     # เข้ามาที่รากของเครื่อง -> พาไปที่ prefix ให้ ไม่ต้องพิมพ์เอง

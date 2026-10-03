@@ -405,6 +405,12 @@
             </div>
             {% endif %}
 
+            {% if user.role == 'viewer' %}
+            <div class="ai-empty" x-show="!detail.ai_summary">
+              ยังไม่มีผลวิเคราะห์ AI ของเหตุการณ์นี้
+            </div>
+            {% endif %}
+
             <div class="ai-empty" x-show="aiLoading">
               กำลังส่ง log ให้ AI วิเคราะห์ กรุณารอสักครู่...
             </div>

@@ -9,6 +9,7 @@ from typing import Optional
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.crud import get_user
+from view_account import is_view_role
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM")
@@ -47,6 +48,9 @@ def decode_token(token: str) -> Optional[dict]:
 async def authenticate_user_db(db: AsyncSession, username: str, password: str):
     user = await get_user(db, username)
     if not user or not user.is_active:
+        return None
+    # บัญชี View เข้าได้ทางปุ่ม View เท่านั้น (/api/login/view) — ฟอร์มชื่อ/รหัสปฏิเสธเสมอ
+    if is_view_role(user.role):
         return None
     if not verify_password(password, user.hashed_password):
         return None

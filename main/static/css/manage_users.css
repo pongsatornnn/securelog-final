@@ -127,3 +127,44 @@
   line-height: 1.5;
   font-weight: 600;
 }
+
+/* การ์ดโหมด View — บัญชีเบื้องหลัง แยกจากตาราง user */
+.view-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.view-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.view-card-desc {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.view-card button {
+  flex-shrink: 0;
+}
+
+@media (max-width: 720px) {
+  .view-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+

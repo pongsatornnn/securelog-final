@@ -86,3 +86,35 @@
     25%,75%  { transform: translateX(-6px); }
     50%      { transform: translateX(6px); }
   }
+
+/* ปุ่ม View (เข้าโหมดดูอย่างเดียว) — ปุ่มรอง ไม่แย่งความเด่นจากปุ่มเข้าสู่ระบบ */
+  .view-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0 12px;
+    color: var(--text-dim);
+    font-size: 12.5px;
+  }
+  .view-divider::before,
+  .view-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+  }
+  .btn.btn-view {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    font-weight: 500;
+  }
+  .btn.btn-view:hover:not(:disabled) {
+    background: var(--bg-raised);
+    border-color: var(--primary);
+  }
+  .btn-view .spinner {
+    border-color: rgba(223, 229, 239, .25);
+    border-top-color: var(--text-main);
+  }
+

@@ -20,7 +20,7 @@ async def migrate() -> None:
     async with AsyncSessionLocal() as db:
         result = await db.execute(text(
             "UPDATE users SET role = 'admin', updated_at = NOW() "
-            "WHERE role IS DISTINCT FROM 'admin' "
+            "WHERE role IS DISTINCT FROM 'admin' AND role IS DISTINCT FROM 'viewer' "
             "RETURNING id, username"
         ))
         rows = result.fetchall()
