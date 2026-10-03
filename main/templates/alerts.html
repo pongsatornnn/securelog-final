@@ -344,10 +344,11 @@
               <div class="fact-val mono" x-text="detail.source_ip || '-'"></div>
             </div>
 
+            {# ประเทศที่ใช้งาน (GeoIP) — ตัวหลัก · ถ้าหาไม่เจอ ตาราง/หัว popup ใช้ประเทศผู้ถือแทน แต่แถวนี้บอกตามจริงว่าไม่พบ #}
             <div class="fact-row">
-              <div class="fact-key">ประเทศของ Attacker IP</div>
+              <div class="fact-key">ประเทศที่ใช้งาน</div>
               <div class="fact-val">
-                <template x-if="detail.source_country">
+                <template x-if="detail.source_country && !detail.source_country.from_holder">
                   <span class="ip-with-flag">
                     <img class="ip-flag" :src="flagUrl(detail.source_country)"
                          :alt="detail.source_country.code || 'LAN'">
@@ -356,7 +357,27 @@
                           x-text="'(' + detail.source_country.code + ')'"></span>
                   </span>
                 </template>
-                <span x-show="!detail.source_country">ไม่ทราบ</span>
+                <span x-show="!detail.source_country || detail.source_country.from_holder">ไม่ทราบ (GeoIP ไม่พบ)</span>
+              </div>
+            </div>
+
+            {# ประเทศขององค์กรที่ถือ IP ในทะเบียนผู้ดูแล IP (offline) — อาจต่างจากประเทศที่ใช้งาน เช่น IP ที่ถูกเช่าต่อ #}
+            <div class="fact-row" x-show="!(detail.source_country && detail.source_country.private)">
+              <div class="fact-key">ประเทศผู้ถือ IP</div>
+              <div class="fact-val">
+                <template x-if="detail.source_holder_country">
+                  <span class="ip-with-flag">
+                    <template x-if="!detail.source_holder_country.region">
+                      <img class="ip-flag" :src="flagUrl(detail.source_holder_country)"
+                           :alt="detail.source_holder_country.code">
+                    </template>
+                    <span x-text="detail.source_holder_country.name"></span>
+                    <span class="ip-country-code" x-text="'(' + detail.source_holder_country.code + ')'"></span>
+                    <span class="ip-country-code" x-show="detail.source_holder_country.status_text"
+                          x-text="'· ' + detail.source_holder_country.status_text"></span>
+                  </span>
+                </template>
+                <span x-show="!detail.source_holder_country">ไม่ทราบ</span>
               </div>
             </div>
 

@@ -1,6 +1,7 @@
 # ตัวกลางแปลง SecurityAlert (DB model) ให้เป็น dict ที่ dashboard.html ใช้แสดงผล
 
 from geoip import lookup_country
+from geoip_holder import lookup_holder_country
 from shared import iso_utc
 from severity_cache import get_severity
 
@@ -32,6 +33,24 @@ def get_attack_type_label(detection_type: str, mode: str | None) -> str:
     )
 
 
+def attacker_country(ip: str | None) -> dict | None:
+    # ประเทศที่แสดงข้าง Attacker IP — ยึดประเทศที่ใช้งาน (GeoIP) เป็นหลัก
+    # GeoIP หาไม่เจอค่อยใช้ประเทศผู้ถือ IP แทน (ติดป้าย from_holder ให้หน้าเว็บบอกว่ามาจากผู้ถือ)
+    country = lookup_country(ip)
+    if country is not None:
+        return country
+
+    holder = lookup_holder_country(ip)
+    if holder is None or holder["region"]:
+        return None
+    return {
+        "code": holder["code"],
+        "name": f"{holder['name']} (ประเทศผู้ถือ IP)",
+        "private": False,
+        "from_holder": True,
+    }
+
+
 async def build_alert_summary(alert, agent=None) -> dict:
     # ใช้กับตารางหลัก (/api/alerts) และ SSE stream (/api/stream/alerts)
     updated_at = alert.updated_at or alert.created_at
@@ -48,7 +67,7 @@ async def build_alert_summary(alert, agent=None) -> dict:
         "attack_type": get_attack_type_label(alert.detection_type, alert.mode),
         "source_ip": alert.source_ip,
         # ประเทศของ Attacker IP (หาจากไฟล์ GeoIP บนเครื่อง) — None = ไม่รู้ หน้าเว็บจะไม่โชว์ธง
-        "source_country": lookup_country(alert.source_ip),
+        "source_country": attacker_country(alert.source_ip),
         "username": alert.username,
         "fail_count": alert.event_count,
         "severity": await get_severity(alert.detection_type, alert.mode),
@@ -71,6 +90,8 @@ async def build_alert_detail(alert, agent=None) -> dict:
         # ผลสรุป AI ที่เคยกดวิเคราะห์ไว้ (None = ยังไม่เคยกด -> frontend โชว์ปุ่มให้กด)
         "ai_summary": alert.ai_summary,
         "ai_summary_at": iso_utc(alert.ai_summary_at),
+        # ประเทศขององค์กรที่ถือ IP นี้ในทะเบียนผู้ดูแล IP — แสดงเฉพาะหน้ารายละเอียด
+        "source_holder_country": lookup_holder_country(alert.source_ip),
     })
 
     return detail

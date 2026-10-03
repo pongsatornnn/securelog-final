@@ -207,8 +207,8 @@ if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ] && [ "$UPDATE_GEOIP_ONLY" !
         echo "    2) Reset configuration      - ask every question again: another database, another"
         echo "                                  postgres user, new Redis passwords, another IP"
         echo "                                  (Enter on a question = keep what it is now)"
-        echo "    3) Update GeoIP only        - download this month's country database for the flags"
-        echo "                                  next to attacker IPs (installs its library if missing),"
+        echo "    3) Update GeoIP only        - download this month's country databases (where the attacker"
+        echo "                                  IP is used + who holds it; installs its library if missing),"
         echo "                                  touch nothing else, then stop"
         echo ""
         while :; do
@@ -261,7 +261,7 @@ if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
     # สร้างโฟลเดอร์ในนามเจ้าของ (ไม่ใช่ root แล้ว chown) — โฟลเดอร์แม่ที่ยังไม่มีก็ได้เจ้าของถูกตัวด้วย
     runuser -u "$GEOIP_OWNER" -- mkdir -p "$(dirname "$GEOIP_DB")"
     if GEOIP_OUT="$(runuser -u "$GEOIP_OWNER" -- bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
-        ok "$GEOIP_OUT"
+        while IFS= read -r _l; do if [ -n "$_l" ]; then ok "$_l"; fi; done <<< "$GEOIP_OUT"  # สคริปต์ตอบหลายบรรทัด
     else
         err "Could not update the GeoIP database: ${GEOIP_OUT##*$'\n'}"
         [ -s "$GEOIP_DB" ] && echo "  the existing file is kept - the flags keep working with it"
@@ -1664,10 +1664,12 @@ log "GeoIP database (country flag next to the attacker IP)"
 if [ "${SKIP_GEOIP:-0}" = "1" ]; then
     warn "SKIP_GEOIP=1 - skipped (no country flags until you run: bash update_geoip.sh)"
 elif [ -s "$GEOIP_DB" ] && [ "${FORCE_GEOIP_UPDATE:-0}" != "1" ] &&
+     [ -s "$(dirname "$GEOIP_DB")/holder-country.txt.gz" ] &&
      [ -n "$(find "$GEOIP_DB" -mtime -30 2>/dev/null)" ]; then
+    # ต้องมีทั้งไฟล์ประเทศที่ใช้งาน (.mmdb) และตารางประเทศผู้ถือ IP — ขาดตัวไหนก็โหลดใหม่
     ok "GeoIP database is recent - left untouched (force a refresh with FORCE_GEOIP_UPDATE=1)"
 elif GEOIP_OUT="$(bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
-    ok "$GEOIP_OUT"
+    while IFS= read -r _l; do if [ -n "$_l" ]; then ok "$_l"; fi; done <<< "$GEOIP_OUT"  # สคริปต์ตอบหลายบรรทัด
 elif [ -s "$GEOIP_DB" ]; then
     warn "Could not refresh the GeoIP database - keeping the existing file (${GEOIP_OUT##*$'\n'})"
 else
