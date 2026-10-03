@@ -13,12 +13,12 @@ from database.connection import get_db, AsyncSessionLocal
 from database.crud import get_user, set_user_password, set_user_name, get_view_user
 from auth import (
     authenticate_user_db,
-    create_access_token,
     decode_token,
     hash_password,
     verify_password,
 )
 from login_lockout import check_locked, record_failure, reset_failures
+from session_store import start_session, session_is_active, end_session, end_user_sessions
 from dependencies import require_login, require_login_page
 from shared import templates, limiter
 from base_path import (
@@ -128,14 +128,26 @@ def clear_auth_cookie(request: Request, response: Response):
     clear_shadow_cookies(request, response)
 
 
+async def token_has_live_session(token: str | None) -> bool:
+    # cookie ที่ยัง "ใช้ได้จริง" — ลายเซ็น/อายุ JWT ผ่าน และ session ยังไม่ถูกตัด
+    # (เช็คแค่ JWT ไม่พอ: cookie ที่ถูกตัดตอนเปลี่ยนรหัสจะพา /login -> /dashboard -> /login วนไม่จบ)
+    payload = decode_token(token) if token else None
+    if not payload or not payload.get("sub"):
+        return False
+    try:
+        async with AsyncSessionLocal() as db:
+            user = await get_user(db, payload["sub"])
+            return bool(user and user.is_active) and await session_is_active(db, payload.get("jti"), user.id)
+    except Exception:
+        return False
+
+
 @router.get("/")
 async def root(request: Request):
     token = request.cookies.get(cookie_name_for(request, AUTH_COOKIE_BASE))
 
-    if token:
-        payload = decode_token(token)
-        if payload and payload.get("sub"):
-            return RedirectResponse(url=rel_url(request, "/dashboard"), status_code=302)
+    if await token_has_live_session(token):
+        return RedirectResponse(url=rel_url(request, "/dashboard"), status_code=302)
 
     return RedirectResponse(url=rel_url(request, "/login"), status_code=302)
 
@@ -157,9 +169,7 @@ async def login_page(request: Request):
     context = {"view_enabled": await view_login_enabled()}
 
     if token:
-        payload = decode_token(token)
-
-        if payload and payload.get("sub"):
+        if await token_has_live_session(token):
             return RedirectResponse(url=rel_url(request, "/dashboard"), status_code=302)
 
         response = templates.TemplateResponse(
@@ -231,14 +241,7 @@ async def do_login(
     # login สำเร็จ — เคลียร์ตัวนับ fail ของ IP นี้
     await reset_failures(client_ip)
 
-    token = create_access_token(
-        {
-            "sub": user.username,
-            "role": user.role,
-            "must_change_password": bool(user.must_change_password),
-            "name": user.name,
-        }
-    )
+    token = await start_session(db, user)
 
     set_auth_cookie(request, response, token)
 
@@ -262,14 +265,7 @@ async def do_view_login(
             detail="โหมด View ถูกปิดใช้งานอยู่",
         )
 
-    token = create_access_token(
-        {
-            "sub": view_user.username,
-            "role": view_user.role,
-            "must_change_password": False,
-            "name": view_user.name,
-        }
-    )
+    token = await start_session(db, view_user)
 
     set_auth_cookie(request, response, token)
 
@@ -278,6 +274,16 @@ async def do_view_login(
 
 @router.post("/api/logout")
 async def logout(request: Request):
+    # ตัด session นี้ฝั่ง server ด้วย ไม่ใช่แค่ลบ cookie — token ที่ถูกคัดลอกไปจะใช้ต่อไม่ได้
+    # (ตัดเฉพาะ session นี้ บัญชีเดียวกันที่ login อยู่เครื่องอื่นไม่โดน)
+    payload = decode_token(request.cookies.get(cookie_name_for(request, AUTH_COOKIE_BASE)) or "")
+    if payload:
+        try:
+            async with AsyncSessionLocal() as db:
+                await end_session(db, payload.get("jti"))
+        except Exception as e:
+            print(f"[AUTH] logout: ตัด session ไม่สำเร็จ: {e}")
+
     response = RedirectResponse(
         url=rel_url(request, "/login"),
         status_code=302,
@@ -342,14 +348,9 @@ async def do_change_password(
 
     await set_user_password(db, db_user, hash_password(payload.new_password), must_change_password=False)
 
-    token = create_access_token(
-        {
-            "sub": db_user.username,
-            "role": db_user.role,
-            "must_change_password": False,
-            "name": db_user.name,
-        }
-    )
+    # รหัสเปลี่ยน = ตัดทุก session ของบัญชีนี้ (รวมที่อาจถูกขโมยไป) แล้วเปิด session ใหม่ให้เครื่องที่กดอยู่
+    await end_user_sessions(db, db_user.id)
+    token = await start_session(db, db_user)
     set_auth_cookie(request, response, token)
 
     return {"status": "ok"}
@@ -393,14 +394,5 @@ async def update_profile_name(
 
     await set_user_name(db, db_user, name)
 
-    token = create_access_token(
-        {
-            "sub": db_user.username,
-            "role": db_user.role,
-            "must_change_password": bool(db_user.must_change_password),
-            "name": db_user.name,
-        }
-    )
-    set_auth_cookie(request, response, token)
-
+    # ไม่ต้องออก token ใหม่ — require_login อ่านชื่อจาก DB ทุก request อยู่แล้ว
     return {"status": "ok", "name": name}

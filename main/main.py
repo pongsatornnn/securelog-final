@@ -16,6 +16,7 @@ import database.models
 from shared import limiter
 from base_path import BASE_PATH, STRIPPED_BY_PROXY
 from csrf import CSRFMiddleware
+from security_headers import SecurityHeadersMiddleware
 from errors import register_error_handlers, http_exception_handler
 
 from routes import (
@@ -227,6 +228,8 @@ app.state.limiter = limiter
 
 # บังคับ CSRF ทุก endpoint ที่เปลี่ยนข้อมูล (double-submit cookie) — ดู csrf.py
 app.add_middleware(CSRFMiddleware)
+# header ความปลอดภัย (กัน iframe/clickjacking, nosniff, referrer) ทุก response — ดู security_headers.py
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # หน้า error แบบ HTML สำหรับ browser / JSON เหมือนเดิมสำหรับ /api/* (ดู errors.py)
@@ -270,6 +273,7 @@ if BASE_PATH and not STRIPPED_BY_PROXY:
     # ไม่งั้น create_all / ALTER / seed ค่าเริ่มต้น / โหลด settings cache จะไม่ทำงานเลยตอน start
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.mount(BASE_PATH, inner_app)
+    app.add_middleware(SecurityHeadersMiddleware)  # ให้ redirect ที่รากของเครื่องได้ header ด้วย
 
     # เข้ามาที่รากของเครื่อง -> พาไปที่ prefix ให้ ไม่ต้องพิมพ์เอง
     @app.get("/")

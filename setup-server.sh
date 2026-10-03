@@ -1322,6 +1322,12 @@ if [ "$ENV_EXISTED" = "1" ]; then
     env_sync AGENT_REDIS_USERNAME     "agent_node"
     env_sync AGENT_REDIS_PASSWORD     "$AGENT_REDIS_PASS"
 
+    # อายุ session ของ dashboard: ค่า default เดิม 500 นาที (8 ชม.) -> 30 นาที
+    # เปลี่ยนเฉพาะเครื่องที่ยังเป็นค่า default เดิม/ยังไม่มีคีย์ — ถ้าแอดมินตั้งค่าอื่นไว้เองจะไม่แตะ
+    case "$(env_get JWT_EXPIRE_MIN "$ENV_FILE")" in
+        ''|500) env_sync JWT_EXPIRE_MIN 30 ;;
+    esac
+
     if [ -n "$ENV_CHANGED" ]; then
         ENV_WRITTEN=1
         ok "Updated in .env:$ENV_CHANGED"
@@ -1349,7 +1355,7 @@ REDIS_USER=$REDIS_USER
 REDIS_PASS=$REDIS_PASS
 
 JWT_SECRET_KEY=$JWT_SECRET
-JWT_EXPIRE_MIN=500
+JWT_EXPIRE_MIN=30
 CSRF_SECRET=$CSRF_SECRET_VAL
 COOKIE_SECURE=true
 ALGORITHM=HS256

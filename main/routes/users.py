@@ -9,6 +9,7 @@ from database.crud import (
     get_first_user, delete_user, set_user_active, get_view_user,
 )
 from view_account import is_view_role
+from session_store import end_user_sessions
 
 from dependencies import require_primary_admin
 from auth import hash_password
@@ -106,6 +107,8 @@ async def api_reset_password(
         )
 
     await set_user_password(db, target, hash_password(payload.new_password), must_change_password=True)
+    # รหัสถูกตั้งใหม่ = session เดิมทุกอันของบัญชีนี้ใช้ต่อไม่ได้ (รวมของ admin เองถ้า reset ตัวเอง)
+    await end_user_sessions(db, target.id)
 
     return {
         "status": "ok",
@@ -155,6 +158,9 @@ async def api_set_user_active(
             raise HTTPException(status_code=400, detail="ปิดใช้งานบัญชีที่กำลังใช้งานอยู่ไม่ได้")
 
     await set_user_active(db, target, payload.is_active)
+    if not payload.is_active:
+        # ตัด session ทิ้งด้วย — ไม่งั้นเปิดบัญชีกลับมาแล้ว session เก่าที่ยังไม่หมดอายุจะใช้ได้อีก
+        await end_user_sessions(db, target.id)
 
     return {
         "status": "ok",
@@ -192,6 +198,8 @@ async def api_set_view_account(
         raise HTTPException(status_code=404, detail="ไม่พบบัญชี View ในระบบ")
 
     await set_user_active(db, view_user, payload.is_active)
+    if not payload.is_active:
+        await end_user_sessions(db, view_user.id)
 
     return {
         "status": "ok",

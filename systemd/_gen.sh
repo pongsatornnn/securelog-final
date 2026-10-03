@@ -149,8 +149,9 @@ EOF
 }
 
 # ตัวเว็บมีบล็อกเสริมเรื่องเวลาปิด — ดูคำอธิบายในบล็อกนั้น
+# --no-server-header: ไม่บอกชื่อซอฟต์แวร์ฝั่ง server ("server: uvicorn") ให้คนนอกเห็น
 gen securelog-web "Web Dashboard (HTTPS)" \
-    "$UVICORN main:app --host $WEB_BIND_HOST --port 8000 --ssl-certfile $DASH_CERT --ssl-keyfile $DASH_KEY --timeout-graceful-shutdown 5$PROXY_FLAGS" \
+    "$UVICORN main:app --host $WEB_BIND_HOST --port 8000 --ssl-certfile $DASH_CERT --ssl-keyfile $DASH_KEY --timeout-graceful-shutdown 5 --no-server-header$PROXY_FLAGS" \
 '
 # ⚠️ ค่านี้กับ --timeout-graceful-shutdown ใน ExecStart คือตัวที่ทำให้ `systemctl restart` ไม่ค้าง — ห้ามลบ
 TimeoutStopSec=20
@@ -162,7 +163,7 @@ gen securelog-firewall-detector  "Firewall Detector (Port scan / deny rate)" "$P
 gen securelog-agent-monitor      "Agent Monitor (metrics + state sync)"    "$PY -m process_agent.process_agent"
 gen securelog-blacklist-sweeper  "Blacklist Expiry Sweeper"                "$PY blacklist_expiry.py"
 gen securelog-line-notifier      "LINE Alert Notifier"                     "$PY -m LINE_API.alert_subscriber"
-gen securelog-line-webhook       "LINE Webhook Receiver"                   "$UVICORN LINE_API.webhook_app:app --host $WEBHOOK_BIND_HOST --port 8080"
+gen securelog-line-webhook       "LINE Webhook Receiver"                   "$UVICORN LINE_API.webhook_app:app --host $WEBHOOK_BIND_HOST --port 8080 --no-server-header"
 
 # ---- centralredis : infrastructure (โครงต่างจาก securelog-* — ไม่มี PartOf securelog.target
 cat > "$DIR/centralredis.service" <<EOF

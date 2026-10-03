@@ -5,6 +5,15 @@ from database.connection import AsyncSessionLocal
 from database.crud import get_user, get_first_user
 from base_path import strip_base, rel_url, cookie_name_for, AUTH_COOKIE_BASE
 from view_account import is_view_role, view_may
+from session_store import session_is_active
+
+# ระหว่างที่ยังต้องเปลี่ยนรหัส (บัญชีใหม่ / โดน reset / admin/admin ของเครื่องติดตั้งใหม่) เรียกได้แค่นี้
+# เดิมกันไว้แค่หน้าเว็บ (require_login_page) แต่ API ยังใช้ได้ครบด้วยรหัสชั่วคราว
+MUST_CHANGE_ALLOWED = {
+    ("GET", "/change-password"),
+    ("POST", "/api/change-password"),
+    ("GET", "/api/password-policy"),
+}
 
 
 def _redirect_login(request: Request) -> HTTPException:
@@ -31,9 +40,11 @@ async def require_login(request: Request):
     async with AsyncSessionLocal() as db:
         user = await get_user(db, username)
         first_user = await get_first_user(db)
+        # session ต้องยังอยู่ใน auth_sessions (ไม่ถูก logout / ตัดตอนเปลี่ยนรหัส / ไม่หมดอายุ)
+        session_ok = bool(user) and await session_is_active(db, payload.get("jti"), user.id)
 
     # ถูกลบออกจากระบบ หรือถูกปิดใช้งาน -> session ตายทันที เด้งไปหน้า login
-    if not user or not user.is_active:
+    if not user or not user.is_active or not session_ok:
         raise _redirect_login(request)
 
     # บัญชี View: ห้ามทุกอย่าง ยกเว้นรายการใน view_account.VIEW_ALLOWED (Dashboard / Alerts แบบอ่าน)
@@ -47,6 +58,17 @@ async def require_login(request: Request):
             raise HTTPException(
                 status_code=status.HTTP_303_SEE_OTHER,
                 headers={"Location": rel_url(request, "/dashboard")},
+            )
+
+    # ยังต้องเปลี่ยนรหัส: นอกจากหน้า/API เปลี่ยนรหัส ห้ามหมด — หน้าเว็บเด้งไปเปลี่ยนรหัส · API = 403
+    if user.must_change_password:
+        path = strip_base(request.url.path).rstrip("/") or "/"
+        if (request.method.upper(), path) not in MUST_CHANGE_ALLOWED:
+            if path.startswith("/api/"):
+                raise HTTPException(status_code=403, detail="ต้องเปลี่ยนรหัสผ่านก่อนใช้งาน")
+            raise HTTPException(
+                status_code=status.HTTP_303_SEE_OTHER,
+                headers={"Location": rel_url(request, "/change-password")},
             )
 
     return {

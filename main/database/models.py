@@ -181,6 +181,24 @@ class AlertRead(Base):
     )
 
 
+class AuthSession(Base):
+    # session ที่ login อยู่ — ทุก JWT มี jti ชี้มาที่แถวนี้ ตรวจทุก request (dependencies.require_login)
+    # ทำให้ "ตัด session" ได้จริง: logout ตัดแถวเดียว · เปลี่ยน/reset รหัสตัดทุกแถวของบัญชีนั้น
+    # (JWT อย่างเดียวเพิกถอนไม่ได้ ใช้ได้จนหมดอายุแม้ logout ไปแล้ว)
+    # ตารางใหม่ create_all สร้างให้เองตอน start — ไม่ได้แก้ตารางเดิม
+
+    __tablename__ = "auth_sessions"
+
+    jti = Column(String(64), primary_key=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_at = Column(DateTime, default=datetime.now)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    # มีค่า = ถูกตัดแล้ว (logout / เปลี่ยนรหัส) — เก็บไว้จนหมดอายุ แล้วค่อยลบทิ้งตอนมีคน login
+    revoked_at = Column(DateTime, nullable=True)
+
+
 class DetectionRule(Base):
     # ค่า threshold/window ของแต่ละ detector เก็บใน DB แทน hardcode
 
