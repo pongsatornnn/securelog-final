@@ -353,8 +353,6 @@
                     <img class="ip-flag" :src="flagUrl(detail.source_country)"
                          :alt="detail.source_country.code || 'LAN'">
                     <span x-text="detail.source_country.name"></span>
-                    <span class="ip-country-code" x-show="detail.source_country.code"
-                          x-text="'(' + detail.source_country.code + ')'"></span>
                   </span>
                 </template>
                 <span x-show="!detail.source_country || detail.source_country.from_holder">ไม่ทราบ (GeoIP ไม่พบ)</span>
@@ -372,9 +370,6 @@
                            :alt="detail.source_holder_country.code">
                     </template>
                     <span x-text="detail.source_holder_country.name"></span>
-                    <span class="ip-country-code" x-text="'(' + detail.source_holder_country.code + ')'"></span>
-                    <span class="ip-country-code" x-show="detail.source_holder_country.status_text"
-                          x-text="'· ' + detail.source_holder_country.status_text"></span>
                   </span>
                 </template>
                 <span x-show="!detail.source_holder_country">ไม่ทราบ</span>
