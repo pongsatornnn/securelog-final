@@ -44,6 +44,7 @@ from process_log_detect.security_response import (
     GLOBAL_COMMAND_CHANNEL,
 )
 from shared import iso_utc
+from central_ips import is_central_ip, CENTRAL_IP_DETAIL
 
 from schemas.blacklist_schema import (
     CreateBlacklistRequest,
@@ -293,6 +294,11 @@ async def api_add_blacklist(
             detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
+    # ที่อยู่ของ central เอง (อ่านสด — ย้าย IP แล้วตามไปเอง) · agent ก็ไม่ยอม block อยู่แล้ว
+    # กันตั้งแต่ตรงนี้เพื่อไม่ให้หน้าเว็บแสดงว่า block ทั้งที่จริงไม่ได้ block
+    if is_central_ip(ip_address):
+        raise HTTPException(status_code=400, detail=CENTRAL_IP_DETAIL)
+
     whitelist_ip = await find_whitelist_covering(db, ip_address)
     if whitelist_ip:
         via = "" if whitelist_ip.ip_address == ip_address else f" (อยู่ในวง {whitelist_ip.ip_address})"
@@ -497,6 +503,11 @@ async def api_move_to_blacklist(
             detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
+    # ที่อยู่ของ central เอง (อ่านสด — ย้าย IP แล้วตามไปเอง) · agent ก็ไม่ยอม block อยู่แล้ว
+    # กันตั้งแต่ตรงนี้เพื่อไม่ให้หน้าเว็บแสดงว่า block ทั้งที่จริงไม่ได้ block
+    if is_central_ip(ip_address):
+        raise HTTPException(status_code=400, detail=CENTRAL_IP_DETAIL)
+
     # ตรวจระยะเวลา **ก่อน** ลบออกจาก whitelist — ถ้าไปตอบ 400 ทีหลัง แถวใน whitelist
     duration_seconds = payload.duration_seconds if payload else None
     expires_at = resolve_block_expiry(duration_seconds)
@@ -633,6 +644,14 @@ async def api_add_blacklist_bulk(
                 "ip_address": ip_address,
                 "event": event,
                 "reason": f"{non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
+            })
+            continue
+
+        if is_central_ip(ip_address):
+            results["invalid"].append({
+                "ip_address": ip_address,
+                "event": event,
+                "reason": CENTRAL_IP_DETAIL,
             })
             continue
 

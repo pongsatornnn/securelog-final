@@ -17,6 +17,7 @@ from blacklist_ttl_cache import compute_expiry, get_ttl, should_auto_block
 from ip_match import parse_entry
 from alerts import SECURITY_ALERTS_STREAM_CHANNEL
 from redis_client import publish_json
+from central_ips import is_central_ip
 
 
 GLOBAL_COMMAND_CHANNEL = "global_commands"
@@ -162,6 +163,12 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
     if is_non_blockable_ip(source_ip):
         # ไม่ใช่การโจมตีของ host ใด (หรือเป็นตัวเครื่องเอง) block ไปก็ไม่มีผลนอกจากทำตัวเองพัง
         print(f"[AUTO-BLOCK] IP {source_ip} {non_blockable_reason(source_ip)} -> ไม่ block (เก็บแค่ alert)")
+        return "not_blockable"
+
+    if is_central_ip(source_ip):
+        # ทราฟฟิกจากตัว central เอง (เช่น health check / เครื่องมือของแอดมินบน central) — block ไปก็
+        # ตัดขาตัวเอง agent ก็ไม่ยอม block อยู่แล้ว เก็บแค่ alert
+        print(f"[AUTO-BLOCK] IP {source_ip} เป็นของ Central Server -> ไม่ block (เก็บแค่ alert)")
         return "not_blockable"
 
     # แอดมินตั้งชนิดนี้ไว้ที่หน้า Rules ว่า "แจ้งเตือนอย่างเดียว" — ตรวจจับและบันทึก alert ตามปกติ
