@@ -50,6 +50,10 @@
       _timers: {},
       _refreshTimer: null,
 
+      // บัญชี View (ใช้ร่วมกันหลายจอ) = อ่านแล้วทั้งหมด: ไม่มี badge ไม่มีจุดหน้าแถว และไม่ส่งสถานะขึ้น server
+      // ตั้งจาก <body data-all-read> ตั้งแต่โหลดหน้า + server ตอบ all_read ยืนยันซ้ำอีกชั้น
+      allRead: document.body.dataset.allRead === '1',
+
       // ตั้งชื่อ start ไม่ใช่ init เพราะ Alpine เรียก init() ของ store ให้เองอัตโนมัติ
       start() {
         this.loadOpened()
@@ -105,7 +109,7 @@
       },
 
       isOpened(id) {
-        return !!this.opened[id]
+        return this.allRead || !!this.opened[id]
       },
 
       // ดึงรายการที่ "เปิดดูแล้ว" ของบัญชีนี้จาก server มาทับของในเครื่อง
@@ -117,6 +121,10 @@
           if (!res.ok) return
 
           const data = await res.json()
+          if (data.all_read) {
+            this.allRead = true
+            return
+          }
           var serverIds = Array.isArray(data.opened_ids) ? data.opened_ids : []
 
           var onServer = {}
@@ -135,6 +143,7 @@
 
       // ส่งสถานะขึ้น server — คืน true เมื่อ server รับไปแล้วจริง
       async pushReadState(payload) {
+        if (this.allRead) return true  // บัญชี View ไม่บันทึกสถานะอ่านแล้ว
         try {
           const res = await fetch(READ_STATE_URL, {
             method: 'POST',
@@ -149,7 +158,7 @@
 
       // หน้า Alerts เรียกตอนกดดูรายละเอียด (รวมถึงตอนเปิดจากลิงก์ ?focus= ด้วย)
       markOpened(id) {
-        if (!id || this.opened[id]) return
+        if (!id || this.allRead || this.opened[id]) return
 
         // อัปเดตหน้าจอ + cache ทันทีโดยไม่รอ server — ยิงพลาดก็แค่ค้างอยู่ใน cache แล้ว
         this.applyOpened(Object.keys(this.opened).map(Number).concat([id]))
@@ -167,11 +176,12 @@
           if (!res.ok) return
 
           const data = await res.json()
+          if (data.all_read) this.allRead = true
 
           // server เป็นตัวจริงเสมอ (รวมถึงเคสเข้าใช้ครั้งแรกที่ server ตั้งค่าเริ่มต้นให้เอง)
           this._lastSeenId = data.last_seen_id || 0
 
-          this.unread = this.isAlertsPage ? 0 : (data.count || 0)
+          this.unread = (this.isAlertsPage || this.allRead) ? 0 : (data.count || 0)
         } catch (err) {
           // เงียบไว้ — badge ไม่สำคัญพอจะรบกวนผู้ใช้ (ถ้า session ตาย session.js เด้งเอง)
         }
@@ -182,6 +192,7 @@
         if (!id) return
 
         this.unread = 0
+        if (this.allRead) return
 
         // alert ที่ถูก merge แล้ว publish ซ้ำจะใช้ id เดิม (เก่ากว่า) — ห้ามให้ค่าถอยหลัง
         if (this._lastSeenId !== null && id <= this._lastSeenId) return

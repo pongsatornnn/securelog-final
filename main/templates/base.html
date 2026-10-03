@@ -40,7 +40,8 @@
 </head>
 
 
-<body data-page="{{ page or '' }}">
+{# data-all-read: บัญชี View ถือว่าอ่านแล้วทั้งหมด — alert-notify.js อ่านค่านี้ตั้งแต่โหลดหน้า (ไม่กระพริบ ไม่ส่ง POST) #}
+<body data-page="{{ page or '' }}"{% if user.role == 'viewer' %} data-all-read="1"{% endif %}>
 
 
 <svg style="display:none" aria-hidden="true" focusable="false">

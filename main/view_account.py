@@ -23,9 +23,9 @@ VIEW_ALLOWED = {
     ("GET", "/api/alerts"),
     ("GET", "/api/alerts_filter_options"),
     ("GET", "/api/alerts_unread_count"),
+    # บัญชี View ถือว่า "อ่านแล้วทั้งหมด" (ใช้ร่วมกันหลายจอ สถานะอ่านแล้วร่วมกันไม่มีความหมาย)
+    # GET ตอบว่าอ่านแล้วทุกตัว · ไม่มี POST — บัญชี View จึงไม่เขียนอะไรลง DB เลย
     ("GET", "/api/alerts_read_state"),
-    # สถานะ "อ่านแล้ว" เก็บแยกรายบัญชี — กระทบแค่บัญชี View เอง ไม่ใช่ข้อมูลของระบบ
-    ("POST", "/api/alerts_read_state"),
     ("GET", "/api/stream/alerts"),
     # Dashboard ใช้นับจำนวน Client Server ที่ออนไลน์
     ("GET", "/api/agents"),

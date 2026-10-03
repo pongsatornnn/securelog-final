@@ -192,6 +192,10 @@ async def api_get_alerts_unread_count(
     db: AsyncSession = Depends(get_db),
 ):
     # จำนวน alert ที่ใหม่กว่า id ที่ผู้ใช้เห็นล่าสุด — ใช้ทำ badge "ยังไม่ได้อ่าน" ที่เมนู Alerts
+    # บัญชี View = อ่านแล้วทั้งหมดเสมอ (ไม่มี badge) และไม่บันทึก "เห็นถึงตัวไหน" ลงตาราง users
+    if user["role"] == "viewer":
+        return {"count": 0, "last_seen_id": 0, "all_read": True}
+
     last_seen_id = await get_user_last_seen_alert_id(db, user["id"])
 
     count, latest_id = await count_security_alerts_since(db, last_seen_id or 0)
@@ -209,6 +213,9 @@ async def api_get_alerts_read_state(
     db: AsyncSession = Depends(get_db),
 ):
     # id ของ alert ที่บัญชีนี้กดดูรายละเอียดไปแล้ว — browser เอาไปวาดจุด "ยังไม่ได้อ่าน" หน้าแถว
+    if user["role"] == "viewer":
+        return {"opened_ids": [], "all_read": True}
+
     return {"opened_ids": await get_alert_read_ids(db, user["id"])}
 
 
