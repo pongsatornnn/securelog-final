@@ -9,13 +9,18 @@
 
 import ipaddress
 import os
+import time
 from functools import lru_cache
 from pathlib import Path
 
 try:
     import maxminddb
-except ImportError:  # ยังไม่ได้ pip install maxminddb
+except ImportError:  # ยังไม่ได้ pip install maxminddb — _get_reader ลอง import ใหม่เป็นระยะ
     maxminddb = None
+
+# ลงไลบรารีทีหลังได้โดยไม่ต้อง restart (setup-server.sh ข้อ 3) — ลอง import ใหม่ไม่ถี่กว่านี้
+IMPORT_RETRY_SECONDS = 60
+_next_import_try = 0.0
 
 
 GEOIP_DB_PATH = Path(
@@ -32,10 +37,18 @@ _reader_mtime: float | None = None
 
 def _get_reader():
     # เปิดไฟล์ครั้งแรกที่ใช้ และเปิดใหม่เองเมื่อไฟล์ถูกอัปเดต (mtime เปลี่ยน) ไม่ต้อง restart service
-    global _reader, _reader_mtime
+    global _reader, _reader_mtime, maxminddb, _next_import_try
 
     if maxminddb is None:
-        return None
+        if time.monotonic() < _next_import_try:
+            return None
+        _next_import_try = time.monotonic() + IMPORT_RETRY_SECONDS
+        try:
+            import importlib
+            importlib.invalidate_caches()  # ให้เห็น package ที่เพิ่งลงระหว่างที่ process รันอยู่
+            maxminddb = importlib.import_module("maxminddb")
+        except ImportError:
+            return None
 
     try:
         mtime = GEOIP_DB_PATH.stat().st_mtime

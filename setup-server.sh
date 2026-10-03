@@ -208,7 +208,8 @@ if [ "$ENV_EXISTED" = "1" ] && [ -z "$RECONFIGURE" ] && [ "$UPDATE_GEOIP_ONLY" !
         echo "                                  postgres user, new Redis passwords, another IP"
         echo "                                  (Enter on a question = keep what it is now)"
         echo "    3) Update GeoIP only        - download this month's country database for the flags"
-        echo "                                  next to attacker IPs, touch nothing else, then stop"
+        echo "                                  next to attacker IPs (installs its library if missing),"
+        echo "                                  touch nothing else, then stop"
         echo ""
         while :; do
             read -rp "  Pick a number [1]: " _rc_ans
@@ -229,16 +230,48 @@ if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
     log "Updating the GeoIP database only (nothing else is touched)"
     echo "  now: $GEOIP_STATE"
     # รันเป็นเจ้าของโฟลเดอร์โปรเจกต์ (= user ที่ service รัน) ไม่ใช่ root — ไฟล์ที่ได้ service อ่านได้แน่นอน
-    # service เปิดไฟล์ใหม่เองเมื่อไฟล์เปลี่ยน ไม่ต้อง restart
+    # service เปิดไฟล์ใหม่เองเมื่อไฟล์เปลี่ยน และ import maxminddb ใหม่เองเมื่อเพิ่งลง ไม่ต้อง restart
     GEOIP_OWNER="$(stat -c %U "$PROJECT_DIR/main")"
-    mkdir -p "$(dirname "$GEOIP_DB")" && chown "$GEOIP_OWNER": "$(dirname "$GEOIP_DB")"
+    GEOIP_FAILED=0
+
+    # ── 1) ไลบรารีอ่านไฟล์ (maxminddb) — เครื่องที่อัปเดตด้วย git pull เฉย ๆ จะยังไม่มี ──
+    VENV_PY="$PROJECT_DIR/venv/bin/python"
+    if [ ! -x "$VENV_PY" ]; then
+        warn "No venv at $PROJECT_DIR/venv yet - run this script with option 1 to install the system first"
+        GEOIP_FAILED=1
+    elif runuser -u "$GEOIP_OWNER" -- "$VENV_PY" -c "import maxminddb" >/dev/null 2>&1; then
+        ok "maxminddb is installed"
+    else
+        # เวอร์ชันเดียวกับ requirements.txt (ไม่เจอบรรทัดนั้น = ลงตัวล่าสุด)
+        MAXMIND_REQ="$(grep -oE '^maxminddb[=<>!~]=?[^[:space:]#]+' "$PROJECT_DIR/requirements.txt" 2>/dev/null | head -1)"
+        MAXMIND_REQ="${MAXMIND_REQ:-maxminddb}"
+        # ลงเป็นเจ้าของ venv — ลงด้วย root จะได้ไฟล์ของ root ปนอยู่ใน venv ของ service
+        if PIP_OUT="$(runuser -u "$GEOIP_OWNER" -- "$PROJECT_DIR/venv/bin/pip" install -q \
+                --disable-pip-version-check --no-input --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}" \
+                "$MAXMIND_REQ" </dev/null 2>&1)"; then
+            ok "Installed $MAXMIND_REQ (the library that reads the GeoIP file)"
+        else
+            err "Could not install $MAXMIND_REQ: ${PIP_OUT##*$'\n'}"
+            echo "  country flags stay hidden until it is installed: $PROJECT_DIR/venv/bin/pip install $MAXMIND_REQ"
+            GEOIP_FAILED=1
+        fi
+    fi
+
+    # ── 2) ไฟล์ฐานข้อมูลประเทศของเดือนนี้ ──
+    # สร้างโฟลเดอร์ในนามเจ้าของ (ไม่ใช่ root แล้ว chown) — โฟลเดอร์แม่ที่ยังไม่มีก็ได้เจ้าของถูกตัวด้วย
+    runuser -u "$GEOIP_OWNER" -- mkdir -p "$(dirname "$GEOIP_DB")"
     if GEOIP_OUT="$(runuser -u "$GEOIP_OWNER" -- bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
         ok "$GEOIP_OUT"
-        ok "Done - the dashboard picks the new file up by itself, no restart needed"
+    else
+        err "Could not update the GeoIP database: ${GEOIP_OUT##*$'\n'}"
+        [ -s "$GEOIP_DB" ] && echo "  the existing file is kept - the flags keep working with it"
+        GEOIP_FAILED=1
+    fi
+
+    if [ "$GEOIP_FAILED" = "0" ]; then
+        ok "Done - the dashboard picks it up by itself within a minute, no restart needed"
         exit 0
     fi
-    err "Could not update the GeoIP database: ${GEOIP_OUT##*$'\n'}"
-    [ -s "$GEOIP_DB" ] && echo "  the existing file is kept - the flags keep working with it"
     exit 1
 fi
 
