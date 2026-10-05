@@ -7,16 +7,18 @@ const VIS_COLORS = [
 
 const TZ = 'Asia/Bangkok'
 
-// วันที่แบบ YYYY-MM-DD ตามเวลาไทย — ใช้เป็นคีย์จับกลุ่มรายวัน (เทียบสตริงตรง ๆ ได้)
-function bangkokDate(value) {
-  return new Date(value).toLocaleDateString('en-CA', { timeZone: TZ })
-}
-
 function dashboardApp() {
   return {
     alerts         : [],
     agents         : [],
     severityCounts : { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 },
+
+    // ตัวเลขสรุปนับจากทั้งตารางฝั่ง server (/api/alerts_stats) — ห้ามนับจาก alerts
+    // เพราะ alerts มีแค่ไม่กี่แถวล่าสุดสำหรับตาราง (เดิมนับจาก 200 แถว ยอดเลยค้างที่ 200)
+    totalAlerts : 0,
+    todayAlerts : 0,
+    dailyStats  : [],
+    attackTypes : [],
 
     // หน้านี้ refresh เองทุก 15 วิ — แยก "โหลดครั้งแรกอยู่" ออกจาก "รอบล่าสุดพลาด"
     // เพราะสองอย่างนี้ต้องแสดงคนละแบบ (กล่องกำลังโหลด vs แถบเตือนว่าข้อมูลไม่สด)
@@ -24,8 +26,7 @@ function dashboardApp() {
     loadError : '',
 
     get alertsToday() {
-      const today = bangkokDate(new Date())
-      return this.alerts.filter(a => a.timestamp && bangkokDate(a.timestamp) === today).length
+      return this.todayAlerts
     },
 
     get agentsOnline() {
@@ -35,32 +36,13 @@ function dashboardApp() {
     // ─── กราฟแท่ง: จำนวน alert ต่อวัน ย้อนหลัง 7 วัน ───
 
     get dailyCounts() {
-      const DAYS = 7
-      const buckets = []
-      const byDate  = {}
-
-      for (let i = DAYS - 1; i >= 0; i--) {
-        const day = new Date(Date.now() - i * 86400000)
-
-        const bucket = {
-          key   : bangkokDate(day),
-          label : day.toLocaleDateString('th-TH', { timeZone: TZ, day: 'numeric', month: 'numeric' }),
-          count : 0,
-        }
-
-        byDate[bucket.key] = bucket
-        buckets.push(bucket)
-      }
-
-      for (const alert of this.alerts) {
-        if (!alert.timestamp) continue
-
-        // alert ที่เก่ากว่า 7 วันไม่มีช่องให้ลง — ข้ามไป ไม่ใช่ยัดรวมกับวันแรก
-        const bucket = byDate[bangkokDate(alert.timestamp)]
-        if (bucket) bucket.count++
-      }
-
-      return buckets
+      // server นับแยกวันตามเวลาไทยมาให้แล้ว (key = YYYY-MM-DD) เหลือแค่ทำป้ายวันที่
+      return this.dailyStats.map(day => ({
+        key   : day.date,
+        label : new Date(day.date + 'T00:00:00+07:00')
+          .toLocaleDateString('th-TH', { timeZone: TZ, day: 'numeric', month: 'numeric' }),
+        count : day.count,
+      }))
     },
 
     // อย่างน้อย 1 กันหารด้วยศูนย์ตอนไม่มี alert เลยในช่วง 7 วัน
@@ -71,14 +53,8 @@ function dashboardApp() {
     // ─── โดนัท: สัดส่วนประเภทการโจมตี ───
 
     get attackTypeStats() {
-      const counts = {}
-
-      for (const alert of this.alerts) {
-        const key = alert.attack_type || 'ไม่ระบุ'
-        counts[key] = (counts[key] || 0) + 1
-      }
-
-      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+      // server เรียงจากมากไปน้อยมาให้แล้ว
+      const sorted = this.attackTypes
 
       // เกิน 7 ก้อนเริ่มอ่านไม่ออก (สีเริ่มซ้ำ + legend ยาวเกินพาเนล) — ที่เหลือยุบรวมกัน
       const shown = sorted.slice(0, 6)
@@ -91,7 +67,7 @@ function dashboardApp() {
         ])
       }
 
-      const total = this.alerts.length || 1
+      const total = this.totalAlerts || 1
       let start = 0
 
       return shown.map(([name, count], index) => {
@@ -122,7 +98,9 @@ function dashboardApp() {
     },
 
     async loadAll() {
-      const results = await Promise.allSettled([this.loadAlerts(), this.loadAgents()])
+      const results = await Promise.allSettled([
+        this.loadAlerts(), this.loadStats(), this.loadAgents(),
+      ])
 
       // ส่วนไหนพลาดก็บอกเฉพาะส่วนนั้น ไม่ทิ้งทั้งหน้า (alert กับ agent คนละ endpoint)
       const failed = results
@@ -136,28 +114,39 @@ function dashboardApp() {
 
     async loadAlerts() {
       try {
-        // ขอ 200 แถวแรกตรง ๆ — หน้านี้ใช้ 5 แถวล่าสุดกับนับสัดส่วนความรุนแรงจากก้อนนี้
-        // (เท่าเดิมกับตอนที่ /api/alerts ยังคืน 200 แถวเสมอก่อนมีการแบ่งหน้า)
-        const res = await fetch(window.APP_BASE + '/api/alerts?per_page=200')
+        // ตารางล่างสุดโชว์แค่ 5 แถวล่าสุด — ตัวเลขสรุปไปเอาจาก loadStats()
+        const res = await fetch(window.APP_BASE + '/api/alerts?per_page=5')
 
         if (!res.ok) {
           const err = await res.json().catch(() => ({}))
           throw new Error(err.detail || `โหลด alert ไม่สำเร็จ (${res.status})`)
         }
 
-        const data = (await res.json()).items || []
-        this.alerts = data
-
-        const counts = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 }
-        for (const alert of data) {
-          if (counts[alert.severity] !== undefined) {
-            counts[alert.severity]++
-          }
-        }
-        this.severityCounts = counts
+        this.alerts = (await res.json()).items || []
       } catch (err) {
         console.error('โหลด alert ไม่สำเร็จ', err)
         throw new Error(err.message || 'โหลด alert ไม่สำเร็จ')
+      }
+    },
+
+    async loadStats() {
+      try {
+        const res = await fetch(window.APP_BASE + '/api/alerts_stats')
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}))
+          throw new Error(err.detail || `โหลดสถิติ alert ไม่สำเร็จ (${res.status})`)
+        }
+
+        const stats = await res.json()
+        this.totalAlerts    = stats.total
+        this.todayAlerts    = stats.today
+        this.severityCounts = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0, ...stats.severity_counts }
+        this.dailyStats     = stats.daily || []
+        this.attackTypes    = stats.attack_types || []
+      } catch (err) {
+        console.error('โหลดสถิติ alert ไม่สำเร็จ', err)
+        throw new Error(err.message || 'โหลดสถิติ alert ไม่สำเร็จ')
       }
     },
 

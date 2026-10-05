@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, delete, func, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -567,6 +567,30 @@ async def get_alert_filter_facets(db: AsyncSession) -> dict:
         "agent_ids": sorted(agent_rows.scalars().all()),
         "detection_types": sorted(type_rows.scalars().all()),
     }
+
+
+async def count_alerts_by_type(db: AsyncSession) -> list[tuple[str, str | None, int]]:
+    # จำนวน alert ทั้งตารางแยกตาม (detection_type, mode) — dashboard เอาไปรวมเป็นยอดทั้งหมด
+    # สัดส่วนประเภท และจำนวนแต่ละความรุนแรง (ความรุนแรงผูกกับประเภท จึงนับต่อประเภทพอ)
+    result = await db.execute(
+        select(SecurityAlert.detection_type, SecurityAlert.mode, func.count())
+        .group_by(SecurityAlert.detection_type, SecurityAlert.mode)
+    )
+    return [(row[0], row[1], int(row[2])) for row in result.all()]
+
+
+async def count_alerts_per_local_day(
+    db: AsyncSession, since: datetime, utc_offset_hours: int = 7
+) -> dict:
+    # จำนวน alert ต่อวัน (ตามเวลาท้องถิ่น) ตั้งแต่ since (naive-UTC) — ใช้เวลากิจกรรมล่าสุด
+    # แบบเดียวกับที่ตารางใช้เรียง/กรอง คืน {date: count}
+    local_day = func.date(alert_activity_at() + timedelta(hours=utc_offset_hours))
+    result = await db.execute(
+        select(local_day, func.count())
+        .where(alert_activity_at() >= since)
+        .group_by(local_day)
+    )
+    return {row[0]: int(row[1]) for row in result.all()}
 
 
 async def count_security_alerts_since(db: AsyncSession, since: int = 0) -> tuple[int, int]:

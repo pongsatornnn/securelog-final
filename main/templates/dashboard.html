@@ -10,7 +10,7 @@
 
 {% block content %}
 
-<div x-data="dashboardApp()" x-init="loadAll(); setInterval(loadAll, 15000)">
+<div x-data="dashboardApp()" x-init="loadAll(); setInterval(() => loadAll(), 15000)">
 
   <div class="page-title">Security Dashboard</div>
   <div class="page-subtitle">ภาพรวมความปลอดภัยของระบบ</div>
@@ -49,7 +49,7 @@
     </div>
 
     <div class="stat-tile">
-      <div class="stat-value" x-text="alerts.length"></div>
+      <div class="stat-value" x-text="totalAlerts"></div>
       <div class="stat-label">Alerts ทั้งหมด</div>
       
       
@@ -110,7 +110,7 @@
                  aria-label="สัดส่วนประเภทการโจมตี" x-html="donutMarkup"></svg>
 
             <div class="donut-center">
-              <div class="donut-total" x-text="alerts.length"></div>
+              <div class="donut-total" x-text="totalAlerts"></div>
               <div class="donut-total-label">Alerts</div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 # เส้นทาง Security Alert สำหรับ dashboard: list ล่าสุด, ดูรายละเอียด, SSE stream
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Request, Depends, HTTPException
@@ -14,6 +14,8 @@ from database.crud import (
     count_security_alerts,
     get_alert_filter_facets,
     count_security_alerts_since,
+    count_alerts_by_type,
+    count_alerts_per_local_day,
     get_security_alert_by_id,
     get_agents_by_agent_ids,
     get_agent_by_agent_id,
@@ -205,6 +207,54 @@ async def api_get_alerts_unread_count(
         return {"count": 0, "last_seen_id": latest_id}
 
     return {"count": count, "last_seen_id": last_seen_id}
+
+
+# dashboard นับวันตามเวลาไทย (ไม่มี DST เลยใช้ offset คงที่ได้)
+DASHBOARD_UTC_OFFSET_HOURS = 7
+DASHBOARD_DAYS = 7
+
+
+@router.get("/api/alerts_stats")
+async def api_get_alerts_stats(
+    user=Depends(require_login),
+    db: AsyncSession = Depends(get_db),
+):
+    # ตัวเลขสรุปของหน้า dashboard — นับจากทั้งตารางใน DB
+    # (เดิมหน้าเว็บนับเองจาก 200 แถวล่าสุด พอ alert เกิน 200 ตัวเลขเลยค้าง/เพี้ยน)
+    severity_counts = {level: 0 for level in VALID_SEVERITIES}
+    attack_types: dict[str, int] = {}
+    total = 0
+
+    for detection_type, mode, count in await count_alerts_by_type(db):
+        total += count
+
+        severity = await get_severity(detection_type, mode)
+        if severity in severity_counts:
+            severity_counts[severity] += count
+
+        # หลาย (detection_type, mode) อาจได้ป้ายเดียวกัน — รวมตามป้ายที่แสดง
+        label = get_attack_type_label(detection_type, mode) or "ไม่ระบุ"
+        attack_types[label] = attack_types.get(label, 0) + count
+
+    offset = timedelta(hours=DASHBOARD_UTC_OFFSET_HOURS)
+    today = (datetime.now(timezone.utc) + offset).date()
+    first_day = today - timedelta(days=DASHBOARD_DAYS - 1)
+    # เที่ยงคืนเวลาไทยของวันแรก แปลงกลับเป็น naive-UTC ให้ตรงกับที่ DB เก็บ
+    since = datetime.combine(first_day, datetime.min.time()) - offset
+
+    per_day = await count_alerts_per_local_day(db, since, DASHBOARD_UTC_OFFSET_HOURS)
+    daily = [
+        {"date": day.isoformat(), "count": per_day.get(day, 0)}
+        for day in (first_day + timedelta(days=i) for i in range(DASHBOARD_DAYS))
+    ]
+
+    return {
+        "total": total,
+        "today": per_day.get(today, 0),
+        "severity_counts": severity_counts,
+        "attack_types": sorted(attack_types.items(), key=lambda item: item[1], reverse=True),
+        "daily": daily,
+    }
 
 
 @router.get("/api/alerts_read_state")
