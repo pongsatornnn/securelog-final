@@ -101,7 +101,7 @@ class CSRFMiddleware:
             if not valid:
                 response = JSONResponse(
                     status_code=403,
-                    content={"detail": "CSRF token ไม่ถูกต้องหรือหมดอายุ กรุณารีเฟรชหน้าแล้วลองใหม่"},
+                    content={"detail": "เซสชันหมดอายุ กรุณารีเฟรชหน้าแล้วลองใหม่อีกครั้ง"},
                 )
                 await response(scope, receive, send)
                 return
