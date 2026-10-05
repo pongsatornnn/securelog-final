@@ -182,9 +182,9 @@
 
       <div class="nav-group">จัดการระบบ</div>
 
-      <a href="{{ url('/agents') }}" class="{% if page == 'agents' %}active{% endif %}" title="Client Server">
+      <a href="{{ url('/agents') }}" class="{% if page == 'agents' %}active{% endif %}" title="Client">
         <svg class="nav-ico" aria-hidden="true"><use href="#ico-agents"/></svg>
-        <span class="nav-label">Client Server</span>
+        <span class="nav-label">Client</span>
       </a>
 
       {% if user.role == 'admin' %}
