@@ -19,16 +19,6 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # ---------------------------------------------------------------------------
 
-# ค่า default เฉพาะ site — ปกติถูก override ด้วย agent_config.json (สร้างโดย setup.sh)
-_DEFAULT_CONFIG = {
-    "central_host": "192.168.56.110",
-    "central_port": 6380,
-    "redis_username": "agent_node",
-    "redis_password": "123",
-    # ที่อยู่สำรองของ central — agent ไล่ลองทีละอันเมื่อ central_host เดิมต่อไม่ได้
-    "central_candidates": [],
-}
-
 CONFIG_FILE_NAME = "agent_config.json"
 
 
@@ -47,15 +37,15 @@ def _read_kv_file(path: Path) -> dict:
 
 
 def _load_config() -> dict:
-    config = dict(_DEFAULT_CONFIG)
     try:
         with open(BASE_DIR / "agent_config.json", "r", encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, dict):
-            config.update(data)
-    except (OSError, json.JSONDecodeError):
-        pass
-    return config
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("agent_config.json is required; run setup.sh") from exc
+    required = ("central_host", "central_port", "redis_username", "redis_password")
+    if not isinstance(data, dict) or any(not data.get(key) for key in required):
+        raise RuntimeError("agent_config.json is incomplete; run setup.sh")
+    return data
 
 
 def _find_cert(filename: str) -> str:

@@ -1,4 +1,4 @@
-# System Settings — ค่าตั้งของระบบที่แก้ได้ตอนรัน (คีย์ LINE / Gemini / ค่าที่ฝังลงชุดติดตั้ง agent)
+# System Settings — runtime settings for LINE, Gemini, and other dashboard features
 
 import asyncio
 import hmac
@@ -9,10 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from dependencies import require_admin
 from redis_admin_password import (
     RotationError,
-    apply_agent_password,
     generate_password,
     preflight,
-    restore_agent_acl,
     rotate_admin_password,
     validate_password,
 )
@@ -110,62 +108,20 @@ async def api_update_settings(
             detail=f"ค่าเหล่านี้ถูกล็อกไว้ แก้จากหน้าเว็บไม่ได้: {labels}",
         )
 
-    # ค่าที่ตั้ง confirm_current / password_rules ไว้ (ตอนนี้คือรหัส Redis ของ Client Server)
+    # ตรวจค่าที่มีข้อกำหนดเพิ่มเติมก่อนบันทึก
     await _check_protected_values(payload)
 
-    # ── ค่าที่ต้องไปแก้ users.acl ด้วย (รหัส Redis ของ Client Server) ──
-    applied = []
     for key, value in payload.values.items():
-        if not SETTING_DEFS[key].get("apply_to_redis_acl"):
-            continue
-
-        try:
-            applied.append(await asyncio.to_thread(apply_agent_password, value))
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"{SETTING_DEFS[key]['label']}: {e}")
-        except RotationError as e:
-            raise HTTPException(status_code=409, detail=str(e))
-
-    try:
-        for key, value in payload.values.items():
-            await update_setting(
-                key, value,
-                actor=user["username"], actor_id=user["id"], source="settings",
-            )
-    except Exception as e:
-        if not applied:
-            raise
-
-        # แก้ ACL ไปแล้วแต่บันทึกค่าไม่ผ่าน = ชุดติดตั้งครั้งหน้าจะฝังรหัสเก่าไปทั้งที่ Redis
-        print(f"[SETTINGS] บันทึกค่าไม่สำเร็จหลังแก้ ACL แล้ว — ถอย ACL กลับ: {e}")
-
-        rolled_back = all(
-            await asyncio.gather(*[
-                asyncio.to_thread(restore_agent_acl, result["acl_path"], result["acl_backup"])
-                for result in applied
-            ])
+        await update_setting(
+            key, value,
+            actor=user["username"], actor_id=user["id"], source="settings",
         )
-        hint = (
-            "ถอยรหัสใน users.acl กลับเป็นตัวเดิมให้แล้ว"
-            if rolled_back else
-            "ถอย users.acl กลับไม่สำเร็จ — ตรวจไฟล์แล้วสั่ง ACL LOAD เองก่อนใช้งานต่อ"
-        )
-        raise HTTPException(status_code=500, detail=f"บันทึกค่าไม่สำเร็จ ({e}) — {hint}")
-
-    if applied:
-        users = ", ".join(user for result in applied for user in result["users"])
-        message = (
-            f"เปลี่ยนรหัสใน users.acl ({users}) และสั่ง ACL LOAD ให้แล้ว — "
-            "ต้องออกชุดติดตั้งใหม่ไปลงให้ครบทุกเครื่อง"
-        )
-    else:
-        message = f"บันทึก {len(payload.values)} รายการแล้ว (มีผลทันที ไม่ต้องรีสตาร์ต)"
 
     return {
         "status": "ok",
         "updated": sorted(payload.values.keys()),
-        "acl_updated": [user for result in applied for user in result["users"]],
-        "message": message,
+        "acl_updated": [],
+        "message": f"บันทึก {len(payload.values)} รายการแล้ว (มีผลทันที ไม่ต้องรีสตาร์ต)",
     }
 
 

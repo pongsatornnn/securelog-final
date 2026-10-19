@@ -4,6 +4,7 @@ import logging
 import os
 import time
 import shutil
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
@@ -20,7 +21,6 @@ from database.crud import (
     update_agent,
     count_alerts_by_agent,
     delete_agent_by_agent_id,
-    invalidate_agent_downloads,
     get_agent_download_by_token_hash,
     mark_agent_downloaded,
 )
@@ -33,6 +33,7 @@ from shared import iso_utc
 from schemas.agent_schema import CreateAgentRequest, UpdateAgentRequest
 
 from manage_agent.create_agent_package import create_agent_package, regenerate_agent_package
+from manage_agent.redis_acl import remove_agent_credentials
 from manage_agent.token_utils import hash_token
 
 
@@ -219,6 +220,12 @@ async def api_delete_agent(
     if not deleted_agent:
         raise HTTPException(status_code=404, detail="ไม่พบ Client Server")
 
+    try:
+        await asyncio.to_thread(remove_agent_credentials, agent_id)
+    except Exception:
+        logger.exception("ลบบัญชี Redis ACL ของ %s ไม่สำเร็จ", agent_id)
+        raise HTTPException(status_code=500, detail="ลบ Agent แล้ว แต่ลบบัญชี Redis ACL ไม่สำเร็จ; ตรวจ users.acl")
+
     # ลบไฟล์ cert/package ของ Agent ออกจากเครื่อง Central ด้วย
     package_path = AGENT_PACKAGES_DIR / f"{agent_id}.zip"
     if package_path.exists():
@@ -249,9 +256,6 @@ async def api_regen_agent_download(
     agent = await get_agent_by_agent_id(db, agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="ไม่พบ Client Server")
-
-    # ปิดลิงก์เก่าที่ยังไม่ได้ใช้ก่อนสร้างลิงก์ใหม่
-    await invalidate_agent_downloads(db, agent_id)
 
     try:
         result = await regenerate_agent_package(agent)

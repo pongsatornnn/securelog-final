@@ -15,6 +15,9 @@ cert/
 
 agent_packages/
 *.zip
+for_Agent/build/
+redis/users.acl.lock
+redis/users.acl
 
 # ตัว export แผนภาพ (mermaid-cli) ลงเฉพาะตอนจะ export รูปใหม่ — ดู docs_img/README.md
 docs_img/node_modules/
@@ -45,6 +48,9 @@ for_Agent/package/site.conf.bak.*
 # กุญแจเข้ารหัสค่า secret ในตาราง app_settings (main/secret_box.py)
 # ต้องอยู่นอก git และนอก DB — สำรองไว้คู่กับ .env ถ้าย้ายเครื่อง
 .settings_key
+
+# สำเนาไฟล์ก่อนแก้ (เก็บไว้ในเครื่อง ไม่ต้องขึ้น git — ของเดิมอยู่ใน git history อยู่แล้ว)
+backup/
 
 # ฐานข้อมูลประเทศของ IP (~8 MB, ออกใหม่ทุกเดือน) — update_geoip.sh / setup-server.sh โหลดให้ตอนติดตั้ง
 main/database/geoip/

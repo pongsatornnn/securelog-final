@@ -2,16 +2,12 @@
 #   cp site.conf.example site.conf
 #
 # site.conf ถูก .gitignore ไว้แล้ว (มีรหัสผ่าน Redis จริง) ไม่ขึ้น git
-# ค่าชุดเดียวกันนี้ใช้ร่วมกับ agent ทุกเครื่อง — เครื่องต่างกันแค่ agent_info.txt ที่มากับ zip เฉพาะเครื่อง
-#
-# REDIS_PASSWORD ช่องเดียวนี้ถูกใช้กับ 2 บัญชีบนเครื่อง central:
-#   - agent_core.py -> ล็อกอินเป็น REDIS_USERNAME (agent_node)
-#   - Filebeat      -> ส่ง ACL username ไม่ได้ จึงล็อกอินเป็น `default` เสมอ
-# ทั้งสองบรรทัดใน redis/users.acl ฝั่ง central จึงต้องตั้งรหัสให้ตรงกับค่านี้
+# แพ็กเกจที่สร้างจากหน้าเว็บจะใส่บัญชีและรหัสเฉพาะ Agent ให้โดยอัตโนมัติ
+# ค่าตัวอย่างด้านล่างใช้สำหรับการติดตั้งด้วยมือเท่านั้น
 
 CENTRAL_HOST="192.168.56.110"
 CENTRAL_REDIS_PORT="6380"
-REDIS_USERNAME="agent_node"
+REDIS_USERNAME="agent_001"
 REDIS_PASSWORD="changeme"
 
 # ที่อยู่สำรองของ central (ไม่ใส่ก็ได้) — คั่นด้วยช่องว่างหรือจุลภาค รูปแบบ host หรือ host:port

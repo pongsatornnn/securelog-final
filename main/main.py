@@ -195,9 +195,7 @@ async def lifespan(app: FastAPI):
     from settings_cache import (
         encrypt_existing_secrets,
         load_all_into_cache,
-        seed_agent_settings_from_site_conf,
     )
-    await seed_agent_settings_from_site_conf()
     # ค่า secret ในตารางถูกเข้ารหัสไว้ (secret_box) — แถวที่ตั้งไว้ก่อนมีการเข้ารหัสจะถูก
     await encrypt_existing_secrets()
     await load_all_into_cache()

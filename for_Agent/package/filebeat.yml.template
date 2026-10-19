@@ -90,16 +90,8 @@ output.redis:
   key: "raw_logs_queue"
   data_type: "list"
 
-  # ⚠️ ห้ามใส่ username ที่นี่ — output.redis ของ Beats "ไม่รองรับ" การยืนยันตัวตนแบบ
-  # ACL user (มีแต่ password) ต่อให้ใส่ username ไปก็ถูกกลืนหายไปเฉย ๆ ไม่มี error ให้เห็น
-  # Filebeat จะส่ง AUTH <password> อย่างเดียว ซึ่ง Redis ตีเป็นบัญชี `default` เสมอ
-  #
-  # ฝั่ง central จึงต้องเปิดบัญชี `default` ไว้ (จำกัดสิทธิ์เท่าที่จำเป็น) ใน redis/users.acl:
-  #   user default on ><password> -@all +ping +info +select +rpush +lpush ~raw_logs_queue resetchannels
-  #   (+info จำเป็น เพราะ Filebeat สั่ง INFO ตอนเชื่อมต่อ ไม่มีจะได้ NOPERM แล้ววน reconnect)
-  #
-  # ส่วน agent_core.py เป็น redis-py ส่ง username ได้ จึงยังใช้บัญชี agent_node ตามเดิม
-  # (ค่า REDIS_USERNAME ใน site.conf ยังจำเป็นสำหรับ agent_core — อย่าลบทิ้ง)
+  # The bundled Filebeat has Redis ACL AUTH username password support.
+  username: "__REDIS_USERNAME__"
   password: "__REDIS_PASSWORD__"
   ssl.enabled: true
   ssl.certificate_authorities: ["__INSTALL_DIR__/cert/__CA_FILE__"]

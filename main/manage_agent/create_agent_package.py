@@ -1,9 +1,13 @@
 import os
+import asyncio
 import shutil
 import zipfile
 import subprocess
+import hashlib
+import tempfile
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from sqlalchemy import update
 
 from dotenv import load_dotenv
 
@@ -12,8 +16,8 @@ from database.crud import clear_agent_ip_binding, get_agent_by_agent_id
 from database.models import Agent, AgentDownload
 from manage_agent.token_utils import generate_token, hash_token
 from auth_cache import clear_agent_auth_cache
-from settings_cache import get_setting_async
 from base_path import with_base, RELATIVE_URLS
+from manage_agent.redis_acl import ensure_agent_credentials, remove_agent_credentials
 
 
 def _download_url(token: str) -> str:
@@ -35,6 +39,10 @@ PACKAGE_DIR = os.path.join(PROJECT_ROOT, "main/agent_packages")
 
 # ชุดไฟล์ติดตั้งฝั่ง agent (setup.sh, agent_core.py, filebeat template ฯลฯ)
 AGENT_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "for_Agent/package")
+FILEBEAT_ACL_BINARY = os.getenv(
+    "FILEBEAT_ACL_BINARY",
+    os.path.join(PROJECT_ROOT, "for_Agent/build/filebeat-acl-8.19.23-amd64"),
+)
 
 DOWNLOAD_LINK_TTL = timedelta(minutes=5)
 
@@ -59,38 +67,21 @@ def central_candidates() -> str:
     return " ".join(dict.fromkeys(raw))
 
 
-async def build_site_conf() -> str:
+async def build_site_conf(agent_id: str, username: str, password: str) -> str:
     # สร้างเนื้อไฟล์ site.conf ที่จะฝังไปกับ zip
     host, port = central_address()
-    username = (await get_setting_async("agent_redis_username")).strip()
-    password = await get_setting_async("agent_redis_password")
-
     if not host:
         raise Exception(
             "ไม่รู้ที่อยู่ของ Central (ไม่มีทั้ง AGENT_CENTRAL_HOST และ REDIS_HOST ใน .env) — "
             "รัน setup-server.sh ให้จบก่อนสร้าง package"
         )
 
-    # สองค่านี้แก้ได้จากหน้าเว็บ จึงบอกทางไปแก้ได้ตรง ๆ (ต่างจาก host ที่ต้องไปทาง setup-server.sh)
-    missing = [
-        label
-        for label, value in (
-            ("Redis Username ของ Client Server", username),
-            ("Redis Password ของ Client Server", password),
-        )
-        if not value
-    ]
-
-    if missing:
-        raise Exception(
-            "ยังตั้งค่าชุดติดตั้ง Client Server ไม่ครบ (" + ", ".join(missing) + ") — "
-            "ตั้งได้ที่หน้า System Settings ก่อนสร้าง package"
-        )
+    if not username or not password:
+        raise ValueError(f"Redis credentials missing for {agent_id}")
 
     return (
         "# ค่าต่อ site ของชุดติดตั้ง agent\n"
-        "# ไฟล์นี้ถูกสร้างอัตโนมัติตอนออก package จากค่าในหน้า System Settings ของ Central\n"
-        "# แก้ไฟล์นี้บนเครื่อง agent ได้ แต่ถ้าออก package ใหม่จะถูกเขียนทับด้วยค่าจากหน้าเว็บอีก\n"
+        "# บัญชี Redis เฉพาะ Agent นี้ ใช้ร่วมกันโดย Filebeat และ agent_core.py\n"
         "\n"
         f'CENTRAL_HOST="{host}"\n'
         f'CENTRAL_REDIS_PORT="{port}"\n'
@@ -202,6 +193,12 @@ def get_existing_agent_cert(agent_id: str):
 
 def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_conf: str):
     os.makedirs(PACKAGE_DIR, exist_ok=True)
+    if not os.path.isfile(FILEBEAT_ACL_BINARY):
+        raise FileNotFoundError(f"Redis ACL Filebeat binary missing: {FILEBEAT_ACL_BINARY}")
+    version = subprocess.run([FILEBEAT_ACL_BINARY, "version"], capture_output=True,
+                             text=True, check=True, timeout=10).stdout
+    if "filebeat version 8.19.23 " not in version:
+        raise RuntimeError("Redis ACL Filebeat binary must be version 8.19.23")
 
     agent_dir = cert_info["agent_dir"]
     zip_path = os.path.join(PACKAGE_DIR, f"{agent_id}.zip")
@@ -223,13 +220,32 @@ def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_con
     if not os.path.isdir(AGENT_TEMPLATE_DIR):
         raise Exception(f"ไม่พบโฟลเดอร์ชุดติดตั้ง agent: {AGENT_TEMPLATE_DIR}")
 
+    fd, temporary_zip = tempfile.mkstemp(prefix=f".{agent_id}.", suffix=".zip", dir=PACKAGE_DIR)
+    os.close(fd)
+    try:
+        _write_agent_zip(temporary_zip, agent_id, cert_info, info_path, site_conf)
+        os.chmod(temporary_zip, 0o600)
+        os.replace(temporary_zip, zip_path)
+    finally:
+        if os.path.exists(temporary_zip):
+            os.unlink(temporary_zip)
+    return zip_path
+
+
+def _write_agent_zip(zip_path: str, agent_id: str, cert_info: dict, info_path: str, site_conf: str):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        if not os.path.isfile(FILEBEAT_ACL_BINARY):
+            raise FileNotFoundError(f"Redis ACL Filebeat binary missing: {FILEBEAT_ACL_BINARY}")
+        with open(FILEBEAT_ACL_BINARY, "rb") as binary:
+            digest = hashlib.file_digest(binary, "sha256").hexdigest()
+        zipf.write(FILEBEAT_ACL_BINARY, arcname="filebeat-acl")
+        zipf.writestr("filebeat-acl.sha256", f"{digest}  filebeat-acl\n")
         zipf.write(cert_info["crt_path"], arcname=f"{agent_id}.crt")
         zipf.write(cert_info["key_path"], arcname=f"{agent_id}.key")
         zipf.write(cert_info["ca_path"], arcname="ca.crt")
         zipf.write(info_path, arcname="agent_info.txt")
 
-        # site.conf สร้างจากค่าในหน้า System Settings ทุกครั้ง ไม่ได้ก๊อปไฟล์ในเครื่อง —
+        # Credentials are generated per Agent; never copy a shared site.conf.
         zipf.writestr("site.conf", site_conf)
 
         # zipf.write เก็บ file mode ไว้ด้วย — setup.sh ยังเป็น executable หลังแตก zip
@@ -242,10 +258,6 @@ def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_con
                 continue
 
             zipf.write(path, arcname=name)
-
-    os.chmod(zip_path, 0o600)
-    return zip_path
-
 
 async def create_agent_package(
     agent_id: str,
@@ -269,11 +281,14 @@ async def create_agent_package(
 
     discard_agent_files(agent_id)
 
-    # สร้างเนื้อ site.conf ก่อนออก cert — ถ้าตั้งค่าไม่ครบจะได้ไม่ทิ้ง cert ค้างไว้
-    site_conf = await build_site_conf()
-
-    # ตั้งแต่จุดนี้มีการเขียนไฟล์ลงดิสก์ — พังตรงไหนก็ตามต้องเก็บกวาดให้หมดก่อนโยนต่อ
+    if not central_address()[0]:
+        raise RuntimeError("Central host is not configured")
+    acl_created = False
     try:
+        username, password, acl_created = await asyncio.to_thread(ensure_agent_credentials, agent_id)
+        site_conf = await build_site_conf(agent_id, username, password)
+
+        # ตั้งแต่จุดนี้มีการเขียนไฟล์ลงดิสก์ — พังตรงไหนก็ตามต้องเก็บกวาดให้หมดก่อนโยนต่อ
         cert_info = create_agent_cert(agent_id)
         zip_path = create_agent_zip(agent_id, secret_token, cert_info, site_conf)
 
@@ -307,6 +322,8 @@ async def create_agent_package(
 
     except Exception:
         discard_agent_files(agent_id)
+        if acl_created:
+            await asyncio.to_thread(remove_agent_credentials, agent_id)
         raise
 
     # ล้าง cache เผื่อมี cache เก่าค้างจาก agent_id เดิม
@@ -330,37 +347,64 @@ async def regenerate_agent_package(agent: Agent):
     secret_token_hash = hash_token(secret_token)
     download_token_hash = hash_token(download_token)
 
-    site_conf = await build_site_conf()
+    username, password, _ = await asyncio.to_thread(ensure_agent_credentials, agent.agent_id)
+    site_conf = await build_site_conf(agent.agent_id, username, password)
 
     cert_info = get_existing_agent_cert(agent.agent_id)
-    zip_path = create_agent_zip(agent.agent_id, secret_token, cert_info, site_conf)
+    _, zip_path = agent_file_paths(agent.agent_id)
+    info_path = os.path.join(cert_info["agent_dir"], "agent_info.txt")
+    backup_suffix = f".regen.{generate_token()[:12]}"
+    zip_backup = zip_path + backup_suffix
+    info_backup = info_path + backup_suffix
+    if os.path.isfile(zip_path):
+        os.link(zip_path, zip_backup)
+    if os.path.isfile(info_path):
+        shutil.copy2(info_path, info_backup)
 
-    async with AsyncSessionLocal() as db:
-        db_agent = await db.get(Agent, agent.id)
+    try:
+        zip_path = create_agent_zip(agent.agent_id, secret_token, cert_info, site_conf)
+        async with AsyncSessionLocal() as db:
+            db_agent = await db.get(Agent, agent.id)
 
-        if not db_agent:
-            raise Exception("ไม่พบ Client Server ในฐานข้อมูล")
+            if not db_agent:
+                raise Exception("ไม่พบ Client Server ในฐานข้อมูล")
 
-        db_agent.secret_token_hash = secret_token_hash
-        db_agent.cert_path = cert_info["crt_path"]
-        db_agent.key_path = cert_info["key_path"]
-        db_agent.status = "pending"
-        db_agent.updated_at = current_time
+            db_agent.secret_token_hash = secret_token_hash
+            db_agent.cert_path = cert_info["crt_path"]
+            db_agent.key_path = cert_info["key_path"]
+            db_agent.status = "pending"
+            db_agent.updated_at = current_time
 
-        # ทางเดียวที่ IP ที่ผูกไว้จะเปลี่ยนได้ — package ชุดใหม่ = ติดตั้งใหม่ = ผูกใหม่จาก
-        await clear_agent_ip_binding(db, db_agent)
+            # Invalidate old links in the same DB transaction as the replacement.
+            await db.execute(
+                update(AgentDownload)
+                .where(AgentDownload.agent_id == db_agent.agent_id,
+                       AgentDownload.downloaded == False)
+                .values(downloaded=True, downloaded_at=current_time)
+            )
+            await clear_agent_ip_binding(db, db_agent)
 
-        download = AgentDownload(
-            agent_id=db_agent.agent_id,
-            download_token_hash=download_token_hash,
-            zip_path=zip_path,
-            downloaded=False,
-            expires_at=current_time + DOWNLOAD_LINK_TTL,
-            created_at=current_time,
-        )
+            download = AgentDownload(
+                agent_id=db_agent.agent_id,
+                download_token_hash=download_token_hash,
+                zip_path=zip_path,
+                downloaded=False,
+                expires_at=current_time + DOWNLOAD_LINK_TTL,
+                created_at=current_time,
+            )
 
-        db.add(download)
-        await db.commit()
+            db.add(download)
+            await db.commit()
+    except Exception:
+        if os.path.isfile(zip_backup):
+            os.replace(zip_backup, zip_path)
+        if os.path.isfile(info_backup):
+            os.replace(info_backup, info_path)
+        raise
+    finally:
+        for path in (zip_backup, info_backup):
+            if os.path.isfile(path):
+                os.unlink(path)
 
     # สำคัญมาก: regen token แล้วต้องล้าง cache ทันที
     clear_agent_auth_cache(agent.agent_id)

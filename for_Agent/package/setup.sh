@@ -113,6 +113,11 @@ HOST_IP="$(get_info HOST_IP)"
 [ -n "$AGENT_ID" ] && [ -n "$SECRET_TOKEN" ] || die "agent_info.txt has no AGENT_ID/SECRET_TOKEN"
 log "Installing agent: $AGENT_ID into $INSTALL_DIR"
 
+# Reject an incomplete or modified package before changing the installed config.
+ACL_BEAT="$INSTALL_DIR/filebeat-acl"
+[ -f "$ACL_BEAT" ] && [ -f "$INSTALL_DIR/filebeat-acl.sha256" ] || die "patched Filebeat missing from agent package"
+(cd "$INSTALL_DIR" && sha256sum -c filebeat-acl.sha256) || die "patched Filebeat checksum mismatch"
+
 # ---------- 1.5) เลือก interface ที่จะใช้เป็น IP ของเครื่องนี้ ----------
 
 # ชื่อ interface + IPv4 ของแต่ละใบ (ข้าม loopback) — ip -o เอาต์พุตบรรทัดละใบ ตัดคำที่ 2 กับ 4
@@ -311,12 +316,15 @@ else
         run_step "apt-get update (Elastic repo only)" apt-get update -q \
             -o Dir::Etc::sourcelist="$ELASTIC_LIST" -o Dir::Etc::sourceparts="-" \
             -o APT::Get::List-Cleanup="0" -o Acquire::Retries=1 -o Acquire::http::Timeout=15
-        run_step "Installing filebeat" apt-get install -y -qq filebeat
+        run_step "Installing filebeat 8.19.23" apt-get install -y -qq filebeat=8.19.23
         log "Installed filebeat from the Elastic APT repo (on a later re-run apt will upgrade it if a newer version exists)"
     else
         die "filebeat not found and no internet access - put filebeat-<version>-amd64.deb next to this script (download it from elastic.co) or connect to the internet and run again"
     fi
 fi
+
+filebeat version 2>/dev/null | grep -q 'filebeat version 8.19.23 ' \
+    || die "This package requires the Filebeat 8.19.23 layout; install that version first"
 
 # ---------- 6) สร้าง venv + ลง dependency ----------
 if [ ! -x "$INSTALL_DIR/venv/bin/python" ]; then
@@ -338,6 +346,7 @@ TEMPLATE="$INSTALL_DIR/filebeat.yml.template"
 TMP_YML="$(mktemp)"
 sed -e "s|__CENTRAL_HOST__|$CENTRAL_HOST|g" \
     -e "s|__CENTRAL_REDIS_PORT__|$CENTRAL_REDIS_PORT|g" \
+    -e "s|__REDIS_USERNAME__|$REDIS_USERNAME|g" \
     -e "s|__REDIS_PASSWORD__|$REDIS_PASSWORD|g" \
     -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" \
     -e "s|__CERT_FILE__|$CERT_FILE|g" \
@@ -354,11 +363,19 @@ if [ -f /etc/filebeat/filebeat.yml ] && ! cmp -s "$TMP_YML" /etc/filebeat/filebe
     cp /etc/filebeat/filebeat.yml "/etc/filebeat/filebeat.yml.bak.$(date +%Y%m%d%H%M%S)"
     log "Backed up the previous filebeat.yml"
 fi
+install -m 755 -o root -g root "$ACL_BEAT" /usr/local/bin/securelog-filebeat
+"/usr/local/bin/securelog-filebeat" test config -c "$TMP_YML" >/dev/null || die "patched Filebeat config failed validation"
 install -m 600 -o root -g root "$TMP_YML" /etc/filebeat/filebeat.yml
 rm -f "$TMP_YML"
 log "Installed /etc/filebeat/filebeat.yml"
 
-filebeat test config -c /etc/filebeat/filebeat.yml >/dev/null || die "filebeat config failed validation (filebeat test config)"
+mkdir -p /etc/systemd/system/filebeat.service.d
+cat > /etc/systemd/system/filebeat.service.d/securelog-acl.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/securelog-filebeat --environment systemd $BEAT_LOG_OPTS $BEAT_CONFIG_OPTS $BEAT_PATH_OPTS
+EOF
+systemctl daemon-reload
 log "filebeat config passed validation"
 
 # ครั้งแรกเท่านั้น: ลบ registry ให้ tail_files เริ่มอ่านจากท้ายไฟล์ (ไม่ลาก log เก่าทั้งไฟล์)

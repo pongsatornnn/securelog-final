@@ -15,7 +15,6 @@ from redis_config import REDIS_CONFIG
 # เงื่อนไขรหัสอยู่ที่เดียว ใช้ร่วมกับช่องรหัสของ Client Server (ดู redis_password_rules.py)
 from redis_password_rules import generate_password, validate_password
 from service_status import mark_env_applied
-from settings_cache import get_setting
 
 
 LOG_PREFIX = "REDIS-PASSWD"
@@ -283,13 +282,6 @@ def rotate_admin_password(new_password: str, typed_current: str) -> dict:
     if new_password == current_password:
         raise ValueError("รหัสใหม่ตรงกับรหัสเดิม")
 
-    # บัญชี admin มีสิทธิ์ +@all ~* และไม่เคยออกไปกับ package ของ agent — ห้ามใช้รหัสร่วมกับ
-    if new_password and new_password == get_setting("agent_redis_password"):
-        raise ValueError(
-            "ห้ามใช้รหัสเดียวกับ Redis Password ของ Client Server — บัญชี admin มีสิทธิ์เต็มเครื่อง "
-            "ส่วนรหัสของ client ถูกแจกไปกับชุดติดตั้งทุกเครื่อง"
-        )
-
     if not _LOCK.acquire(blocking=False):
         raise RotationError("มีการเปลี่ยนรหัสค้างอยู่ รอให้รอบก่อนหน้าทำงานจบก่อน")
 
@@ -308,6 +300,13 @@ def rotate_admin_password(new_password: str, typed_current: str) -> dict:
         acl_path = _acl_path(client)
         acl_text = _read_text(acl_path, "ไฟล์ users.acl")
         acl_lines = acl_text.splitlines()
+
+        # Central must never share a password with a package installed on an Agent.
+        for line in acl_lines:
+            parts = line.split()
+            if len(parts) >= 3 and parts[0] == "user" and re.fullmatch(r"agent_[0-9]+", parts[1]):
+                if f">{new_password}" in parts[2:]:
+                    raise ValueError("ห้ามใช้รหัสเดียวกับบัญชี Redis ของ Agent")
 
         line_index = _find_user_line(acl_lines, username)
         if line_index == -1:
@@ -392,102 +391,3 @@ def rotate_admin_password(new_password: str, typed_current: str) -> dict:
 
     finally:
         _LOCK.release()
-
-
-# ── รหัสของฝั่ง agent (agent_node + default) ─────────────────────────────
-
-# Filebeat ส่ง ACL username ไม่ได้ จึงเข้าเป็น user `default` เสมอ — รหัสของสองบัญชีนี้
-FILEBEAT_USER = "default"
-
-
-def agent_acl_users() -> list[str]:
-    # ผู้ใช้ที่ต้องถูกเปลี่ยนรหัสพร้อมกัน — ชื่อของ agent_core ตั้งได้จากหน้า System Settings
-    agent_user = get_setting("agent_redis_username") or "agent_node"
-    return [agent_user] if agent_user == FILEBEAT_USER else [agent_user, FILEBEAT_USER]
-
-
-def apply_agent_password(new_password: str) -> dict:
-    # เขียนรหัสใหม่ลงบรรทัดของ agent ใน users.acl **ทั้งสองบัญชี** แล้วสั่ง ACL LOAD ให้เลย
-    validate_password(new_password)
-
-    admin_password = REDIS_CONFIG.get("password") or ""
-    if new_password == admin_password:
-        raise ValueError(
-            "ห้ามใช้รหัสเดียวกับรหัส Redis ของ Central — บัญชี admin มีสิทธิ์เต็มเครื่อง "
-            "ส่วนรหัสนี้ถูกแจกไปกับชุดติดตั้งทุกเครื่อง"
-        )
-
-    users = agent_acl_users()
-
-    if not _LOCK.acquire(blocking=False):
-        raise RotationError("มีการเปลี่ยนรหัสค้างอยู่ รอให้รอบก่อนหน้าทำงานจบก่อน")
-
-    try:
-        client = _connect(admin_password)
-        try:
-            client.ping()
-        except (redis.exceptions.RedisError, OSError) as e:
-            raise RotationError(f"ต่อ Redis ไม่ได้: {e}") from e
-
-        acl_path = _acl_path(client)
-        acl_lines = _read_text(acl_path, "ไฟล์ users.acl").splitlines()
-
-        # หาบรรทัดให้ครบก่อนเขียนอะไรลงไฟล์ — ขาดบรรทัดไหนคือหยุดตั้งแต่ยังไม่แตะอะไร
-        line_index = {}
-        for user in users:
-            index = _find_user_line(acl_lines, user)
-            if index == -1:
-                raise RotationError(f"ไม่พบบรรทัดของ user {user} ใน {acl_path}")
-            line_index[user] = index
-
-        _require_writable(acl_path, "ไฟล์ users.acl")
-
-        acl_backup = _backup(acl_path)
-        for user, index in line_index.items():
-            acl_lines[index] = _rewrite_acl_line(acl_lines[index], new_password)
-        _write_atomic(acl_path, "\n".join(acl_lines) + "\n")
-
-        try:
-            client.execute_command("ACL", "LOAD")
-        except (redis.exceptions.RedisError, OSError) as e:
-            # LOAD ไม่ผ่าน = ของในหน่วยความจำไม่เปลี่ยนเลย คืนไฟล์อย่างเดียวก็จบ
-            _restore(acl_backup, acl_path)
-            raise RotationError(
-                f"Redis ไม่ยอมรับไฟล์ ACL ใหม่ ({e}) — คืนไฟล์เดิมให้แล้ว รหัสยังเป็นตัวเก่า"
-            ) from e
-
-        print(f"[{LOG_PREFIX}] ACL LOAD แล้ว — รหัสของ {', '.join(users)} เปลี่ยนใน Redis เรียบร้อย")
-
-        # ตรวจว่าล็อกอินได้จริงทั้งสองบัญชี — ใช้ PING เพราะ ACL ของ agent ไม่มีสิทธิ์เรียก ACL WHOAMI
-        for user in users:
-            try:
-                _connect(new_password, username=user).ping()
-            except (redis.exceptions.RedisError, OSError) as e:
-                _restore(acl_backup, acl_path)
-                rolled_back = _reload_acl(admin_password)
-                hint = (
-                    "ถอยกลับเป็นรหัสเดิมให้แล้ว"
-                    if rolled_back else
-                    f"คืนไฟล์ {acl_path} แล้วแต่ ACL LOAD ไม่ผ่าน — ต้อง sudo systemctl restart centralredis"
-                )
-                raise RotationError(f"เปลี่ยนแล้วล็อกอินเป็น {user} ด้วยรหัสใหม่ไม่ได้ ({e}) — {hint}") from e
-
-        return {
-            "users": users,
-            "acl_path": acl_path,
-            "acl_backup": acl_backup,
-        }
-
-    finally:
-        _LOCK.release()
-
-
-def restore_agent_acl(acl_path: str, acl_backup: str) -> bool:
-    # คืนไฟล์ ACL จากไฟล์สำรองแล้วสั่ง ACL LOAD — ใช้ตอนขั้นตอนหลัง apply_agent_password พัง
-    try:
-        _restore(acl_backup, acl_path)
-    except OSError as e:
-        print(f"[{LOG_PREFIX}] rollback: คืนไฟล์ {acl_path} ไม่สำเร็จ — {e}")
-        return False
-
-    return _reload_acl(REDIS_CONFIG.get("password") or "")

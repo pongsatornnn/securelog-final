@@ -5,23 +5,24 @@
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `agent_core.py` | ตัว agent: รับคำสั่ง block/unblock/sync จาก central + ส่ง metrics — path ทุกอย่าง relative อ่านค่าจาก `agent_info.txt` + `agent_config.json` ไม่ต้องแก้โค้ด |
-| `setup.sh` | สคริปต์ติดตั้ง/อัปเดต (idempotent รันซ้ำได้) — อ่านค่า site (IP central, รหัส Redis) จาก `site.conf` |
+| `setup.sh` | สคริปต์ติดตั้ง/อัปเดต — อ่าน IP และบัญชี Redis เฉพาะเครื่องจาก `site.conf` |
 | `site.conf.example` | แม่แบบค่า site — ขึ้น git ได้ (ไม่มีความลับจริง) |
 | `site.conf` | ค่า site จริง (มีรหัสผ่าน Redis) — **ไม่ขึ้น git** (`.gitignore`), copy จาก `site.conf.example` แล้วใส่ค่าจริง |
 | `filebeat.yml.template` | แม่แบบ config filebeat — setup.sh แทนค่าแล้วติดตั้งให้เอง |
 | `securelog-agent.service` | แม่แบบ systemd unit — setup.sh ติดตั้งให้เอง |
 | `requirements.txt` | dependency ของ agent (redis, psutil) ลงใน venv ของตัวเอง ไม่แตะ system python |
+| `filebeat-acl` | Filebeat 8.19.23 ที่รองรับ `AUTH username password`; แนบกับ ZIP พร้อม SHA-256 |
 
-## ตั้งค่าครั้งแรก (ทำที่เครื่อง central ครั้งเดียว ก่อนสร้าง agent package แรก)
+## เตรียม Central ก่อนสร้างแพ็กเกจ
 
-```bash
-cd for_Agent/package
-cp site.conf.example site.conf
-# แก้ CENTRAL_HOST / รหัส Redis ใน site.conf ให้ตรง site จริง
-```
+วาง binary ที่ build จาก Elastic Beats v8.19.23 ด้วย
+`for_Agent/build_filebeat_acl.py` ไว้ที่
+`for_Agent/build/filebeat-acl-8.19.23-amd64` บน Central (ใช้ Go 1.26.8)
+และตั้ง `AGENT_CENTRAL_HOST`/`AGENT_CENTRAL_REDIS_PORT` ใน `.env` ให้ตรงปลายทาง
 
-จากนั้น zip ที่โหลดจากหน้า Agents บน dashboard จะมี `site.conf` ติดไปด้วยอัตโนมัติทุกครั้ง (`create_agent_zip()`
-รวมทุกไฟล์ในโฟลเดอร์นี้เข้า zip) ไม่ต้องมาแก้ค่า site ต่อเครื่อง agent อีก
+เมื่อสร้าง Agent บน dashboard ระบบสร้าง Redis ACL user ตาม ID เช่น
+`Agent_001` → `agent_001` พร้อมรหัสสุ่มเฉพาะเครื่อง จากนั้นแนบ `site.conf`
+และ binary เข้า ZIP อัตโนมัติ ไม่ต้องใช้รหัสร่วมจากหน้า System Settings
 
 ## วิธีติดตั้งบนเครื่อง agent
 
@@ -33,8 +34,7 @@ zip ที่โหลดจากหน้า Agents บน dashboard (ลิ�
 sudo mkdir -p /opt/securelog-agent
 sudo unzip Agent_XXX.zip -d /opt/securelog-agent
 
-# 2. (เครื่องที่ยังไม่มี filebeat) ถ้ามีเน็ตออก setup.sh ลงให้เองผ่าน Elastic APT repo — ข้ามขั้นนี้ได้
-#    ถ้าเครื่องไม่มีเน็ต (air-gapped) ให้วาง filebeat-<version>-amd64.deb ไว้ในโฟลเดอร์แทน (โหลดจาก elastic.co มาเอง)
+# 2. เครื่องที่ยังไม่มี Filebeat ให้ติดตั้ง 8.19.23 ผ่าน APT หรือแนบ .deb รุ่นเดียวกัน
 
 # 3. รัน setup.sh (site.conf ติดมากับ zip แล้ว ไม่ต้องแก้อะไรเพิ่ม ปกติ)
 cd /opt/securelog-agent
@@ -82,7 +82,7 @@ sudo ./setup.sh
 ## อัปเดตโค้ด/ config ภายหลัง
 
 copy ไฟล์ใหม่ทับ (เช่น `agent_core.py`) แล้วรัน `sudo ./setup.sh` ซ้ำ — script จะ restart service ให้เอง
-(registry ของ filebeat จะไม่ถูกลบในรอบอัปเดต ตำแหน่งอ่าน log ไม่หาย)
+(registry ของ Filebeat จะไม่ถูกลบในรอบอัปเดต ตำแหน่งอ่าน log ไม่หาย)
 
 ## เช็คว่าทำงาน
 

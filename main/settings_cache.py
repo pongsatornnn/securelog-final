@@ -99,38 +99,6 @@ SETTING_DEFS: dict[str, dict] = {
         "pattern": r"[1-9][0-9]?|[1-5][0-9]{2}|600",
         "pattern_error": "ต้องเป็นตัวเลข 1-600 วินาที",
     },
-    # ── ค่าที่ฝังลงชุดติดตั้ง Agent (site.conf ใน zip) ──
-    "agent_redis_username": {
-        "group": "agent",
-        "label": "Redis Username ของ Client Server",
-        "hint": "ชื่อผู้ใช้ Redis ที่ Client Server ใช้ต่อเข้ามา",
-        "secret": False,
-        "env": "AGENT_REDIS_USERNAME",
-        "default": "agent_node",
-        # ล็อกไม่ให้แก้จากหน้าเว็บ — ต่างจากรหัสผ่านที่ระบบเขียน users.acl + ACL LOAD ให้เอง
-        "readonly": True,
-    },
-    "agent_redis_password": {
-        "group": "agent",
-        "label": "Redis Password ของ Client Server",
-        "hint": "รหัสผ่าน Redis ของ Client Server",
-        "secret": True,
-        "env": "AGENT_REDIS_PASSWORD",
-        "default": "",
-        # ต้องยืนยันรหัสเดิมก่อนเปลี่ยน (เฉพาะตอนที่มีค่าตั้งไว้แล้ว) — ค่านี้ถูกฝังลงชุดติดตั้ง
-        "confirm_current": True,
-        # ตรวจด้วยเงื่อนไขเดียวกับรหัสของ central (redis_password_rules) เพราะลงเอยที่
-        "password_rules": True,
-        # แก้ผ่าน popup แยก ไม่ใช่ช่องกรอกในแถวเหมือนคีย์อื่น — ต้องกรอกรหัสเดิม/ใหม่/ยืนยัน
-        "change_via_modal": True,
-        # ระบบเขียน users.acl ทั้งสองบรรทัดแล้วสั่ง ACL LOAD ให้เอง (redis_admin_password.
-        "apply_to_redis_acl": True,
-        # คำเตือนบรรทัดเดียวใน popup — โชว์ **ก่อน** กรอก ไม่ใช่หลังกดสำเร็จ เพราะชุดติดตั้งใหม่
-        "change_warning": (
-            "กดแล้ว agent เดิมส่ง log ไม่เข้า จนกว่าจะเอาชุดติดตั้งใหม่ไปลงครบทุกเครื่อง "
-            "· users.acl กับ ACL LOAD ระบบทำให้เอง"
-        ),
-    },
     # ── นโยบายยกระดับเมื่อ IP เดิมโดน block ซ้ำ (escalation) ──
     "escalation_multiplier": {
         "group": "escalation",
@@ -155,7 +123,6 @@ SETTING_DEFS: dict[str, dict] = {
 GROUP_LABELS = {
     "line": "LINE Messaging API",
     "gemini": "Google Gemini (AI สรุปเหตุการณ์)",
-    "agent": "ชุดติดตั้ง Client Server (site.conf ใน zip)",
     "escalation": "การยกระดับเมื่อโดนบล็อกซ้ำ",
 }
 
@@ -168,71 +135,8 @@ def keys_for_page(page: str) -> list[str]:
     return [k for k in SETTING_DEFS if setting_page(k) == page]
 
 
-# ค่ากลุ่ม agent เดิมอยู่ในไฟล์นี้บนเครื่อง central (คนตั้งเองตอน setup) — ไม่ได้อยู่ใน .env
-SITE_CONF_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "for_Agent", "package", "site.conf",
-)
-
-# ชื่อตัวแปรใน site.conf -> setting key ของเรา
-SITE_CONF_KEY_MAP = {
-    "REDIS_USERNAME": "agent_redis_username",
-    "REDIS_PASSWORD": "agent_redis_password",
-}
-
-
 def setting_cache_key(key: str) -> str:
     return f"{CACHE_KEY_PREFIX}{key}"
-
-
-def _parse_site_conf(path: str) -> dict[str, str]:
-    # อ่าน site.conf (รูปแบบ KEY="value" แบบ shell) — คืน dict ว่างถ้าไม่มีไฟล์/อ่านไม่ได้
-    values: dict[str, str] = {}
-
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-
-                name, _, raw = line.partition("=")
-                key = SITE_CONF_KEY_MAP.get(name.strip())
-                if key:
-                    values[key] = raw.strip().strip('"').strip("'")
-    except OSError:
-        pass
-
-    return values
-
-
-async def seed_agent_settings_from_site_conf() -> int:
-    # ยกค่าจาก for_Agent/package/site.conf มาเป็นค่าตั้งต้นของกลุ่ม agent — **เฉพาะคีย์ที่ยังไม่มีแถว**
-    from_file = _parse_site_conf(SITE_CONF_PATH)
-    if not from_file:
-        return 0
-
-    seeded = 0
-    async with AsyncSessionLocal() as db:
-        existing = {r.setting_key for r in await get_all_app_settings(db)}
-
-        for key, value in from_file.items():
-            if key in existing or not value:
-                continue
-            # ผ่าน encrypt เหมือนทางปกติ — REDIS_PASSWORD เป็น secret ถ้าเขียนตรงจะได้ plaintext
-            stored = encrypt(value) if SETTING_DEFS[key]["secret"] else value
-            await upsert_app_setting(db, key, stored)
-            # ลงประวัติเป็นของ "system" ด้วย ไม่งั้นค่าที่ระบบยกมาเองจะดูเหมือนไม่มีใครตั้ง
-            await log_app_setting_change(
-                db, key, "set", "system",
-                old_value=None, new_value=_for_audit(key, stored), source="startup",
-            )
-            seeded += 1
-
-    if seeded:
-        print(f"[{LOG_PREFIX}] ยกค่าจาก site.conf มาเป็นค่าตั้งต้น {seeded} รายการ")
-
-    return seeded
 
 
 def env_default(key: str) -> str:

@@ -7,7 +7,6 @@ ok()   { printf '  \033[1;32m[OK]\033[0m %s\n' "$*"; }
 warn() { printf '  \033[1;33m[!]\033[0m %s\n' "$*"; }
 SETUP_ERRORS=0
 ENV_WRITTEN=0
-SITE_CONF_WRITTEN=0
 err()  { SETUP_ERRORS=$((SETUP_ERRORS + 1)); printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
 # ข้อความแดงที่ "ไม่ใช่ error" (เป็นสิ่งที่ต้องไปทำต่อ) — ไม่ให้ไปนับรวมกับความล้มเหลวของสคริปต์
 red()  { printf '  \033[1;31m%s\033[0m\n' "$*"; }
@@ -148,7 +147,6 @@ preload_env DB_HOST          DB_HOST
 preload_env DB_PORT          DB_PORT
 preload_env REDIS_USER       REDIS_USER
 preload_env REDIS_PASS       REDIS_PASS           1
-preload_env AGENT_REDIS_PASS AGENT_REDIS_PASSWORD 1
 preload_env ROOT_PATH            ROOT_PATH
 AGENT_CENTRAL_CANDIDATES="${AGENT_CENTRAL_CANDIDATES:-}"
 preload_env AGENT_CENTRAL_CANDIDATES AGENT_CENTRAL_CANDIDATES
@@ -175,7 +173,6 @@ OLD_DB_PORT="$(env_get DB_PORT "$ENV_FILE")"
 OLD_DB_PASSWORD="$(env_get DB_PASSWORD "$ENV_FILE")"
 OLD_REDIS_USER="$(env_get REDIS_USER "$ENV_FILE")"
 OLD_REDIS_PASS="$(env_get REDIS_PASS "$ENV_FILE")"
-OLD_AGENT_PASS="$(env_get AGENT_REDIS_PASSWORD "$ENV_FILE")"
 INSTALLED_APP_USER=""   # เติมตอนขั้น 1 (ฟังก์ชัน installed_app_user ประกาศทีหลัง)
 
 # postgres อยู่ไหน: DB_HOST คือค่าที่แอปใช้ต่อ (ลง .env) · PG_HOST คือที่ที่สคริปต์ต่อไปสร้าง role/db
@@ -285,7 +282,7 @@ reask() {  # reask VAR
     unset "$var"
 }
 if [ "$RECONFIGURE" = "1" ]; then
-    for _v in DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD REDIS_USER REDIS_PASS AGENT_REDIS_PASS ROOT_PATH; do
+    for _v in DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD REDIS_USER REDIS_PASS ROOT_PATH; do
         reask "$_v"
     done
     warn "Setting everything up again - pressing Enter on a question keeps the value it has now"
@@ -660,7 +657,6 @@ printf '%s' "$REDIS_USER" | grep -qE '^[A-Za-z0-9_.-]{1,64}$' \
     || { err "REDIS_USER='$REDIS_USER' is not valid (A-Z a-z 0-9 _ - . only)"; exit 1; }
 
 ask_redis_secret REDIS_PASS       "account $REDIS_USER (central uses it for Redis)" "${ENV_DEFAULT[REDIS_PASS]:-}"
-ask_redis_secret AGENT_REDIS_PASS "agent accounts (agent_node + default)"           "${ENV_DEFAULT[AGENT_REDIS_PASS]:-}"
 
 APP_GROUP="${APP_GROUP:-$APP_USER}"
 
@@ -668,7 +664,6 @@ APP_GROUP="${APP_GROUP:-$APP_USER}"
 CHANGES=()
 DB_TARGET_CHANGED=0
 REDIS_ACL_CHANGED=0
-AGENT_PASS_CHANGED=0
 
 if [ "$ENV_EXISTED" = "1" ]; then
     # IP ถูกเตือนไปแล้วตอนตอบคำถาม แต่ต้องอยู่ในสรุปก่อนยืนยันด้วย — มันคือข้อที่กระทบหนักที่สุด
@@ -708,11 +703,6 @@ if [ "$ENV_EXISTED" = "1" ]; then
     if [ -n "$OLD_REDIS_PASS" ] && [ "$OLD_REDIS_PASS" != "$REDIS_PASS" ]; then
         REDIS_ACL_CHANGED=1
         CHANGES+=("Redis password of '$REDIS_USER' changes - users.acl is rewritten and centralredis restarted")
-    fi
-    if [ -n "$OLD_AGENT_PASS" ] && [ "$OLD_AGENT_PASS" != "$AGENT_REDIS_PASS" ]; then
-        REDIS_ACL_CHANGED=1
-        AGENT_PASS_CHANGED=1
-        CHANGES+=("Redis password of the agent accounts changes - EVERY agent already installed stops reporting")
     fi
 fi
 
@@ -1319,8 +1309,6 @@ if [ "$ENV_EXISTED" = "1" ]; then
         ENV_CHANGED="$ENV_CHANGED AGENT_CENTRAL_CANDIDATES"
     fi
     env_sync AGENT_CENTRAL_REDIS_PORT "$REDIS_PORT"
-    env_sync AGENT_REDIS_USERNAME     "agent_node"
-    env_sync AGENT_REDIS_PASSWORD     "$AGENT_REDIS_PASS"
 
     # อายุ session ของ dashboard: ค่า default เดิม 500 นาที (8 ชม.) -> 30 นาที
     # เปลี่ยนเฉพาะเครื่องที่ยังเป็นค่า default เดิม/ยังไม่มีคีย์ — ถ้าแอดมินตั้งค่าอื่นไว้เองจะไม่แตะ
@@ -1378,15 +1366,12 @@ GEMINI_API_KEY=
 
 # Values embedded into the agent installer
 # AGENT_CENTRAL_* are read straight from here (re-run this script to change them);
-# AGENT_REDIS_* are only the fallback - the System Settings page stores those in the database
 AGENT_CENTRAL_HOST=$BIND_HOST
 # Backup addresses of this central, e.g. "192.168.56.120 central.local" (space or comma separated).
 # They go into the cert SAN and into every agent package, so the agents can follow this server
 # to another IP on their own - see CENTRAL_MOVE.md
 AGENT_CENTRAL_CANDIDATES=$AGENT_CENTRAL_CANDIDATES
 AGENT_CENTRAL_REDIS_PORT=$REDIS_PORT
-AGENT_REDIS_USERNAME=agent_node
-AGENT_REDIS_PASSWORD=$AGENT_REDIS_PASS
 EOF
     chmod 600 "$PROJECT_DIR/.env"
     ENV_WRITTEN=2
@@ -1545,76 +1530,27 @@ log "redis/users.acl"
 ACL_FILE="$PROJECT_DIR/redis/users.acl"
 mkdir -p "$PROJECT_DIR/redis"
 
-# รหัสของ "บัญชี agent" ที่จะเขียนลงไฟล์ — ไม่ใช่ค่าจาก .env เสมอไป
-acl_pass_of() {  # acl_pass_of USER FILE — รหัส (token ที่ขึ้นต้นด้วย >) ของ user นั้นในไฟล์ ACL
-    [ -f "$2" ] || return 0
-    awk -v u="$1" '
-        $1 == "user" && $2 == u {
-            for (i = 3; i <= NF; i++) if (substr($i, 1, 1) == ">") { print substr($i, 2); exit }
-        }' "$2" 2>/dev/null || true
-}
-
-# สิทธิ์ของบัญชี agent — เก็บไว้ที่เดียว ใช้ทั้งตอนเขียนไฟล์และตอนตรวจว่าไฟล์เดิมล้าสมัย
-#   ราก: ส่ง log (+lpush ~raw_logs_queue) · ฟังคำสั่ง (+subscribe ช่องคำสั่ง) · ping — ไม่มี +publish
-#   selector: เปิด +publish เฉพาะช่อง agent_metrics ที่ agent ต้องรายงานสถานะจริง ๆ
-# เหตุผล: ช่อง global_commands / agent_commands:* คือช่องที่ central ใช้สั่งงาน agent ทุกตัว
-# ถ้า agent publish ลงช่องนั้นได้ ใครยึดเครื่อง agent ได้เครื่องเดียว (รหัสเป็นรหัสร่วมทุกเครื่อง)
-# ก็สั่ง block_ip / unblock_ip / sync_blacklist ทั้งฟลีตได้เหมือน central
-ACL_AGENT_PERMS="-@all +ping +lpush +subscribe ~raw_logs_queue resetchannels &global_commands &agent_commands:* (+publish &agent_metrics)"
-
-acl_perms_of() {  # acl_perms_of USER FILE — เอาเฉพาะส่วนสิทธิ์ (ตัด user/ชื่อ/on/รหัส ทิ้ง)
-    [ -f "$2" ] || return 0
-    awk -v u="$1" '
-        $1 == "user" && $2 == u {
-            out = ""
-            for (i = 5; i <= NF; i++) out = out (out == "" ? "" : " ") $i
-            print out; exit
-        }' "$2" 2>/dev/null || true
-}
-
-# หาให้ได้ก่อนว่า "รหัส agent ตัวจริง" รอบนี้คือตัวไหน — ทั้ง users.acl (ขั้นนี้) และ site.conf
-ACL_AGENT_PASS="$AGENT_REDIS_PASS"
-if [ "$AGENT_PASS_CHANGED" != "1" ] && [ "${FORCE_ACL:-0}" != "1" ]; then
-    LIVE_AGENT_PASS="$(acl_pass_of agent_node "$ACL_FILE")"
-    # valid_redis_pass กัน placeholder `>123` ที่ยังไม่เคยตั้งจริงไม่ให้ถูกยึดว่าเป็นของจริง
-    if [ -n "$LIVE_AGENT_PASS" ] && [ "$LIVE_AGENT_PASS" != "$AGENT_REDIS_PASS" ] \
-       && valid_redis_pass "$LIVE_AGENT_PASS"; then
-        ACL_AGENT_PASS="$LIVE_AGENT_PASS"
-        warn "users.acl holds a different agent password than .env - keeping the one in users.acl"
-        warn "  (that is the one the agents actually use; it was most likely changed from the web UI)"
-        warn "  To push .env's value in instead: sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
-    fi
-fi
-
-# ไฟล์เดิมถือสิทธิ์รุ่นเก่าอยู่ (เช่น agent ยัง publish ลงช่องคำสั่งได้) = ต้องเขียนใหม่ให้ตรงนโยบาย
-if [ -f "$ACL_FILE" ] && [ "$(acl_perms_of agent_node "$ACL_FILE")" != "$ACL_AGENT_PERMS" ]; then
-    REDIS_ACL_CHANGED=1
-    warn "users.acl: agent_node carries an older permission set - rewriting it (the passwords are kept)"
-fi
-
-# เขียนใหม่เมื่อ: ยังไม่มีไฟล์ / ยังเป็นรหัส placeholder / สั่ง FORCE_ACL=1 /
+# Write the Central account and preserve every per-Agent account. Redis's built-in
+# default user cannot be deleted, so keep it disabled with no password or rights.
+DEFAULT_ACL_LINE='user default off resetpass -@all resetkeys resetchannels'
 ACL_WRITTEN=0
 if [ ! -f "$ACL_FILE" ] || grep -q '>123 ' "$ACL_FILE" || [ "${FORCE_ACL:-0}" = "1" ] \
-   || [ "$REDIS_ACL_CHANGED" = "1" ]; then
-    # รหัสที่ไฟล์เดิมถืออยู่ = รหัสที่ agent ข้างนอกใช้จริง ณ ตอนนี้ — ต่างจากที่กำลังจะเขียนเมื่อไหร่
-    PREV_ACL_AGENT_PASS="$(acl_pass_of agent_node "$ACL_FILE")"
-    if [ -n "$PREV_ACL_AGENT_PASS" ] && [ "$PREV_ACL_AGENT_PASS" != "$ACL_AGENT_PASS" ]; then
-        AGENT_PASS_CHANGED=1
-    fi
-
+   || [ "$REDIS_ACL_CHANGED" = "1" ] || grep -Eq '^user agent_node ' "$ACL_FILE" \
+   || [ "$(awk '$1 == "user" && $2 == "default" { print }' "$ACL_FILE")" != "$DEFAULT_ACL_LINE" ]; then
     [ -f "$ACL_FILE" ] && cp -p "$ACL_FILE" "$ACL_FILE.bak.$(date +%Y%m%d%H%M%S)"
+    # Keep per-Agent users issued by the package builder.
+    AGENT_ACL_LINES="$(awk '$1 == "user" && $2 ~ /^agent_[0-9]+$/ { print }' "$ACL_FILE" 2>/dev/null || true)"
     cat > "$ACL_FILE" <<EOF
 user $REDIS_USER on >$REDIS_PASS +@all ~* &*
-user agent_node on >$ACL_AGENT_PASS $ACL_AGENT_PERMS
-user default on >$ACL_AGENT_PASS -@all +ping +info +select +rpush +lpush ~raw_logs_queue resetchannels
+$DEFAULT_ACL_LINE
 EOF
+    [ -z "$AGENT_ACL_LINES" ] || printf '%s\n' "$AGENT_ACL_LINES" >> "$ACL_FILE"
     chmod 600 "$ACL_FILE"
     ACL_WRITTEN=1
-    ok "Wrote users.acl (3 accounts: $REDIS_USER / agent_node / default)"
+    ok "Wrote users.acl (Central and per-Agent accounts only)"
 else
     warn "users.acl already holds real passwords - left untouched (force a rewrite with FORCE_ACL=1)"
 
-    # ไฟล์นี้ไม่ถูกเขียนทับโดยตั้งใจ (หน้าเว็บเปลี่ยนรหัส agent ได้ และเขียนลงไฟล์นี้อย่างเดียว
     if ! awk -v u="$REDIS_USER" -v p=">$REDIS_PASS" '
             $1 == "user" && $2 == u { for (i = 3; i <= NF; i++) if ($i == p) { found = 1 } }
             END { exit !found }
@@ -1622,37 +1558,6 @@ else
         warn "users.acl has no matching password for user '$REDIS_USER' - central will not be able to log in to Redis"
         warn "  Change it from the web UI (System Settings), or rewrite the file: sudo FORCE_ACL=1 $PROJECT_DIR/setup-server.sh"
     fi
-fi
-
-# ---------------------------------------------------------------------------
-log "Agent installer settings (site.conf)"
-SITE_CONF="$PROJECT_DIR/for_Agent/package/site.conf"
-
-# ของเดิมเขียนแค่ตอนยังไม่มีไฟล์ — ย้าย IP แล้วไฟล์นี้จึงค้าง IP เก่าไว้เงียบ ๆ
-SITE_HOST="$(env_get CENTRAL_HOST "$SITE_CONF")"
-SITE_PORT="$(env_get CENTRAL_REDIS_PORT "$SITE_CONF")"
-SITE_PASS="$(env_get REDIS_PASSWORD "$SITE_CONF")"
-
-# เทียบกับ ACL_AGENT_PASS (รหัสตัวจริงที่ users.acl ถืออยู่) ไม่ใช่ค่าจาก .env ที่อาจค้างของเก่า
-if [ ! -f "$SITE_CONF" ] || [ "${FORCE_SITE_CONF:-0}" = "1" ] \
-   || [ "$SITE_HOST" != "$BIND_HOST" ] || [ "$SITE_PORT" != "$REDIS_PORT" ] \
-   || [ "$SITE_PASS" != "$ACL_AGENT_PASS" ]; then
-    [ -f "$SITE_CONF" ] && cp -p "$SITE_CONF" "$SITE_CONF.bak.$(date +%Y%m%d%H%M%S)"
-    cat > "$SITE_CONF" <<EOF
-CENTRAL_HOST="$BIND_HOST"
-CENTRAL_REDIS_PORT="$REDIS_PORT"
-REDIS_USERNAME="agent_node"
-REDIS_PASSWORD="$ACL_AGENT_PASS"
-EOF
-    chmod 600 "$SITE_CONF"
-    if [ -n "$SITE_HOST" ] && [ "$SITE_HOST:$SITE_PORT" != "$BIND_HOST:$REDIS_PORT" ]; then
-        SITE_CONF_WRITTEN=1
-        ok "Rewrote site.conf (agents now dial $BIND_HOST:$REDIS_PORT, was $SITE_HOST:$SITE_PORT)"
-    else
-        ok "Wrote site.conf - agent zips embed these values automatically"
-    fi
-else
-    ok "site.conf already matches this run - left untouched"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1877,46 +1782,6 @@ else
        "$PROJECT_DIR"/systemd/centralredis.service /etc/systemd/system/
     systemctl daemon-reload
     STARTED=0
-fi
-
-# ---------------------------------------------------------------------------
-# ★ รหัสฝั่ง agent มีอีกที่หนึ่งที่ต้องตรงกัน: แถว `agent_redis_password` ในตาราง app_settings
-#   ชุดติดตั้ง agent (zip) สร้าง site.conf จาก **ค่าในแถวนั้น** ไม่ใช่จาก .env/users.acl
-#   (manage_agent/create_agent_package.py) แถวนี้เกิดขึ้นเมื่อเคยเปลี่ยนรหัสจากหน้า System Settings
-#   เครื่องแบบนั้นถ้ามารีรหัสด้วยสคริปต์นี้แล้วไม่อัปเดตแถวตาม = ออกชุดติดตั้งใหม่กี่รอบ agent ก็
-#   ล็อกอินไม่ผ่าน เพราะ zip ฝังรหัสเก่าที่ Redis ไม่รับแล้ว (เจอตอนเทส 2026-09-17)
-#   รันเป็น $APP_USER เพราะขั้น chown ผ่านไปแล้ว — ไฟล์ที่ python แตะ (.settings_key/__pycache__)
-#   จะได้ไม่กลายเป็นของ root
-if [ "$STARTED" = "1" ] && [ -x "$PROJECT_DIR/venv/bin/python" ]; then
-    log "Agent password in the database (the value agent zips are built from)"
-
-    AGENT_SETTING_OUT="$(sudo -u "$APP_USER" env PYTHONDONTWRITEBYTECODE=1 \
-        "$PROJECT_DIR/venv/bin/python" -B - "$ACL_AGENT_PASS" <<PYSET 2>&1
-import asyncio, sys
-sys.path.insert(0, "$PROJECT_DIR/main")
-from settings_cache import get_setting_async, update_setting
-
-async def main():
-    current = await get_setting_async("agent_redis_password") or ""
-    if current == sys.argv[1]:
-        print("same")
-        return
-    await update_setting("agent_redis_password", sys.argv[1],
-                         actor="setup-server.sh", source="setup")
-    print("updated")
-
-asyncio.run(main())
-PYSET
-    )" || AGENT_SETTING_OUT="failed: $AGENT_SETTING_OUT"
-
-    case "$AGENT_SETTING_OUT" in
-        *same*)    ok "app_settings already holds this agent password - left untouched" ;;
-        *updated*) ok "Updated agent_redis_password in app_settings - new agent packages embed the password that Redis actually accepts" ;;
-        *)         warn "Could not sync agent_redis_password into app_settings:"
-                   printf '%s\n' "$AGENT_SETTING_OUT" | tail -3 | sed 's/^/      /'
-                   warn "  Agent packages built from the dashboard may carry the old password -"
-                   warn "  set it once from the web UI (System Settings) to bring the database back in line" ;;
-    esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -2274,7 +2139,6 @@ DASH_URL="https://$WEB_URL_HOST:8000$ROOT_PATH/"
 [ "$ACL_WRITTEN" = "1" ]  && DID+=("wrote redis/users.acl")
 [ "$ENV_WRITTEN" = "2" ]  && DID+=("created .env")
 [ "$ENV_WRITTEN" = "1" ]  && DID+=("updated .env:$ENV_CHANGED")
-[ "$SITE_CONF_WRITTEN" = "1" ] && DID+=("rewrote the agent installer's site.conf")
 [ -n "$REDIS_RESTART_REASON" ] && DID+=("restarted centralredis")
 [ "$AGENTS_ANNOUNCED" = "1" ]  && DID+=("told the agents where to find central")
 [ "$STARTED" -eq 1 ]      && DID+=("installed the systemd units and (re)started the stack")
@@ -2335,7 +2199,27 @@ if [ "$ENV_EXISTED" = "1" ] || { [ "$AGENT_COUNT_KNOWN" = "1" ] && [ "$EXISTING_
     AGENT_REASONS=()
     [ "$IP_CHANGED" = "1" ]   && [ "$AGENTS_ANNOUNCED" != "1" ] && AGENT_REASONS+=("the central address moved (they still dial $CURRENT_BIND_HOST)")
     [ "$PORT_CHANGED" = "1" ] && [ "$AGENTS_ANNOUNCED" != "1" ] && AGENT_REASONS+=("the Redis port moved (they still dial port $OLD_REDIS_PORT)")
-    [ "$AGENT_PASS_CHANGED" = "1" ] && AGENT_REASONS+=("the Redis password of the agent accounts changed")
+    MISSING_AGENT_ACL="$(PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$PROJECT_DIR/main" \
+        "$PROJECT_DIR/venv/bin/python" - "$ACL_FILE" <<'PYACL' 2>/dev/null
+import asyncio, re, sys
+from pathlib import Path
+from sqlalchemy import select
+from database.connection import AsyncSessionLocal
+from database.models import Agent
+
+accounts = {parts[1] for line in Path(sys.argv[1]).read_text().splitlines()
+            if (parts := line.split())[:1] == ["user"] and len(parts) >= 2}
+
+async def main():
+    async with AsyncSessionLocal() as db:
+        ids = (await db.execute(select(Agent.agent_id).where(Agent.is_active.is_(True)))).scalars()
+        return sum(1 for agent_id in ids if (match := re.fullmatch(r"Agent_([0-9]{3,})", agent_id))
+                   and f"agent_{match.group(1)}" not in accounts)
+
+print(asyncio.run(main()))
+PYACL
+    )" || MISSING_AGENT_ACL=0
+    [ "${MISSING_AGENT_ACL:-0}" -gt 0 ] && AGENT_REASONS+=("$MISSING_AGENT_ACL registered Agents have no per-Agent Redis account; regenerate their packages")
     [ "$CA_CREATED" = "1" ] && AGENT_REASONS+=("a new Root CA was issued - their certificates are signed by the old one")
 
     # ★ เปลี่ยนฐาน = ทะเบียน agent อยู่ในฐานเก่า ฐานใหม่ไม่รู้จักใครเลย ต่อให้รหัส Redis/ที่อยู่
