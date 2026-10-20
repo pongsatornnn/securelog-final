@@ -16,8 +16,15 @@ FUNCTIONS = {
 
 def load_firewall_functions():
     source = ast.parse(AGENT_SOURCE.read_text(encoding="utf-8"))
-    functions = [node for node in source.body if isinstance(node, ast.FunctionDef) and node.name in FUNCTIONS]
-    module = ast.fix_missing_locations(ast.Module(body=functions, type_ignores=[]))
+    definitions = [
+        node for node in source.body
+        if (isinstance(node, ast.FunctionDef) and node.name in FUNCTIONS)
+        or (isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "ATTACK_COMMENT_LABELS"
+            for target in node.targets
+        ))
+    ]
+    module = ast.fix_missing_locations(ast.Module(body=definitions, type_ignores=[]))
     namespace = {
         "subprocess": subprocess,
         "UFW_COMMENT": "central_blacklist",
@@ -50,8 +57,25 @@ class AgentUfwCommentsTests(unittest.TestCase):
         subprocess.run = self.old_run
 
     def test_new_rule_has_attack_type(self):
-        self.assertTrue(self.agent["block_ip"]("198.51.100.5", "web_sql_injection"))
-        self.assertEqual(self.commands[-1][-2:], ["comment", "central_blacklist: web_sql_injection"])
+        self.assertTrue(self.agent["block_ip"]("198.51.100.5", "sql_injection"))
+        self.assertEqual(self.commands[-1][-2:], ["comment", "central_blacklist: SQL Injection"])
+
+    def test_each_attack_type_has_its_own_label(self):
+        expected = {
+            "ssh_brute_force": "SSH Brute Force",
+            "sudo_failed": "Sudo Authentication Failure",
+            "sql_injection": "SQL Injection",
+            "xss": "Cross-Site Scripting (XSS)",
+            "path_traversal": "Path Traversal",
+            "command_injection": "Command Injection",
+            "http_flood": "HTTP Flood",
+            "firewall_deny_rate": "Firewall Deny Flood",
+            "port_scan": "Port Scan",
+            "manual_blacklist": "Manual Blacklist",
+        }
+        for event, label in expected.items():
+            with self.subTest(event=event):
+                self.assertEqual(self.agent["ufw_block_comment"](event), f"central_blacklist: {label}")
 
     def test_existing_foreign_rule_is_never_changed_even_if_state_says_managed(self):
         self.agent["load_managed_ips"] = lambda: {"198.51.100.5"}
@@ -79,7 +103,7 @@ class AgentUfwCommentsTests(unittest.TestCase):
         self.assertEqual(self.commands[-1], ["sudo", "ufw", "delete", "deny", "from", "198.51.100.5", "to", "any"])
 
     def test_untrusted_event_cannot_change_comment_format(self):
-        self.assertEqual(self.agent["ufw_block_comment"]("web_xss\nextra"), "central_blacklist: unspecified")
+        self.assertEqual(self.agent["ufw_block_comment"]("web_xss\nextra"), "central_blacklist: Unspecified")
 
     def test_mixed_owned_and_foreign_rules_do_not_trigger_delete(self):
         self.status += "Anywhere  DENY IN  198.51.100.5  # central_blacklist: web_xss\n"

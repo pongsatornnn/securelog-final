@@ -106,13 +106,32 @@ MANAGED_WHITELIST_FILE = f"{MANAGED_DIR}/central_whitelist.json"
 SEEN_NONCE_FILE = f"{MANAGED_DIR}/seen_move_nonces.json"
 SEEN_NONCE_LIMIT = 200
 UFW_COMMENT = "central_blacklist"
+ATTACK_COMMENT_LABELS = {
+    "ssh_brute_force": "SSH Brute Force",
+    "sudo_failed": "Sudo Authentication Failure",
+    "sql_injection": "SQL Injection",
+    "web_sql_injection": "SQL Injection",
+    "xss": "Cross-Site Scripting (XSS)",
+    "web_xss": "Cross-Site Scripting (XSS)",
+    "path_traversal": "Path Traversal",
+    "web_path_traversal": "Path Traversal",
+    "command_injection": "Command Injection",
+    "web_command_injection": "Command Injection",
+    "http_flood": "HTTP Flood",
+    "web_http_flood": "HTTP Flood",
+    "firewall_deny_rate": "Firewall Deny Flood",
+    "port_scan": "Port Scan",
+    "firewall_port_scan": "Port Scan",
+    "manual_blacklist": "Manual Blacklist",
+}
 
 
 def ufw_block_comment(event) -> str:
     reason = str(event or "").strip()
     if not reason or len(reason) > 64 or not all(c.isascii() and (c.isalnum() or c in "_-") for c in reason):
         reason = "unspecified"
-    return f"{UFW_COMMENT}: {reason}"
+    label = ATTACK_COMMENT_LABELS.get(reason, reason.replace("_", " ").replace("-", " ").title())
+    return f"{UFW_COMMENT}: {label}"
 
 
 def is_our_ufw_comment(comment: str) -> bool:
