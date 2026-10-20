@@ -28,7 +28,8 @@ def detection_types(path: str) -> list[str]:
     )
     normalized = normalize_web({"message": message, "log_type": "apache_access"})
     return [kind for kind, _ in web_log_detect.detect_attack_types(
-        web_log_detect.build_haystack(normalized)
+        web_log_detect.build_haystack(normalized),
+        web_log_detect.build_haystack(normalized, mask_routine_sql=True),
     )]
 
 
@@ -52,9 +53,38 @@ class PhpMyAdminFalsePositiveTests(unittest.TestCase):
             with self.subTest(week=week):
                 self.assertNotIn("sql_injection", detection_types(phpmyadmin_path(week)))
 
+    def test_routine_table_statements_do_not_match_sqli(self):
+        statements = (
+            "SELECT week_no FROM `weekly_deadlines`",
+            "SELECT * FROM `weekly_deadlines` ORDER BY week_no DESC LIMIT 10",
+            "SELECT week_no FROM `weekly_deadlines` WHERE `week_no` = 'Week 9'",
+            "UPDATE `weekly_deadlines` SET `title` = 'Week 9' WHERE `week_no` = 'Week 9'",
+            "INSERT INTO `weekly_deadlines` (`week_no`, `title`) VALUES ('Week 14', 'New')",
+            "DELETE FROM `weekly_deadlines` WHERE `week_no` = 'Week 9'",
+        )
+        for sql_query in statements:
+            with self.subTest(sql_query=sql_query):
+                self.assertNotIn("sql_injection", detection_types(phpmyadmin_path(sql_query=sql_query)))
+
     def test_attack_inside_sql_query_is_still_detected(self):
-        path = phpmyadmin_path(sql_query="SELECT * FROM `weekly_deadlines` UNION SELECT password")
-        self.assertIn("sql_injection", detection_types(path))
+        for sql_query in (
+            "SELECT * FROM `weekly_deadlines` UNION SELECT password",
+            "UPDATE `weekly_deadlines` SET `title` = 'x' WHERE `week_no` = '9' OR 1=1",
+            "DELETE FROM `weekly_deadlines`; DROP TABLE `users`",
+        ):
+            with self.subTest(sql_query=sql_query):
+                self.assertIn("sql_injection", detection_types(phpmyadmin_path(sql_query=sql_query)))
+
+    def test_other_attack_types_still_scan_sql_query(self):
+        path = phpmyadmin_path(sql_query=(
+            "UPDATE `weekly_deadlines` SET `title` = 'alert(1)' WHERE `week_no` = 'Week 9'"
+        ))
+        self.assertIn("xss", detection_types(path))
+
+    def test_different_table_is_not_masked(self):
+        self.assertIn("sql_injection", detection_types(phpmyadmin_path(
+            sql_query="SELECT * FROM `users`",
+        )))
 
     def test_attack_in_another_parameter_is_still_detected(self):
         path = phpmyadmin_path(extra="&filter=%2527%2BOR%2B1%253D1")
