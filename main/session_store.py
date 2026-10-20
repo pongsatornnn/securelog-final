@@ -1,10 +1,5 @@
-# session ฝั่ง server ของ dashboard — JWT ใน cookie ถือแค่ sub + jti แล้วต้องมีแถวใน auth_sessions ที่
-# ยังไม่ถูกตัดและยังไม่หมดอายุ ถึงจะผ่าน require_login
-#
-# - logout          -> end_session(jti)            ตัดเฉพาะ session นั้น (บัญชี View ใช้ร่วมกันหลายจอ จึงห้ามตัดทั้งบัญชี)
-# - เปลี่ยน/reset รหัส -> end_user_sessions(user_id)  ตัดทุก session ของบัญชีนั้น (session ที่อาจถูกขโมยไปตายตาม)
-# - ปิดใช้งาน/ลบบัญชี -> require_login เช็ค is_active อยู่แล้ว · ลบบัญชี = แถวหายตาม (ON DELETE CASCADE)
-# อายุ session = JWT_EXPIRE_MIN (ค่าเริ่มต้น 30 นาที)
+
+
 
 import secrets
 from datetime import datetime, timedelta
@@ -17,11 +12,11 @@ from database.models import AuthSession
 
 
 async def start_session(db: AsyncSession, user) -> str:
-    # สร้าง session ใหม่ แล้วคืน JWT ที่ผูกกับมัน — ใช้แทน create_access_token ทุกจุดที่ login
+
     now = datetime.now()
     jti = secrets.token_urlsafe(24)
 
-    # เก็บกวาดแถวที่หมดอายุแล้ว (ทำตอน login ซึ่งเกิดไม่ถี่ — ตารางจึงไม่โตเรื่อย ๆ)
+
     await db.execute(delete(AuthSession).where(AuthSession.expires_at < now))
     db.add(AuthSession(
         jti=jti,

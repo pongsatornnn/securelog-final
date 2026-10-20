@@ -1,6 +1,6 @@
-// ย้ายมาจาก templates/dashboard.html (บล็อก <script> เดิม)
-// ชุดสีของกราฟ — ต้องตรงกับ --vis-0..6 ใน app.css (ส่วนโค้งของโดนัทกับจุดสีใน legend
-// ใช้สีคนละตัวต่อรายการ จึงต้องผูกค่าสีที่ตัว element ไม่ใช่ผ่าน class)
+
+
+
 const VIS_COLORS = [
   '#6092c0', '#d36086', '#9170b8', '#ca8eae', '#d6bf57', '#b9a888', '#da8b45',
 ]
@@ -13,15 +13,13 @@ function dashboardApp() {
     agents         : [],
     severityCounts : { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 },
 
-    // ตัวเลขสรุปนับจากทั้งตารางฝั่ง server (/api/alerts_stats) — ห้ามนับจาก alerts
-    // เพราะ alerts มีแค่ไม่กี่แถวล่าสุดสำหรับตาราง (เดิมนับจาก 200 แถว ยอดเลยค้างที่ 200)
+
     totalAlerts : 0,
     todayAlerts : 0,
     dailyStats  : [],
     attackTypes : [],
 
-    // หน้านี้ refresh เองทุก 15 วิ — แยก "โหลดครั้งแรกอยู่" ออกจาก "รอบล่าสุดพลาด"
-    // เพราะสองอย่างนี้ต้องแสดงคนละแบบ (กล่องกำลังโหลด vs แถบเตือนว่าข้อมูลไม่สด)
+
     loading   : true,
     loadError : '',
 
@@ -33,10 +31,9 @@ function dashboardApp() {
       return this.agents.filter(a => a.status === 'online').length
     },
 
-    // ─── กราฟแท่ง: จำนวน alert ต่อวัน ย้อนหลัง 7 วัน ───
 
     get dailyCounts() {
-      // server นับแยกวันตามเวลาไทยมาให้แล้ว (key = YYYY-MM-DD) เหลือแค่ทำป้ายวันที่
+
       return this.dailyStats.map(day => ({
         key   : day.date,
         label : new Date(day.date + 'T00:00:00+07:00')
@@ -45,18 +42,17 @@ function dashboardApp() {
       }))
     },
 
-    // อย่างน้อย 1 กันหารด้วยศูนย์ตอนไม่มี alert เลยในช่วง 7 วัน
+
     get dailyMax() {
       return Math.max(1, ...this.dailyCounts.map(b => b.count))
     },
 
-    // ─── โดนัท: สัดส่วนประเภทการโจมตี ───
 
     get attackTypeStats() {
-      // server เรียงจากมากไปน้อยมาให้แล้ว
+
       const sorted = this.attackTypes
 
-      // เกิน 7 ก้อนเริ่มอ่านไม่ออก (สีเริ่มซ้ำ + legend ยาวเกินพาเนล) — ที่เหลือยุบรวมกัน
+
       const shown = sorted.slice(0, 6)
       const rest  = sorted.slice(6)
 
@@ -73,8 +69,7 @@ function dashboardApp() {
       return shown.map(([name, count], index) => {
         const pct = (count / total) * 100
 
-        // start = จุดเริ่มของส่วนโค้งนี้ (หน่วยเป็น % ของเส้นรอบวง) ใช้เป็น
-        // stroke-dashoffset ค่าลบ เพื่อเลื่อนส่วนโค้งไปต่อท้ายก้อนก่อนหน้า
+
         const segment = { name, count, pct, start, color: VIS_COLORS[index % VIS_COLORS.length] }
 
         start += pct
@@ -82,10 +77,7 @@ function dashboardApp() {
       })
     },
 
-    // ส่วนโค้งของโดนัทประกอบเป็นสตริงเอง (ดูเหตุผลที่ไม่ใช้ x-for ใน markup)
-    // ค่าที่ประกอบเข้าไปมีแค่ตัวเลขที่คำนวณเองกับสีจาก VIS_COLORS — ไม่มีข้อความจาก
-    // ฐานข้อมูลปนเข้ามา จึงไม่มีช่องให้ยัด markup แปลกปลอม (ชื่อประเภทอยู่ใน legend
-    // ที่เป็น HTML ปกติและผูกด้วย x-text อยู่แล้ว)
+
     get donutMarkup() {
       const arcs = this.attackTypeStats.map(seg =>
         '<circle class="donut-seg" cx="21" cy="21" r="15.9155"' +
@@ -102,7 +94,7 @@ function dashboardApp() {
         this.loadAlerts(), this.loadStats(), this.loadAgents(),
       ])
 
-      // ส่วนไหนพลาดก็บอกเฉพาะส่วนนั้น ไม่ทิ้งทั้งหน้า (alert กับ agent คนละ endpoint)
+
       const failed = results
         .filter(r => r.status === 'rejected')
         .map(r => r.reason && r.reason.message)
@@ -114,7 +106,7 @@ function dashboardApp() {
 
     async loadAlerts() {
       try {
-        // ตารางล่างสุดโชว์แค่ 5 แถวล่าสุด — ตัวเลขสรุปไปเอาจาก loadStats()
+
         const res = await fetch(window.APP_BASE + '/api/alerts?per_page=5')
 
         if (!res.ok) {

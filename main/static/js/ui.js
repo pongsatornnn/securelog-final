@@ -1,4 +1,4 @@
-// UI กลางที่ทุกหน้าใช้ร่วมกัน — 3 เรื่องที่เดิมเป็นกล่องของเบราว์เซอร์หรือไม่มีเลย:
+
 (function () {
   var NOTIFY_TTL_MS = 5000
   var NOTIFY_TTL_ERROR_MS = 8000
@@ -6,11 +6,10 @@
 
   var noticeSeq = 0
 
-  // ─────────────────────────────────────────────────────────────
 
   document.addEventListener('alpine:init', function () {
     Alpine.store('ui', {
-      // กล่องยืนยันมีได้ทีละใบ (ทุกหน้าใช้ markup ชุดเดียวใน base.html) — ถ้ามีการเรียกซ้อน
+
       dialog: {
         open: false,
         title: '',
@@ -27,13 +26,11 @@
       _resolve: null,
       _timers: {},
 
-      // ─── กล่องยืนยัน ───
 
-      // ใช้แทน confirm(): `if (!await $store.ui.confirm({...})) return`
       confirm(options) {
         var opts = options || {}
 
-        // เรียกซ้อนตอนใบเก่ายังเปิดอยู่: ปิดใบเก่าแบบ "ไม่ยืนยัน" ไม่ทิ้ง Promise ค้าง
+
         this._settle(false)
 
         this.dialog.title       = opts.title || 'ยืนยันการทำรายการ'
@@ -67,9 +64,7 @@
         if (resolve) resolve(answer)
       },
 
-      // ─── แถบแจ้งผล ───
 
-      // ใช้แทน alert(): $store.ui.notify('ลบไม่สำเร็จ', 'error')
       notify(message, kind) {
         if (!message) return
 
@@ -107,7 +102,7 @@
         delete this._timers[id]
       },
 
-      // ชี้เมาส์ค้าง = ยังไม่ให้หาย (เหมือน toast ของ alert)
+
       hold(id) {
         this._clearTimer(id)
       },
@@ -125,7 +120,6 @@
     })
   })
 
-  // ─────────────────────────────────────────────────────────────
 
   var FOCUSABLE = [
     'a[href]', 'button:not([disabled])', 'input:not([disabled])',
@@ -159,14 +153,14 @@
     panel.setAttribute('role', 'dialog')
     panel.setAttribute('aria-modal', 'true')
 
-    // ผูกหัวข้อ modal เข้ากับกล่องเพื่อให้ screen reader อ่านชื่อ modal ตอนเปิด
+
     var title = panel.querySelector('.modal-title')
     if (title) {
       if (!title.id) title.id = 'modal-title-' + (++noticeSeq)
       panel.setAttribute('aria-labelledby', title.id)
     }
 
-    // โฟกัสตัวแรกที่กดได้ในกล่อง — ถ้าไม่มีเลย โฟกัสตัวกล่องเองไว้ก่อน (กันโฟกัสค้าง
+
     var targets = focusableIn(panel)
 
     if (targets.length) {
@@ -181,7 +175,7 @@
     var index = openBackdrops.indexOf(backdrop)
     if (index !== -1) openBackdrops.splice(index, 1)
 
-    // คืนโฟกัสให้ปุ่มที่กดเปิด modal เฉพาะตอนปิดใบสุดท้ายจริง ๆ
+
     if (openBackdrops.length === 0 && lastFocused && document.contains(lastFocused)) {
       lastFocused.focus()
       lastFocused = null
@@ -208,7 +202,7 @@
     var backdrop = topBackdrop()
     if (!backdrop) return
 
-    // Escape: หน้าที่เขียน @keydown.escape.window ไว้เองแล้วปล่อยให้ Alpine จัดการต่อ
+
     if (event.key === 'Escape') {
       if (!backdrop.hasAttribute('@keydown.escape.window')) backdrop.click()
       return
@@ -225,7 +219,7 @@
     var first = targets[0]
     var last  = targets[targets.length - 1]
 
-    // วนกลับหัวท้ายแทนที่จะหลุดออกไปข้างหลัง backdrop
+
     if (event.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
       event.preventDefault()
       last.focus()
@@ -235,7 +229,6 @@
     }
   })
 
-  // ─────────────────────────────────────────────────────────────
 
   var labelSeq = 0
 
@@ -246,7 +239,7 @@
       var field = label.parentElement && label.parentElement.querySelector('.form-input')
       if (!field) return
 
-      // ช่องเดียวกันอาจถูกจับคู่ไปแล้วจากรอบก่อน (MutationObserver เรียกซ้ำได้)
+
       if (field.id && document.querySelector('label[for="' + field.id + '"]')) return
 
       if (!field.id) field.id = 'field-' + (++labelSeq)
@@ -258,7 +251,7 @@
     sync()
     linkFormLabels()
 
-    // x-show เปลี่ยนแค่ inline style ไม่ได้เพิ่ม/ลบ node — ดู attribute อย่างเดียวพอ
+
     new MutationObserver(function () {
       sync()
       linkFormLabels()

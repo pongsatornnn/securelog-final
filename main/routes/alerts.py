@@ -1,4 +1,4 @@
-# เส้นทาง Security Alert สำหรับ dashboard: list ล่าสุด, ดูรายละเอียด, SSE stream
+
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -48,13 +48,13 @@ from schemas.alert_read_schema import UpdateAlertReadStateRequest
 
 router = APIRouter()
 
-# จำนวนแถวต่อหน้าเริ่มต้น + เพดานที่ยอมให้ขอได้ (กันยิง ?per_page=100000 แล้วลากทั้งตาราง
+
 DEFAULT_PER_PAGE = 50
 MAX_PER_PAGE = 200
 
 
 def parse_filter_time(value: str | None, field: str) -> datetime | None:
-    # แปลงเวลาที่ browser ส่งมาเป็น datetime แบบ naive-UTC ให้ตรงกับที่ DB เก็บ
+
     if not value:
         return None
 
@@ -70,7 +70,7 @@ def parse_filter_time(value: str | None, field: str) -> datetime | None:
 
 
 async def detection_types_by_severity(db: AsyncSession, severity: str) -> list[str]:
-    # detection_type ทั้งหมดที่ระดับความรุนแรงตรงกับที่เลือก
+
     facets = await get_alert_filter_facets(db)
 
     matched = []
@@ -93,11 +93,11 @@ async def api_get_alerts(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # หนึ่งหน้าของตาราง Alerts พร้อมจำนวนรวม — คืนเป็น object ไม่ใช่ list เปล่า
+
     if severity and severity not in VALID_SEVERITIES:
         raise HTTPException(status_code=400, detail=f"ไม่รู้จักระดับความรุนแรง: {severity}")
 
-    # ค่าที่ไม่สมเหตุสมผล (page=0, per_page=-5) บีบเข้าช่วงที่ใช้ได้แทนการโยน error —
+
     per_page = max(1, min(per_page, MAX_PER_PAGE))
     page = max(1, page)
 
@@ -105,7 +105,7 @@ async def api_get_alerts(
 
     if severity:
         matched = await detection_types_by_severity(db, severity)
-        # เลือกทั้งประเภทและความรุนแรงพร้อมกัน = ต้องเข้าทั้งสองเงื่อนไข
+
         detection_types = (
             [t for t in detection_types if t in matched]
             if detection_types is not None
@@ -122,7 +122,7 @@ async def api_get_alerts(
     total = await count_security_alerts(db, **filters)
     pages = max(1, -(-total // per_page))
 
-    # ขอหน้าที่เลยจากที่มีจริง (ข้อมูลเปลี่ยนไปแล้ว / แก้ URL เอง) -> คืนหน้าสุดท้ายที่มีจริง
+
     page = min(page, pages)
 
     security_alerts = await get_security_alerts(
@@ -153,7 +153,7 @@ async def api_get_alerts_filter_options(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # ตัวเลือกของ dropdown ตัวกรองหน้า Alerts (เครื่อง / ประเภทการโจมตี / ความรุนแรง)
+
     facets = await get_alert_filter_facets(db)
 
     agents = await get_agents_by_agent_ids(db, facets["agent_ids"])
@@ -162,7 +162,7 @@ async def api_get_alerts_filter_options(
     hosts = [
         {
             "agent_id": agent_id,
-            # ชื่อเครื่องอ่านง่ายกว่า agent_id แต่ agent ที่ถูกลบไปแล้วจะไม่มีแถวให้ดึงชื่อ
+
             "hostname": (
                 agents_map[agent_id].hostname
                 if agent_id in agents_map and agents_map[agent_id].hostname
@@ -193,8 +193,8 @@ async def api_get_alerts_unread_count(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # จำนวน alert ที่ใหม่กว่า id ที่ผู้ใช้เห็นล่าสุด — ใช้ทำ badge "ยังไม่ได้อ่าน" ที่เมนู Alerts
-    # บัญชี View = อ่านแล้วทั้งหมดเสมอ (ไม่มี badge) และไม่บันทึก "เห็นถึงตัวไหน" ลงตาราง users
+
+
     if user["role"] == "viewer":
         return {"count": 0, "last_seen_id": 0, "all_read": True}
 
@@ -209,7 +209,6 @@ async def api_get_alerts_unread_count(
     return {"count": count, "last_seen_id": last_seen_id}
 
 
-# dashboard นับวันตามเวลาไทย (ไม่มี DST เลยใช้ offset คงที่ได้)
 DASHBOARD_UTC_OFFSET_HOURS = 7
 DASHBOARD_DAYS = 7
 
@@ -219,8 +218,8 @@ async def api_get_alerts_stats(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # ตัวเลขสรุปของหน้า dashboard — นับจากทั้งตารางใน DB
-    # (เดิมหน้าเว็บนับเองจาก 200 แถวล่าสุด พอ alert เกิน 200 ตัวเลขเลยค้าง/เพี้ยน)
+
+
     severity_counts = {level: 0 for level in VALID_SEVERITIES}
     attack_types: dict[str, int] = {}
     total = 0
@@ -232,14 +231,14 @@ async def api_get_alerts_stats(
         if severity in severity_counts:
             severity_counts[severity] += count
 
-        # หลาย (detection_type, mode) อาจได้ป้ายเดียวกัน — รวมตามป้ายที่แสดง
+
         label = get_attack_type_label(detection_type, mode) or "ไม่ระบุ"
         attack_types[label] = attack_types.get(label, 0) + count
 
     offset = timedelta(hours=DASHBOARD_UTC_OFFSET_HOURS)
     today = (datetime.now(timezone.utc) + offset).date()
     first_day = today - timedelta(days=DASHBOARD_DAYS - 1)
-    # เที่ยงคืนเวลาไทยของวันแรก แปลงกลับเป็น naive-UTC ให้ตรงกับที่ DB เก็บ
+
     since = datetime.combine(first_day, datetime.min.time()) - offset
 
     per_day = await count_alerts_per_local_day(db, since, DASHBOARD_UTC_OFFSET_HOURS)
@@ -262,7 +261,7 @@ async def api_get_alerts_read_state(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # id ของ alert ที่บัญชีนี้กดดูรายละเอียดไปแล้ว — browser เอาไปวาดจุด "ยังไม่ได้อ่าน" หน้าแถว
+
     if user["role"] == "viewer":
         return {"opened_ids": [], "all_read": True}
 
@@ -275,7 +274,7 @@ async def api_update_alerts_read_state(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # บันทึกสถานะ "อ่านแล้ว" ของบัญชีที่กำลัง login — เครื่องอื่นที่ login อยู่จะเห็นตรงกันรอบถัดไป
+
     if payload.opened_ids:
         await mark_alerts_read(db, user["id"], payload.opened_ids)
 
@@ -306,7 +305,7 @@ async def api_get_alert_severity(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # ระดับความรุนแรง (LOW/MEDIUM/HIGH/CRITICAL) ต่อประเภทการโจมตี — seed default ครบก่อนคืนค่า
+
     for severity_key in DEFAULT_SEVERITY:
         detection_type, _, mode = severity_key.partition(":")
         await get_severity(detection_type, mode or None)
@@ -353,7 +352,7 @@ async def api_generate_alert_ai_summary(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # วิเคราะห์ log ของ alert นี้ด้วย AI — เรียกตอนผู้ใช้ที่ login แล้ว (admin หรือ user) กดปุ่มเท่านั้น
+
     alert = await get_security_alert_by_id(db, alert_id)
 
     if not alert:
@@ -367,16 +366,16 @@ async def api_generate_alert_ai_summary(
         }
 
     agent = await get_agent_by_agent_id(db, alert.agent_id) if alert.agent_id else None
-    # ต้องดึงมาก่อนโยนเข้า thread — severity_cache.get_severity เป็น async (ต้องมี event loop),
+
     severity = await get_severity(alert.detection_type, alert.mode)
 
-    # gemini_client ใช้ urllib (blocking) — ต้องโยนออก thread ไม่งั้น request อื่น
+
     await ensure_loaded()
 
     ok, result = await asyncio.to_thread(summarizer.summarize_alert, alert, agent, severity)
 
     if not ok:
-        # 502: ปลายทาง (Gemini) มีปัญหา ไม่ใช่ผู้ใช้ทำผิด — ข้อความไทยจาก gemini_client
+
         raise HTTPException(status_code=502, detail=result)
 
     await set_security_alert_ai_summary(db, alert, result)
@@ -388,8 +387,6 @@ async def api_generate_alert_ai_summary(
     }
 
 
-# ทุก ๆ กี่ heartbeat (ครั้งละ ~5 วิ) ถึงเช็คว่าบัญชียังเปิดใช้งานอยู่ — ปิดบัญชี (เช่นปิดบัญชี View)
-# แล้วสตรีมที่เปิดค้างอยู่จะถูกตัดภายใน ~1 นาที ไม่ต้องรอผู้ใช้รีโหลดหน้า
 STREAM_RECHECK_HEARTBEATS = 12
 
 
@@ -415,7 +412,7 @@ async def alert_event_stream(request: Request, username: str):
             if await request.is_disconnected():
                 break
 
-            # ⚠️ ลูปนี้จบเองไม่ได้ตอน server ปิด — `is_disconnected()` เป็น False อยู่ดี
+
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=5)
 
             if message is None:

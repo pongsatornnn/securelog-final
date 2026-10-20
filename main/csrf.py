@@ -1,4 +1,4 @@
-# CSRF protection แบบ signed double-submit cookie — ครอบ "ทุก" endpoint ที่เปลี่ยนข้อมูล
+
 
 import os
 import hmac
@@ -26,9 +26,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
 
-# path ที่ยกเว้น CSRF (ไม่ใช่ request จาก browser ของผู้ใช้ — verify ด้วยวิธีอื่น)
-# เทียบ "ทั้ง path" ไม่ใช่ prefix โดยตั้งใจ — ตั้งแต่ LINE_WEBHOOK_PATH ตั้งค่าได้จาก .env
-# การเทียบแบบ prefix กลายเป็นกับดัก: ตั้งเป็น /a แล้ว /agents /alerts /api/* หลุด CSRF ยกแผง
+
 EXEMPT_PATHS = frozenset({LINE_WEBHOOK_PATH})
 
 _signer = URLSafeTimedSerializer(CSRF_SECRET)
@@ -49,13 +47,13 @@ def verify_csrf(token: str) -> bool:
 
 
 def _is_exempt(path: str) -> bool:
-    # rstrip("/") กันเคสที่มี slash ปิดท้ายมา ("/line/webhook/") ให้ยังตรงกับค่าที่ตั้งไว้
+
     path = strip_base(path).rstrip("/") or "/"
     return path in EXEMPT_PATHS
 
 
 def _csrf_set_cookie_header(token: str, name: str, path: str) -> tuple[bytes, bytes]:
-    # สร้าง header ('set-cookie', ...) สำหรับ cookie csrf_token โดยยืม logic ของ Response.set_cookie
+
     tmp = Response()
     tmp.set_cookie(
         key=name,
@@ -81,14 +79,14 @@ class CSRFMiddleware:
         request = Request(scope)
         method = request.method.upper()
         path = request.url.path
-        # ชื่อ/path ของ cookie ขึ้นกับ prefix ของ request นี้ (โหมด relative prefix มาจาก proxy)
+
         cookie_key = cookie_name_for(request, CSRF_COOKIE_BASE)
         cookie_token = request.cookies.get(cookie_key, "")
 
-        # ---- ด่านตรวจ: request ที่เปลี่ยนข้อมูล ต้องมี CSRF token ที่ถูกต้อง ----
+
         if method not in SAFE_METHODS and not _is_exempt(path):
             header_token = request.headers.get(CSRF_HEADER_NAME, "")
-            # เทียบเป็น bytes ไม่ใช่ str — compare_digest โยน TypeError ถ้า str ฝั่งใดมีอักขระ
+
             valid = (
                 bool(cookie_token)
                 and bool(header_token)
@@ -106,7 +104,7 @@ class CSRFMiddleware:
                 await response(scope, receive, send)
                 return
 
-        # ---- ตั้ง cookie csrf_token ให้ใหม่ (บน request ปลอดภัย, self-heal, race-free) ----
+
         need_set_cookie = (
             method in SAFE_METHODS
             and not _is_exempt(path)

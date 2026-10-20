@@ -21,7 +21,7 @@ async def get_user_by_id(db: AsyncSession, user_id: int):
 
 
 async def get_all_users(db: AsyncSession):
-    # ไม่รวมบัญชี View (บัญชีเบื้องหลังของระบบ) — ไม่โผล่ในหน้า Manage Users และไม่นับเป็น "มี user แล้ว"
+
     result = await db.execute(
         select(User).where(User.role.is_distinct_from(VIEW_ROLE)).order_by(User.username)
     )
@@ -34,7 +34,7 @@ async def get_view_user(db: AsyncSession):
 
 
 async def create_view_user(db: AsyncSession, hashed_password: str):
-    # บัญชี View ปิดไว้ก่อนเสมอ — admin เป็นคนเลือกเปิดเอง
+
     user = User(
         username=VIEW_USERNAME,
         name=VIEW_DISPLAY_NAME,
@@ -55,8 +55,8 @@ async def create_user(
     hashed_password: str,
     must_change_password: bool = False,
 ):
-    # ระบบไม่มี role ให้เลือกแล้ว — ทุกบัญชีที่สร้างมีสิทธิ์เท่ากันหมด (คอลัมน์ role ยังอยู่ใน
-    # ตารางเดิม เลยเขียนค่า "admin" ลงไปตายตัวให้ข้อมูลเก่า/ใหม่เป็นแบบเดียวกัน)
+
+
     user = User(
         username=username,
         hashed_password=hashed_password,
@@ -100,8 +100,8 @@ async def set_user_active(db: AsyncSession, user: User, is_active: bool):
 
 
 async def get_first_user(db: AsyncSession):
-    # บัญชีแรกสุดของระบบ (id น้อยสุด) = admin เริ่มต้นที่ seed ตอน DB ว่าง — ห้ามลบ
-    # (ไม่นับบัญชี View — ต่อให้มี id น้อยกว่าก็ไม่ใช่ admin)
+
+
     result = await db.execute(
         select(User).where(User.role.is_distinct_from(VIEW_ROLE)).order_by(User.id.asc()).limit(1)
     )
@@ -136,7 +136,7 @@ async def update_agent(
     description: str | None = None,
     is_active: bool | None = None,
 ):
-    # แก้ข้อมูลทั่วไปของ agent
+
     agent.hostname = hostname
     agent.description = description
 
@@ -158,7 +158,7 @@ async def bind_agent_ip(
     ip_address: str,
     ip_interface: str | None = None,
 ) -> bool:
-    # ผูก IP เข้ากับ agent_id — **ครั้งเดียวตลอดอายุของ package ชุดนั้น**
+
     agent = await get_agent_by_agent_id(db, agent_id)
 
     if not agent or agent.ip_address:
@@ -177,7 +177,7 @@ async def bind_agent_ip(
 
 
 async def clear_agent_ip_binding(db: AsyncSession, agent: Agent) -> None:
-    # ปลด IP ที่ผูกไว้ ให้ผูกใหม่ได้อีกครั้งตอนติดตั้ง package ชุดใหม่
+
     agent.ip_address = None
     agent.ip_interface = None
     agent.pending_ip = None
@@ -189,7 +189,7 @@ async def record_agent_ip_mismatch(
     agent_id: str,
     reported_ip: str,
 ) -> bool:
-    # บันทึกว่า agent นี้พยายามส่งข้อมูลมาจาก IP ที่ไม่ตรงกับที่ผูกไว้
+
     agent = await get_agent_by_agent_id(db, agent_id)
 
     if not agent:
@@ -202,7 +202,7 @@ async def record_agent_ip_mismatch(
 
 
 async def count_alerts_by_agent(db: AsyncSession) -> dict[str, int]:
-    # จำนวน alert ต่อ agent (คำสั่งเดียวได้ครบทุกตัว) — หน้า Agents ใช้บอกล่วงหน้าว่า
+
     result = await db.execute(
         select(SecurityAlert.agent_id, func.count(SecurityAlert.id))
         .where(SecurityAlert.agent_id.isnot(None))
@@ -212,7 +212,7 @@ async def count_alerts_by_agent(db: AsyncSession) -> dict[str, int]:
 
 
 async def delete_agent_by_agent_id(db: AsyncSession, agent_id: str):
-    # ลบ agent + ของที่ผูกกับตัวมันเอง แล้วคืน (agent ที่ลบ, จำนวน alert ที่ถูกลบไปด้วย)
+
     agent = await get_agent_by_agent_id(db, agent_id)
     if not agent:
         return None, 0
@@ -221,7 +221,7 @@ async def delete_agent_by_agent_id(db: AsyncSession, agent_id: str):
         delete(SecurityAlert).where(SecurityAlert.agent_id == agent_id)
     )
 
-    # ตอนนี้ FK มี ON DELETE CASCADE แล้ว (ดู models.AgentDownload) บรรทัดนี้จึงซ้ำซ้อน
+
     await db.execute(delete(AgentDownload).where(AgentDownload.agent_id == agent_id))
     await db.delete(agent)
     await db.commit()
@@ -291,14 +291,14 @@ async def save_ip_blacklist(db: AsyncSession, ip_data: dict):
         expires_at=ip_data.get("expires_at"),
         block_count=ip_data.get("block_count", 1),
         is_active=True,
-        # ชื่อผู้ใช้ที่กดเพิ่ม หรือ detector:<ชนิด> เมื่อ detector สั่งบล็อกเอง
+
         created_by=ip_data.get("created_by"),
         created_by_user_id=ip_data.get("created_by_user_id"),
     )
 
     db.add(ip)
 
-    # ip_address มี unique index — สองคำขอที่เพิ่ม IP เดียวกันพร้อมกัน (แอดมินกดรัว / detector
+
     try:
         await db.commit()
     except IntegrityError:
@@ -316,7 +316,7 @@ async def get_ip_blacklist(db: AsyncSession):
     return ips.scalars().all()
 
 async def get_active_blacklist(db: AsyncSession):
-    # เฉพาะ IP ที่ยัง block อยู่จริง (is_active=True) — ใช้กับ agent sync + หน้า display
+
     ips = await db.execute(
         select(Ip_black_list)
         .where(Ip_black_list.is_active.is_(True))
@@ -325,7 +325,7 @@ async def get_active_blacklist(db: AsyncSession):
     return ips.scalars().all()
 
 async def get_expired_active_blacklist(db: AsyncSession, now):
-    # IP ที่ถึงกำหนดหมดอายุแล้วแต่ยัง active อยู่ (ให้ sweeper เอาไป unblock)
+
     ips = await db.execute(
         select(Ip_black_list).where(
             Ip_black_list.is_active.is_(True),
@@ -336,14 +336,14 @@ async def get_expired_active_blacklist(db: AsyncSession, now):
     return ips.scalars().all()
 
 async def deactivate_blacklist(db: AsyncSession, row):
-    # mark ว่าหมดอายุแล้ว (unblock agent แล้ว) แต่เก็บแถวไว้เพื่อ escalation/history
+
     row.is_active = False
     await db.commit()
     return row
 
 
 async def manual_unblock_blacklist(db: AsyncSession, row):
-    # แอดมินกดปลดบล็อกเอง — ต่างจากหมดอายุตามเวลา (deactivate_blacklist) ตรงที่
+
     row.is_active = False
     row.block_count = 0
     await db.commit()
@@ -353,7 +353,7 @@ async def manual_unblock_blacklist(db: AsyncSession, row):
 async def reactivate_blacklist(
     db: AsyncSession, row, *, event, expires_at, block_count, actor=None, actor_id=None
 ):
-    # IP ที่หมดอายุแล้วกลับมาโจมตีอีก — re-block + escalate (block_count เพิ่ม, ban นานขึ้น)
+
     row.is_active = True
     row.event = event
     row.expires_at = expires_at
@@ -371,11 +371,11 @@ async def reactivate_blacklist(
 async def upgrade_blacklist_severity(
     db: AsyncSession, row, *, event, expires_at, actor=None, actor_id=None
 ):
-    # IP ที่ยัง block อยู่ (active) โดนโจมตีชนิดที่ 'รุนแรงกว่า' (TTL ยาวกว่า/ถาวร)
+
     row.event = event
     row.expires_at = expires_at
 
-    # เหมือน reactivate: คนที่สั่งต่ออายุรอบนี้คือคนที่ควรขึ้นในช่อง "เพิ่มโดย"
+
     if actor:
         row.created_by = actor
         row.created_by_user_id = actor_id
@@ -386,7 +386,7 @@ async def upgrade_blacklist_severity(
 
 
 async def set_blacklist_actor(db: AsyncSession, row, actor: str, actor_id=None):
-    # อัปเดตเฉพาะ "ใครสั่งบล็อกรอบนี้" — ใช้ตอนแอดมินกดเพิ่ม IP ที่กำลังถูกบล็อกอยู่แล้ว
+
     row.created_by = actor
     row.created_by_user_id = actor_id
     await db.commit()
@@ -404,7 +404,7 @@ async def save_ip_whitelist(db: AsyncSession, ip_data: dict):
 
     db.add(ip)
 
-    # เหตุผลเดียวกับ save_ip_blacklist — ip_address ของ whitelist ก็มี unique index
+
     try:
         await db.commit()
     except IntegrityError:
@@ -429,7 +429,7 @@ async def get_blacklist_by_ip(db: AsyncSession, ip_address: str):
 
 
 async def get_whitelist_by_ip(db: AsyncSession, ip_address: str):
-    # เทียบตรงตัวอย่างเดียว — ไม่ครอบ subnet (ใช้ตอนอยากได้ "แถวนี้เป๊ะ ๆ")
+
     result = await db.execute(
         select(Ip_white_list).where(Ip_white_list.ip_address == ip_address)
     )
@@ -437,11 +437,8 @@ async def get_whitelist_by_ip(db: AsyncSession, ip_address: str):
 
 
 async def find_whitelist_covering(db: AsyncSession, value: str):
-    # หาแถว whitelist ที่ "ครอบ" ค่านี้ — ตรงตัว หรือเป็นวงที่กินค่านี้ทั้งก้อน
-    # ส่ง value เป็น IP เดี่ยวก็ได้ (ตอน detector ถาม) หรือเป็น subnet ก็ได้ (ตอนกันเพิ่มซ้ำ)
-    #
-    # สแกนใน python ไม่ใช่ SQL เพราะคอลัมน์เป็น VARCHAR ไม่ใช่ inet ของ postgres
-    # (whitelist มีไม่กี่สิบแถว และถูกเรียกเฉพาะตอน detector เจอการโจมตี ไม่ใช่ทุก log)
+
+
     if not value:
         return None
 
@@ -455,7 +452,7 @@ async def find_whitelist_covering(db: AsyncSession, value: str):
 
 
 async def get_active_blacklist_in_entry(db: AsyncSession, entry: str):
-    # แถวที่ยัง block อยู่จริงและ IP ตกอยู่ในรายการนี้ — subnet เดียวอาจชนหลาย IP พร้อมกัน
+
     rows = await get_active_blacklist(db)
     return [row for row in rows if entry_contains(entry, row.ip_address)]
 
@@ -468,7 +465,7 @@ async def get_ip_blacklist_by_id(db: AsyncSession, blacklist_id: int):
 
 
 async def delete_ip_blacklist_by_id(db: AsyncSession, blacklist_id: int):
-    # ลบแถวทิ้งจริง ๆ — **ไม่ได้ใช้ในเส้นทางปกติแล้ว** ปุ่ม Unblock ในหน้าเว็บ
+
     ip = await get_ip_blacklist_by_id(db, blacklist_id)
 
     if not ip:
@@ -478,7 +475,7 @@ async def delete_ip_blacklist_by_id(db: AsyncSession, blacklist_id: int):
     await db.commit()
     return ip
 
-# เวลาที่ใช้ทั้งเรียงลำดับและกรองช่วงวันของ alert = "เวลากิจกรรมล่าสุด" ของเหตุการณ์
+
 def alert_activity_at():
     return func.coalesce(SecurityAlert.updated_at, SecurityAlert.created_at)
 
@@ -490,7 +487,7 @@ def alert_filter_conditions(
     agent_id: str | None = None,
     detection_types: list[str] | None = None,
 ) -> list:
-    # เงื่อนไข WHERE ของตัวกรองหน้า Alerts — ใช้ร่วมกันระหว่าง query ที่ดึงแถวกับ query ที่นับ
+
     conditions = []
 
     if start is not None:
@@ -502,7 +499,7 @@ def alert_filter_conditions(
     if agent_id:
         conditions.append(SecurityAlert.agent_id == agent_id)
 
-    # None = ไม่กรองประเภท / list ว่าง = ไม่มีประเภทไหนเข้าเงื่อนไขเลย (เช่นกรองความรุนแรง
+
     if detection_types is not None:
         conditions.append(SecurityAlert.detection_type.in_(detection_types))
 
@@ -518,13 +515,13 @@ async def get_security_alerts(
     agent_id: str | None = None,
     detection_types: list[str] | None = None,
 ):
-    # หนึ่งหน้าของรายการ alert เรียงจากใหม่ไปเก่า — ตัวกรองทุกตัวเป็น optional
+
     activity_at = alert_activity_at()
 
     stmt = (
         select(SecurityAlert)
         .where(*alert_filter_conditions(activity_at, start, end, agent_id, detection_types))
-        # เรียงด้วยเวลาอย่างเดียวไม่พอ: alert ที่เวลาเท่ากันเป๊ะ (merge หลายตัวในวินาทีเดียว)
+
         .order_by(activity_at.desc(), SecurityAlert.id.desc())
         .limit(limit)
         .offset(offset)
@@ -541,7 +538,7 @@ async def count_security_alerts(
     agent_id: str | None = None,
     detection_types: list[str] | None = None,
 ) -> int:
-    # จำนวน alert ทั้งหมดที่ตรงตัวกรองชุดเดียวกับ get_security_alerts() — ใช้คำนวณจำนวนหน้า
+
     total = await db.scalar(
         select(func.count())
         .select_from(SecurityAlert)
@@ -555,7 +552,7 @@ async def count_security_alerts(
 
 
 async def get_alert_filter_facets(db: AsyncSession) -> dict:
-    # ค่าที่ "มีอยู่จริง" ในตาราง alert สำหรับเติมตัวเลือกใน dropdown ตัวกรองหน้า Alerts
+
     agent_rows = await db.execute(
         select(SecurityAlert.agent_id)
         .where(SecurityAlert.agent_id.isnot(None))
@@ -570,8 +567,8 @@ async def get_alert_filter_facets(db: AsyncSession) -> dict:
 
 
 async def count_alerts_by_type(db: AsyncSession) -> list[tuple[str, str | None, int]]:
-    # จำนวน alert ทั้งตารางแยกตาม (detection_type, mode) — dashboard เอาไปรวมเป็นยอดทั้งหมด
-    # สัดส่วนประเภท และจำนวนแต่ละความรุนแรง (ความรุนแรงผูกกับประเภท จึงนับต่อประเภทพอ)
+
+
     result = await db.execute(
         select(SecurityAlert.detection_type, SecurityAlert.mode, func.count())
         .group_by(SecurityAlert.detection_type, SecurityAlert.mode)
@@ -582,8 +579,8 @@ async def count_alerts_by_type(db: AsyncSession) -> list[tuple[str, str | None, 
 async def count_alerts_per_local_day(
     db: AsyncSession, since: datetime, utc_offset_hours: int = 7
 ) -> dict:
-    # จำนวน alert ต่อวัน (ตามเวลาท้องถิ่น) ตั้งแต่ since (naive-UTC) — ใช้เวลากิจกรรมล่าสุด
-    # แบบเดียวกับที่ตารางใช้เรียง/กรอง คืน {date: count}
+
+
     local_day = func.date(alert_activity_at() + timedelta(hours=utc_offset_hours))
     result = await db.execute(
         select(local_day, func.count())
@@ -594,7 +591,7 @@ async def count_alerts_per_local_day(
 
 
 async def count_security_alerts_since(db: AsyncSession, since: int = 0) -> tuple[int, int]:
-    # คืน (จำนวน alert ที่ id ใหม่กว่า since, id ล่าสุดในตาราง)
+
     unread = await db.scalar(
         select(func.count()).select_from(SecurityAlert).where(SecurityAlert.id > since)
     )
@@ -615,7 +612,7 @@ async def set_security_alert_ai_summary(
     alert: SecurityAlert,
     summary: str,
 ):
-    # เก็บผลสรุปจาก AI ลงแถว alert
+
     keep_updated_at = alert.updated_at
 
     alert.ai_summary = summary
@@ -628,11 +625,8 @@ async def set_security_alert_ai_summary(
     return alert
 
 
-# ─── สถานะ "อ่านแล้ว" ของ alert รายบัญชีผู้ใช้ (ซิงค์ทุกเครื่องที่ login ด้วย user เดียวกัน) ───
-
-
 async def get_alert_read_ids(db: AsyncSession, user_id: int, limit: int = 500) -> list[int]:
-    # id ของ alert ที่ user คนนี้เปิดดูรายละเอียดไปแล้ว เอาเฉพาะ id ใหม่สุด limit ตัว
+
     result = await db.execute(
         select(AlertRead.alert_id)
         .where(AlertRead.user_id == user_id)
@@ -643,7 +637,7 @@ async def get_alert_read_ids(db: AsyncSession, user_id: int, limit: int = 500) -
 
 
 async def mark_alerts_read(db: AsyncSession, user_id: int, alert_ids: list[int]) -> list[int]:
-    # บันทึกว่า user คนนี้เปิดดู alert ชุดนี้แล้ว — คืน id ที่บันทึกจริง
+
     if not alert_ids:
         return []
 
@@ -666,12 +660,12 @@ async def mark_alerts_read(db: AsyncSession, user_id: int, alert_ids: list[int])
 
 
 async def get_user_last_seen_alert_id(db: AsyncSession, user_id: int) -> int | None:
-    # id ล่าสุดที่ user คนนี้เห็นในรายการแล้ว — None = ยังไม่เคยเปิดหน้าไหนเลย
+
     return await db.scalar(select(User.last_seen_alert_id).where(User.id == user_id))
 
 
 async def set_user_last_seen_alert_id(db: AsyncSession, user_id: int, alert_id: int) -> None:
-    # เลื่อนจุด "เห็นรายการถึงไหนแล้ว" ของ user — เดินหน้าอย่างเดียว ถอยหลังไม่ได้
+
     await db.execute(
         update(User)
         .where(
@@ -740,8 +734,6 @@ async def upsert_detection_rule(
     return rule
 
 
-# ============================================================
-
 async def get_blacklist_ttl(db: AsyncSession, detection_type: str):
     result = await db.execute(
         select(BlacklistTtl).where(BlacklistTtl.detection_type == detection_type)
@@ -771,10 +763,10 @@ async def upsert_blacklist_ttl(
         row.ttl_seconds = ttl_seconds
         if description is not None:
             row.description = description
-        # None = ไม่ได้สั่งเปลี่ยนโหมด (แก้แค่ระยะเวลา) — คงค่าเดิมไว้ ไม่ใช่รีเซ็ตเป็น block
+
         if auto_block is not None:
             row.auto_block = auto_block
-        # เช่นเดียวกัน None = ไม่ได้สั่งเปลี่ยนเรื่องการส่ง LINE
+
         if notify_line is not None:
             row.notify_line = notify_line
         row.updated_at = datetime.now()
@@ -792,8 +784,6 @@ async def upsert_blacklist_ttl(
     await db.refresh(row)
     return row
 
-
-# ============================================================
 
 async def get_alert_severity(db: AsyncSession, severity_key: str):
     result = await db.execute(
@@ -883,7 +873,7 @@ async def create_detection_signature(
     is_active: bool = True,
     is_default: bool = False,
 ):
-    # is_default=True เฉพาะตอน seed ชุด default ของระบบ — แถวที่แอดมินเพิ่มเองเป็น False เสมอ
+
     signature = DetectionSignature(
         detection_type=detection_type,
         category=category,
@@ -899,7 +889,7 @@ async def create_detection_signature(
 
 
 async def delete_default_signatures(db: AsyncSession, detection_type: str) -> int:
-    # ลบเฉพาะแถว default ของ detection_type นี้ (แถวที่แอดมินเพิ่มเองไม่ถูกแตะ)
+
     result = await db.execute(
         delete(DetectionSignature)
         .where(
@@ -953,8 +943,6 @@ async def delete_detection_signature(db: AsyncSession, signature_id: int):
     return signature
 
 
-# ============================================================
-
 async def get_line_recipient_by_user_id(db: AsyncSession, line_user_id: str):
     result = await db.execute(
         select(LineRecipient).where(LineRecipient.line_user_id == line_user_id)
@@ -989,7 +977,7 @@ async def upsert_pending_line_recipient(
     display_name: str | None = None,
     picture_url: str | None = None,
 ):
-    # เรียกจาก webhook ตอนมีคน follow OA — สร้างแถวใหม่เป็น pending
+
     recipient = await get_line_recipient_by_user_id(db, line_user_id)
 
     if recipient:
@@ -1088,7 +1076,7 @@ async def get_mergeable_security_alert(
     agent_id: str | None = None,
     username: str | None = None,
 ):
-    # หา alert เดิมของ "เหตุการณ์เดียวกัน" ที่ยังนับว่าต่อเนื่องอยู่ (updated_at >= since)
+
     conditions = [
         SecurityAlert.detection_type == detection_type,
         SecurityAlert.updated_at >= since,
@@ -1127,7 +1115,7 @@ async def merge_security_alert(
     if last_event_at:
         alert.last_event_at = last_event_at
 
-    # อัปเดต response_action ถ้า detector re-check แล้วผลเปลี่ยน
+
     if response_action is not None:
         alert.response_action = response_action
 
@@ -1155,8 +1143,6 @@ async def delete_ip_whitelist_by_id(db: AsyncSession, whitelist_id: int):
     await db.commit()
     return ip
 
-
-# ============================================================
 
 async def get_app_setting(db: AsyncSession, setting_key: str):
     result = await db.execute(
@@ -1186,7 +1172,7 @@ async def upsert_app_setting(db: AsyncSession, setting_key: str, value: str):
 
 
 async def delete_app_setting(db: AsyncSession, setting_key: str):
-    # ลบค่าที่ตั้งทับไว้ -> กลับไปใช้ค่าจาก .env · คืน None ถ้าไม่เคยตั้งอยู่แล้ว
+
     row = await get_app_setting(db, setting_key)
     if not row:
         return None
@@ -1195,8 +1181,6 @@ async def delete_app_setting(db: AsyncSession, setting_key: str):
     await db.commit()
     return row
 
-
-# ---- ประวัติการแก้ค่าตั้ง (app_setting_changes) ----
 
 async def log_app_setting_change(
     db: AsyncSession,
@@ -1228,7 +1212,7 @@ async def get_app_setting_changes(
     setting_key: str | None = None,
     limit: int = 100,
 ):
-    # ประวัติล่าสุดก่อน — ไม่ระบุคีย์ = ทุกคีย์รวมกัน (หน้า System Settings ใช้ทั้งสองแบบ)
+
     stmt = select(AppSettingChange)
     if setting_key:
         stmt = stmt.where(AppSettingChange.setting_key == setting_key)
@@ -1239,7 +1223,7 @@ async def get_app_setting_changes(
 
 
 async def get_latest_app_setting_changes(db: AsyncSession):
-    # แถวล่าสุดของแต่ละคีย์ -> ใช้โชว์ "แก้ล่าสุดโดยใคร" ข้างช่องกรอกทุกช่องในครั้งเดียว
+
     result = await db.execute(
         select(AppSettingChange)
         .distinct(AppSettingChange.setting_key)

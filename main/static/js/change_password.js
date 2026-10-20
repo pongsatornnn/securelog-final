@@ -1,4 +1,4 @@
-// ย้ายมาจาก templates/change_password.html (บล็อก <script> เดิม)
+
 function changePasswordApp() {
   return {
     newPassword: '',
@@ -13,7 +13,7 @@ function changePasswordApp() {
       this.policyReady = window.PasswordPolicy.loaded
     },
 
-    // checklist สด ๆ ตามที่พิมพ์ — กฎมาจาก server ชุดเดียวกับที่ server บังคับ
+
     passwordChecks() {
       if (!this.policyReady) return []
       return window.PasswordPolicy.check(this.newPassword)

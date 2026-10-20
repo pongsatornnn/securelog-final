@@ -1,4 +1,4 @@
-# เส้นทางดู/เพิ่ม/ปิด/ลบ signature (regex) ของ Signature-based detector
+
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -69,7 +69,7 @@ async def api_edit_signature(
     payload: EditSignatureRequest,
     user=Depends(require_admin),
 ):
-    # แก้ pattern/คำอธิบายของ signature เดิม — detection_type เปลี่ยนไม่ได้
+
     pattern = (payload.pattern or "").strip()
 
     if not pattern:
@@ -78,7 +78,7 @@ async def api_edit_signature(
     if not is_valid_regex(pattern):
         raise HTTPException(status_code=400, detail="regex ไม่ถูกต้อง compile ไม่ผ่าน")
 
-    # ส่งเป็นสตริงเสมอ (ว่างได้) เพื่อให้ "ลบคำอธิบายทิ้ง" ทำได้จริง —
+
     description = (payload.description or "").strip()
 
     try:
@@ -135,13 +135,12 @@ async def api_delete_signature(
     }
 
 
-# path แบน (ไม่ใช่ /api/signatures/restore-defaults) ด้วยเหตุผลเดียวกับ routes/rules.py
 @router.post("/api/signatures_restore_defaults")
 async def api_restore_default_signatures(
     payload: RestoreDefaultSignaturesRequest | None = None,
     user=Depends(require_admin),
 ):
-    # คืนค่า signature ของระบบกลับเป็นชุด default — ไม่ส่ง detection_type = ทำทุกชนิด
+
     detection_type = payload.detection_type if payload else None
 
     if detection_type and detection_type not in VALID_DETECTION_TYPES:

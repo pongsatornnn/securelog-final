@@ -1,13 +1,13 @@
-# แปลง alert_summary (dict ที่ build_alert_summary สร้าง แล้ว publish ขึ้น
+
 
 from datetime import datetime, timedelta
 
-# เซิร์ฟเวอร์เก็บเวลาเป็น UTC (build_alert_summary ต่อท้าย "Z") — ไทย = UTC+7
+
 THAI_OFFSET = timedelta(hours=7)
 
 
 def _to_thai_time(timestamp: str | None) -> str:
-    # แปลง ISO timestamp (UTC, ลงท้าย Z) -> 'dd/mm/YYYY HH:MM:SS' เวลาไทย
+
     if not timestamp:
         return "-"
     try:

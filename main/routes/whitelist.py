@@ -1,4 +1,4 @@
-# เส้นทางจัดการ IP Whitelist
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,13 +38,12 @@ from schemas.whitelist_schema import (
 router = APIRouter()
 
 
-# ข้อความเดียวกันทั้งตอนเพิ่มทีละรายการและเพิ่มทีละหลายรายการ
 INVALID_FORMAT_DETAIL = (
     "รูปแบบไม่ถูกต้อง — กรอกได้ทั้ง IP เดี่ยว (192.168.1.10) "
     "และช่วง Subnet แบบ CIDR (192.168.1.0/24)"
 )
 
-# บอกชื่อ IP ที่ติดอยู่ไม่เกิน 10 ตัว — วง /8 ที่ชนเป็นร้อยตัวไม่ควรพ่นออกมาทั้งหมด
+
 BLOCKED_PREVIEW_MAX = 10
 
 
@@ -81,7 +80,7 @@ async def api_get_whitelist(
         {
             "id": item.id,
             "ip_address": item.ip_address,
-            # แถวที่เป็นช่วง subnet — หน้าเว็บเอาไปโชว์ว่ากินกี่เครื่อง
+
             "is_subnet": is_subnet(item.ip_address),
             "host_count": entry_host_count(item.ip_address),
             "description": item.description,
@@ -108,8 +107,7 @@ async def api_add_whitelist(
             detail="กรุณากรอก IP Address หรือ Subnet",
         )
 
-    # รับได้ทั้ง IP เดี่ยวและช่วง subnet · normalize ให้วงเก็บเป็น network address เสมอ
-    # (192.168.1.5/24 -> 192.168.1.0/24) กันเก็บวงเดียวกันซ้ำหลายหน้าตา
+
     ip_address = normalize_entry(raw_value)
 
     if ip_address is None:
@@ -130,8 +128,7 @@ async def api_add_whitelist(
             detail=non_blockable_detail(ip_address),
         )
 
-    # เช็คเฉพาะแถวที่ยัง block อยู่จริง (is_active) — แถวที่ปลดบล็อก/หมดอายุไปแล้วเป็นแค่ประวัติ
-    # วงเดียวอาจชนหลาย IP พร้อมกัน จึงบอกกลับไปว่าติดตัวไหนบ้าง
+
     blocked = await get_active_blacklist_in_entry(db, ip_address)
     if blocked:
         raise HTTPException(
@@ -160,7 +157,7 @@ async def api_add_whitelist(
         },
     )
 
-    # อัปเดต never-block list ให้ทุก agent ที่ online แบบ real-time
+
     await broadcast_whitelist_from_db()
 
     return {
@@ -198,7 +195,7 @@ async def api_delete_whitelist(
             detail="ไม่พบ IP ใน Whitelist",
         )
 
-    # อัปเดต never-block list ให้ทุก agent ที่ online แบบ real-time
+
     await broadcast_whitelist_from_db()
 
     return {
@@ -233,7 +230,7 @@ async def api_add_whitelist_bulk(
         if not ip_address:
             continue
 
-        # เทียบซ้ำด้วยค่า normalize แล้ว — 192.168.1.0/24 กับ 192.168.1.5/24 คือวงเดียวกัน
+
         dedupe_key = normalize_entry(ip_address) or ip_address
 
         if dedupe_key in seen_ips:
@@ -289,7 +286,7 @@ async def api_add_whitelist_bulk(
             })
             continue
 
-        # เช็ค is_active ด้วยเหตุผลเดียวกับ api_add_whitelist (แถวที่ปลดบล็อกแล้วเป็นแค่ประวัติ)
+
         blocked = await get_active_blacklist_in_entry(db, ip_address)
         if blocked:
             names = ", ".join(row.ip_address for row in blocked[:BLOCKED_PREVIEW_MAX])
@@ -329,7 +326,7 @@ async def api_add_whitelist_bulk(
             "description": ip.description,
         })
 
-    # ถ้ามีการเพิ่มจริงค่อย broadcast อัปเดต never-block list ให้ทุก agent
+
     if results["added"]:
         await broadcast_whitelist_from_db()
 

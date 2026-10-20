@@ -1,6 +1,3 @@
-/* SecureLog — สไตล์ร่วมของหน้า standalone ที่ไม่ได้ extends base.html
-   (login.html + change_password.html) — ย้ายมาเฉพาะ rule ที่เนื้อเหมือนกันเป๊ะทั้งสองไฟล์ */
-
 * {
   box-sizing: border-box;
   margin: 0;

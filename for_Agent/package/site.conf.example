@@ -1,15 +1,4 @@
-# ค่าต่อ site ของชุดติดตั้ง agent — คัดลอกไฟล์นี้เป็น site.conf แล้วใส่ค่าจริง
-#   cp site.conf.example site.conf
-#
-# site.conf ถูก .gitignore ไว้แล้ว (มีรหัสผ่าน Redis จริง) ไม่ขึ้น git
-# แพ็กเกจที่สร้างจากหน้าเว็บจะใส่บัญชีและรหัสเฉพาะ Agent ให้โดยอัตโนมัติ
-# ค่าตัวอย่างด้านล่างใช้สำหรับการติดตั้งด้วยมือเท่านั้น
-
 CENTRAL_HOST="192.168.56.110"
 CENTRAL_REDIS_PORT="6380"
 REDIS_USERNAME="agent_001"
 REDIS_PASSWORD="changeme"
-
-# ที่อยู่สำรองของ central (ไม่ใส่ก็ได้) — คั่นด้วยช่องว่างหรือจุลภาค รูปแบบ host หรือ host:port
-# agent จะไล่ลองทีละอันเมื่อ CENTRAL_HOST ต่อไม่ได้ ทำให้ central ย้าย IP ได้โดยไม่ต้องลง agent ใหม่
-# CENTRAL_CANDIDATES="192.168.56.111 central.local:6380"

@@ -1,4 +1,4 @@
-# Gemini REST client — ใช้ urllib (stdlib) ไม่ต้องเพิ่ม dependency
+
 
 import json
 import re
@@ -8,12 +8,11 @@ import urllib.request
 from AI_API import config
 
 
-# ชื่อโมเดลขึ้นต้นด้วย gemini-<เวอร์ชัน> — ใช้ตัดสินใจว่าจะส่ง thinkingConfig แบบไหน
 _MODEL_VERSION_RE = re.compile(r"^gemini-(\d+(?:\.\d+)?)")
 
 
 class GeminiError(Exception):
-    # error ที่รู้ที่มา — เก็บทั้งข้อความไทยที่สรุปแล้ว และคำตอบดิบจาก Google ไว้ด้วยกัน
+
 
     def __init__(self, summary: str, *, http_code=None, api_status=None, api_message=None):
         self.summary = summary
@@ -24,14 +23,14 @@ class GeminiError(Exception):
 
     @property
     def full_message(self) -> str:
-        # ข้อความที่เอาไปโชว์ให้แอดมินได้เลย — สรุปไทยบรรทัดแรก ต้นฉบับจาก Google บรรทัดถัดไป
+
         if not self.api_message:
             return self.summary
         return f"{self.summary}\nGoogle ตอบกลับ: {self.api_message}"
 
 
 def _http_error(e: urllib.error.HTTPError) -> GeminiError:
-    # แปลง HTTPError เป็น GeminiError — อ่าน body ให้จบก่อนเสมอ ไม่งั้นข้อความจริงหายไป
+
     body = e.read().decode("utf-8", "replace")
     api_message = None
     api_status = None
@@ -41,7 +40,7 @@ def _http_error(e: urllib.error.HTTPError) -> GeminiError:
         api_message = error.get("message")
         api_status = error.get("status")
     except Exception:
-        # ไม่ใช่ JSON (เช่นหน้า HTML ของ proxy ที่คั่นอยู่) — เอา body ดิบไปแสดงเท่าที่พออ่านไหว
+
         api_message = body.strip()[:500] or None
 
     where = f"HTTP {e.code}" + (f" {api_status}" if api_status else "")
@@ -64,7 +63,7 @@ def _http_error(e: urllib.error.HTTPError) -> GeminiError:
 
 
 def _request(url: str, payload: dict | None = None) -> dict:
-    # ยิงไป Gemini API แล้วคืน body ที่ parse แล้ว — ผิดพลาดโยน GeminiError ที่มีข้อความจาก Google
+
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
 
     headers = {"x-goog-api-key": config.api_key()}
@@ -73,7 +72,7 @@ def _request(url: str, payload: dict | None = None) -> dict:
 
     req = urllib.request.Request(url, data=data, method="POST" if data else "GET", headers=headers)
 
-    # อ่านครั้งเดียวต่อคำขอ — ใช้ทั้งตอนยิงและตอนประกอบข้อความ error ให้เป็นตัวเลขเดียวกัน
+
     timeout = config.timeout_sec()
 
     try:
@@ -84,7 +83,7 @@ def _request(url: str, payload: dict | None = None) -> dict:
         raise _http_error(e) from e
 
     except urllib.error.URLError as e:
-        # ต่อไม่ติดเลย (DNS/เน็ต/ไฟร์วอลล์) — e.reason คือสาเหตุจริงที่ต้องบอกต่อ
+
         raise GeminiError(f"ต่อ Google ไม่ได้: {e.reason}") from e
 
     except TimeoutError as e:
@@ -98,7 +97,7 @@ def _request(url: str, payload: dict | None = None) -> dict:
 
 
 def _thinking_config() -> dict | None:
-    # รุ่น 2.5 คุมการคิดด้วย `thinkingBudget` (จำนวน token) — รุ่น 3 ขึ้นไปเปลี่ยนเป็น
+
     match = _MODEL_VERSION_RE.match(config.model().strip())
     if not match:
         return None
@@ -111,13 +110,13 @@ def _thinking_config() -> dict | None:
 
 def _payload(prompt: str, thinking: dict | None) -> dict:
     generation_config = {
-        # temperature ต่ำ: งานสรุป log ต้องการความคงเส้นคงวา ไม่ใช่ความสร้างสรรค์
+
         "temperature": 0.2,
         "maxOutputTokens": config.MAX_OUTPUT_TOKENS,
     }
 
     if thinking:
-        # กันโมเดลคิดจนกิน maxOutputTokens หมดแล้วคำตอบโดนตัด (ดูคำอธิบายใน config.py)
+
         generation_config["thinkingConfig"] = thinking
 
     return {
@@ -127,7 +126,7 @@ def _payload(prompt: str, thinking: dict | None) -> dict:
 
 
 def _generate_content(prompt: str) -> dict:
-    # ยิง generateContent ด้วยค่าที่ตั้งไว้ — ถ้าโมเดลไม่รับ thinkingConfig (400) ลองใหม่แบบไม่ส่ง
+
     thinking = _thinking_config()
 
     try:
@@ -141,11 +140,11 @@ def _generate_content(prompt: str) -> dict:
 
 
 def _extract_text(data: dict) -> str:
-    # ดึงข้อความจาก response ของ generateContent (candidates[0].content.parts[*].text)
+
     candidates = data.get("candidates") or []
 
     if not candidates:
-        # ไม่มี candidate = prompt โดน safety filter บล็อก
+
         reason = (data.get("promptFeedback") or {}).get("blockReason")
         raise ValueError(f"Gemini ไม่ส่งคำตอบกลับมา (blockReason={reason})")
 
@@ -156,7 +155,7 @@ def _extract_text(data: dict) -> str:
     if not text:
         raise ValueError(f"Gemini ส่งคำตอบว่าง (finishReason={finish})")
 
-    # MAX_TOKENS = คำตอบถูกตัดกลางคัน (ไม่จบประโยค/ไม่ครบหัวข้อ) — ต้องไม่เอาไปเก็บลง DB
+
     if finish == "MAX_TOKENS":
         raise ValueError(
             "คำตอบจาก AI ยาวเกินเพดานที่ตั้งไว้เลยถูกตัดกลางคัน "
@@ -167,7 +166,7 @@ def _extract_text(data: dict) -> str:
 
 
 def generate(prompt: str) -> tuple[bool, str]:
-    # ส่ง prompt ไป Gemini — คืน (True, ข้อความสรุป) หรือ (False, ข้อความ error ที่อ่านรู้เรื่อง)
+
     if not config.is_configured():
         return False, "ยังไม่ได้ตั้งค่า API Key ของ Gemini — ตั้งได้ที่หน้า System Settings"
 
@@ -179,13 +178,13 @@ def generate(prompt: str) -> tuple[bool, str]:
         return False, e.full_message
 
     except ValueError as e:
-        # คำตอบมาแต่ใช้ไม่ได้ (โดน safety filter / ว่าง / โดนตัด) — ข้อความไทยครบอยู่แล้ว
+
         print(f"[AI] {e}")
         return False, str(e)
 
 
 def list_models() -> tuple[bool, list[dict] | str]:
-    # โมเดลที่ **คีย์ปัจจุบัน** เรียกได้จริง — หน้า Settings เอาไปทำตัวเลือกใน dropdown
+
     if not config.is_configured():
         return False, "ยังไม่ได้ตั้ง API Key — ตั้งคีย์แล้วบันทึกก่อนถึงจะดึงรายชื่อได้"
 
@@ -202,7 +201,7 @@ def list_models() -> tuple[bool, list[dict] | str]:
         if name not in config.MODEL_ALLOWLIST:
             continue
 
-        # ถึงจะอยู่ใน allowlist ก็ยังต้องเช็ก เผื่อ Google เปลี่ยนโมเดลตัวนั้นไปทำอย่างอื่น
+
         if "generateContent" not in (entry.get("supportedGenerationMethods") or []):
             continue
 
@@ -214,7 +213,7 @@ def list_models() -> tuple[bool, list[dict] | str]:
 
 
 def test_connection() -> dict:
-    # ยิงของจริงหนึ่งครั้งด้วยคีย์+โมเดลที่ตั้งอยู่ตอนนี้ — คืนผลที่หน้า Settings แสดงได้เลย
+
     if not config.is_configured():
         return {"ok": False, "message": "ยังไม่ได้ตั้ง API Key"}
 

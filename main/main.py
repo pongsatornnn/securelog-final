@@ -1,4 +1,4 @@
-# FastAPI entrypoint — สร้าง app, mount static, ผูก rate-limit handler,
+
 
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -39,25 +39,25 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-        # migration เล็กๆ: create_all() สร้างเฉพาะตารางที่ยังไม่มี ไม่แก้ตารางที่มีอยู่แล้ว
+
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS "
             "must_change_password BOOLEAN NOT NULL DEFAULT false"
         ))
-        # เพิ่มทีหลัง: ชื่อที่แสดง (display name) แก้ได้ในหน้า Profile Setting — ตารางเก่ายังไม่มีคอลัมน์นี้
+
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(100)"
         ))
-        # เพิ่มทีหลัง: จุดที่ผู้ใช้คนนี้เห็นรายการ alert ถึงแล้ว (คุม badge ที่เมนู Alerts)
+
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_alert_id INTEGER"
         ))
-        # ตาราง app_settings (ค่าตั้งจากหน้า System Settings) create_all สร้างให้เองตอนยังไม่มี
+
         await conn.execute(text(
             "ALTER TABLE line_recipients ADD COLUMN IF NOT EXISTS picture_url VARCHAR(512)"
         ))
 
-        # เพิ่มทีหลัง: "ใครเป็นคนเพิ่ม IP นี้" — ชื่อผู้ใช้ที่กดเพิ่มเอง หรือ detector:<ชนิด> เมื่อระบบบล็อกเอง
+
         for table in ("ip_black_list", "ip_white_list"):
             await conn.execute(text(
                 f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS created_by VARCHAR(50)"
@@ -66,12 +66,12 @@ async def lifespan(app: FastAPI):
                 f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER"
             ))
 
-        # ตาราง app_setting_changes (ประวัติการแก้ค่าตั้ง) create_all สร้างให้เองตอนยังไม่มี
+
         await conn.execute(text(
             "ALTER TABLE app_setting_changes ADD COLUMN IF NOT EXISTS changed_by_user_id INTEGER"
         ))
 
-        # FK ของสามคอลัมน์ข้างบน — Postgres ไม่มี ADD CONSTRAINT IF NOT EXISTS จึงเช็ค pg_constraint เอง
+
         for table, column in (
             ("ip_black_list", "created_by_user_id"),
             ("ip_white_list", "created_by_user_id"),
@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
                 END $$;
             """))
 
-        # เพิ่มทีหลัง: FK agent_downloads.agent_id -> agents.agent_id (ON DELETE CASCADE)
+
         await conn.execute(text("""
             DO $$
             DECLARE
@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
             END $$;
         """))
 
-        # เพิ่มทีหลัง: index ที่โมเดลประกาศไว้แต่ DB เก่ายังไม่มี (create_all ไม่แก้ตารางเดิม)
+
         await conn.execute(text("""
             DO $$
             DECLARE
@@ -177,7 +177,7 @@ async def lifespan(app: FastAPI):
             END $$;
         """))
 
-        # index ธรรมดา (ไม่มีเรื่องข้อมูลซ้ำ จึงใช้ IF NOT EXISTS ตรงๆ ได้)
+
         await conn.execute(text(
             "CREATE INDEX IF NOT EXISTS ix_security_alerts_response_action "
             "ON security_alerts (response_action)"
@@ -187,16 +187,16 @@ async def lifespan(app: FastAPI):
             "ON security_alerts (updated_at)"
         ))
 
-    # เติมค่าเริ่มต้นลง DB (detection rule / blacklist TTL / severity / signature / บัญชี admin)
+
     from database.seed import seed_defaults
     await seed_defaults()
 
-    # เติมค่าจากตาราง app_settings เข้า Redis cache ตั้งแต่ตอน start — โค้ด sync ที่อ่านค่า
+
     from settings_cache import (
         encrypt_existing_secrets,
         load_all_into_cache,
     )
-    # ค่า secret ในตารางถูกเข้ารหัสไว้ (secret_box) — แถวที่ตั้งไว้ก่อนมีการเข้ารหัสจะถูก
+
     await encrypt_existing_secrets()
     await load_all_into_cache()
 
@@ -207,8 +207,8 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
-    # ปิด /openapi.json ด้วย — เดิมปิดแค่หน้า docs แต่ตัว schema ยังเปิดให้ใครก็ได้ดูรายชื่อ endpoint
-    # ทั้งหมดโดยไม่ต้อง login (ระบบไม่ได้ใช้ schema นี้ที่ไหน)
+
+
     openapi_url=None,
 )
 
@@ -224,19 +224,18 @@ if STATIC_DIR.exists():
 
 app.state.limiter = limiter
 
-# บังคับ CSRF ทุก endpoint ที่เปลี่ยนข้อมูล (double-submit cookie) — ดู csrf.py
+
 app.add_middleware(CSRFMiddleware)
-# header ความปลอดภัย (กัน iframe/clickjacking, nosniff, referrer) ทุก response — ดู security_headers.py
+
 app.add_middleware(SecurityHeadersMiddleware)
 
 
-# หน้า error แบบ HTML สำหรับ browser / JSON เหมือนเดิมสำหรับ /api/* (ดู errors.py)
 register_error_handlers(app)
 
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    # ส่งต่อให้ handler กลางตัดสินใจว่าจะตอบเป็น HTML หรือ JSON ตามผู้เรียก
+
     return await http_exception_handler(
         request,
         StarletteHTTPException(status_code=429, detail="ลองใหม่อีกครั้งในภายหลัง"),
@@ -257,26 +256,18 @@ app.include_router(users.router)
 app.include_router(settings.router)
 
 
-# ---------------------------------------------------------------------------
-# ROOT_PATH: เสิร์ฟทั้งเว็บใต้ path ย่อย เช่น https://<host>:8000/securelog/
-# uvicorn เสิร์ฟเองไม่มี proxy มาตัด prefix ให้ (--root-path เปล่า ๆ จึงใช้ไม่ได้ จะ 404)
-# วิธีที่ใช้คือ mount app จริงไว้ใต้ app ชั้นนอก แล้ว export ชื่อ `app` เป็นตัวชั้นนอกให้ uvicorn เรียก
-#
-# ยกเว้นกรณีมี reverse proxy ตัด prefix ให้แล้ว (ROOT_PATH_STRIPPED=true) — path ที่มาถึงไม่มี prefix
-# จึงไม่ต้อง mount แค่เติม prefix ตอนสร้าง URL ส่งออกไปก็พอ
 if BASE_PATH and not STRIPPED_BY_PROXY:
     inner_app = app
 
-    # ⚠️ app ที่ถูก mount ไม่ได้รับ lifespan event ของ starlette — ต้องผูก lifespan ไว้กับ app ชั้นนอก
-    # ไม่งั้น create_all / ALTER / seed ค่าเริ่มต้น / โหลด settings cache จะไม่ทำงานเลยตอน start
+
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.mount(BASE_PATH, inner_app)
     app.add_middleware(SecurityHeadersMiddleware)  # ให้ redirect ที่รากของเครื่องได้ header ด้วย
 
-    # เข้ามาที่รากของเครื่อง -> พาไปที่ prefix ให้ ไม่ต้องพิมพ์เอง
+
     @app.get("/")
     async def redirect_to_base():
         return RedirectResponse(url=BASE_PATH + "/", status_code=302)
 
-    # path นอก prefix (พิมพ์ผิด/สแกนเนอร์) ให้ได้หน้า error หน้าตาเดียวกับข้างใน
+
     register_error_handlers(app)

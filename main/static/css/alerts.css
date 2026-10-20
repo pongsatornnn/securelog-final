@@ -1,13 +1,5 @@
-/* ย้ายมาจาก templates/alerts.html (บล็อก <style> เดิม) */
-/* โครงหน้าตาทั้งหมด (.modal*, .btn-*, table, .state-box, ฟอร์ม) มาจาก app.css แล้ว
-   หน้านี้เหลือไว้เฉพาะสิ่งที่ต่างจริง — ความกว้าง modal คือหนึ่งในนั้น */
-/* กว้างกว่าหน้าอื่นเพราะ raw log เป็นบรรทัดยาว ยิ่งแคบยิ่งต้องตัดบรรทัดถี่จนอ่านยาก */
 .modal { --modal-width: 880px; }
-/* .page-title / .page-subtitle / .table-wrap / table / .state-box / .modal*
-   มาจาก app.css แล้ว — เดิมหน้านี้นิยามซ้ำ และ override :root ทำให้ token ที่แชร์
-   กับ component ของหน้าอื่น (เช่น toast) เปลี่ยนสีตามไปด้วยเฉพาะหน้านี้ */
 
-/* === ปรับแต่งโครงสร้างส่วนหัวใหม่ทั้งหมด === */
 .header-row {
   display: flex;
   flex-direction: column;
@@ -21,8 +13,6 @@
   gap: 12px;
 }
 
-/* app.css ทำ .section-title เป็นตัวพิมพ์ใหญ่ขนาดเล็กสำหรับหัวข้อในพาเนล — หัวข้อนี้
-   เป็นหัวของทั้งตารางหลักของหน้า จึงเอาแค่ขนาดที่ใหญ่ขึ้นและไม่ต้องเว้นวรรคอักษร */
 .section-title {
   font-size: 14px;
   text-transform: none;
@@ -48,9 +38,6 @@
   padding-left: 2px;
 }
 
-/* ─── แถบตัวกรอง ───
-   ทุกช่องกว้างเท่ากันและตกบรรทัดเองเมื่อที่ไม่พอ (auto-fit) แทนการตรึงจำนวนคอลัมน์ —
-   จอแคบจะได้ไม่ต้องเลื่อนซ้ายขวา และไม่ต้องเขียน breakpoint ต่อจำนวนช่อง */
 .filter-bar {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
@@ -78,16 +65,12 @@
   color: var(--text-muted);
 }
 
-/* ─── ช่องวันที่ ───
-   input[type=date] แสดงผลตาม locale ของ browser (en-US ได้ mm/dd/yyyy) ซึ่งบังคับไม่ได้
-   เลยทั้งจาก CSS และ HTML — ช่องที่ผู้ใช้เห็นจึงเป็น text ที่เราคุมรูปแบบเอง (dd/mm/yy)
-   แล้วเก็บ input[type=date] ตัวจริงไว้ข้างหลังเพื่อเรียกปฏิทินของ browser อย่างเดียว */
 .date-field {
   position: relative;
 }
 
 .date-field .form-input {
-  padding-right: 34px;      /* เว้นที่ให้ปุ่มปฏิทินไม่ทับตัวเลขที่พิมพ์ */
+  padding-right: 34px;
 }
 
 .date-pick {
@@ -120,8 +103,6 @@
   stroke-linejoin: round;
 }
 
-/* ต้องยังถูก render อยู่จริง (ไม่ใช่ display:none) ปฏิทินถึงจะเด้งได้ — วางไว้ขอบล่างของ
-   ช่องเพื่อให้ปฏิทินที่ยึดตำแหน่งจากมันโผล่ใต้ช่องพอดี */
 .date-native {
   position: absolute;
   right: 8px;
@@ -140,9 +121,6 @@
   color: var(--danger);
 }
 
-/* ─── แถบแจ้งว่ามีของใหม่ตอนที่ไม่ได้อยู่หน้า 1 ───
-   หน้า 2 ขึ้นไปห้ามแทรกแถวใหม่เข้าตาราง เพราะขอบของทุกหน้าจะเลื่อนตาม ทำให้แถวที่เพิ่ง
-   อ่านไปโผล่ซ้ำและมีแถวหลุดหายโดยไม่รู้ตัว — ตารางนิ่งไว้แล้วบอกด้วยแถบนี้แทน */
 .new-banner {
   display: flex;
   align-items: center;
@@ -162,15 +140,11 @@
   flex-shrink: 0;
 }
 
-/* ─── สถานะกำลังโหลดหน้าถัดไป ───
-   คงแถวเดิมไว้แล้วหรี่ลง ดีกว่าล้างตารางเป็นที่ว่างแล้วค่อยวาดใหม่ — ความสูงของหน้า
-   ไม่กระโดดและตาไม่หลุดจากตำแหน่งที่กำลังดูอยู่ */
 .table-wrap.is-busy {
   opacity: 0.45;
   pointer-events: none;
 }
 
-/* ─── แถบแบ่งหน้า ─── */
 .pager {
   display: flex;
   flex-wrap: wrap;
@@ -189,8 +163,6 @@
   color: var(--text-muted);
 }
 
-/* "หน้า 2 จาก 3" เป็นข้อมูลที่ต้องอ่านได้เร็วที่สุดในแถบนี้ — เลขหน้าที่ไฮไลต์อยู่ในปุ่ม
-   บอกได้แค่ว่าอยู่หน้าไหน ไม่ได้บอกว่ามีทั้งหมดกี่หน้าเมื่อรายการถูกย่อด้วย "…" */
 .pager-page {
   font-size: 13.5px;
   font-weight: 600;
@@ -222,7 +194,6 @@
   transition: all 0.12s ease;
 }
 
-/* ปุ่มลูกศรไม่มีตัวเลขอยู่ข้างใน จึงไม่ต้องเผื่อความกว้างของข้อความ */
 .pager-btn.is-arrow {
   padding: 0;
 }
@@ -255,7 +226,6 @@
   cursor: default;
 }
 
-/* ช่องว่างระหว่างช่วงเลขหน้า — ไม่ใช่ปุ่ม จึงต้องไม่ดูกดได้และข้ามไปตอน tab */
 .pager-gap {
   min-width: 22px;
   text-align: center;
@@ -283,7 +253,6 @@
   }
 }
 
-/* ปุ่มล้างอยู่ในกริดเดียวกับช่องอื่น จะได้เลื่อนตกบรรทัดตามกันแทนที่จะลอยค้างอยู่มุมเดิม */
 .filter-reset {
   height: 36px;
 }
@@ -314,16 +283,11 @@
   box-shadow: 0 0 0 3px var(--danger-soft);
 }
 
-/* ─── ตาราง: โครงหลักมาจาก app.css เหลือเฉพาะที่หน้านี้ต่างจริง ─── */
-
-/* Hover เข้มกว่าหน้าอื่นเพราะหน้านี้ต้องกวาดสายตาหาแถวที่สนใจในรายการยาว ๆ */
-/* ต้องเจาะจงกว่า `tbody tr:hover td` ใน app.css ถึงจะทับได้ */
 tbody tr:hover td {
   background: #2a3947;
   color: var(--text-main);
 }
 
-/* เอฟเฟกต์กะพริบตอนมีข้อมูลใหม่เข้ามา — จบที่สีพื้นการ์ดพอดี แถวจึงกลืนกับตารางเอง */
 @keyframes fadeIn {
   from { background: rgba(54, 162, 239, 0.28); }
   to { background: var(--card-bg); }
@@ -378,14 +342,6 @@ tbody tr:hover td {
   margin-top: 4px;
 }
 
-/* ─── กล่องรายละเอียดการโจมตี ───
-
-   ลำดับการอ่าน: หัวเรื่องบอก "เกิดอะไรขึ้น + หนักแค่ไหน" -> บรรทัดสรุปใครโจมตีใคร
-   -> ตารางข้อมูลประกอบ -> สรุปจาก AI -> raw log
-
-   เดิมทุกอย่างน้ำหนักเท่ากันหมด (การ์ด 7 ใบเรียง 2 คอลัมน์ ป้ายตัวเล็กเท่ากันทุกใบ)
-   ทำให้ประเภทการโจมตีกับความรุนแรงจมอยู่กลางกอง ต้องกวาดตาหาทุกครั้งที่เปิด */
-
 .detail-head {
   display: flex;
   align-items: center;
@@ -393,7 +349,6 @@ tbody tr:hover td {
   min-width: 0;
 }
 
-/* บรรทัดสรุปใต้หัวเรื่อง: ใคร -> ที่ไหน -> กี่ครั้ง อ่านจบใน 1 บรรทัดโดยไม่ต้องดูตาราง */
 .detail-sub {
   display: flex;
   flex-wrap: wrap;
@@ -441,8 +396,6 @@ tbody tr:hover td {
   letter-spacing: 0;
 }
 
-/* ตารางคีย์-ค่า: ป้ายอยู่คอลัมน์ซ้ายตรงกันทุกแถว กวาดตาลงมาหาค่าที่ต้องการได้เร็ว
-   กว่าการ์ดที่ป้ายอยู่คนละตำแหน่งในแต่ละใบ */
 .fact-row {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);
@@ -486,9 +439,6 @@ tbody tr:hover td {
   }
 }
 
-/* ─── raw log ───
-   เดิมเป็นการ์ดใบละบรรทัด (ขอบ + padding 12/14 + เลขที่บรรทัดของตัวเอง) — เหตุการณ์ที่
-   นับได้ 40 ครั้งจึงยาวเป็นพัน ๆ px ทำเป็นบล็อกเดียวมีเลขบรรทัดข้างหน้าแบบไฟล์ log แทน */
 .log-block {
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
@@ -514,7 +464,7 @@ tbody tr:hover td {
   line-height: 1.65;
   color: var(--text-dim);
   background: var(--bg-raised);
-  user-select: none;      /* ลากคลุมเพื่อคัดลอก log จะได้ไม่ติดเลขบรรทัดไปด้วย */
+  user-select: none;
 }
 
 .log-more {
@@ -530,13 +480,10 @@ tbody tr:hover td {
   line-height: 1.65;
   color: var(--text-main);
 
-  /* เดิมใช้ word-break: break-all ซึ่งตัดทุกจุดที่ชนขอบพอดี — URL/user-agent เลยขาด
-     กลางคำทุกบรรทัด; overflow-wrap: anywhere ตัดเฉพาะตอนที่ก้อนนั้นยาวเกินบรรทัดจริง ๆ */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-/* === AI Analysis Custom Style === */
 .ai-section {
   background: var(--bg-main);
   border: 1px dashed var(--primary);
@@ -593,7 +540,6 @@ tbody tr:hover td {
   font-size: 12.5px;
 }
 
-/* ผลจาก AI เป็น text ล้วนที่จัดบรรทัดมาแล้ว — pre-wrap ให้ขึ้นบรรทัด/ย่อหน้าตามที่ AI ส่งมา */
 .ai-result {
   white-space: pre-wrap;
   font-size: 13px;

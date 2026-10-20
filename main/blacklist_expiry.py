@@ -1,4 +1,4 @@
-# Blacklist expiry sweeper (background worker)
+
 
 import asyncio
 from datetime import datetime
@@ -30,7 +30,7 @@ async def sweep_once() -> int:
 
 async def run() -> None:
     print("[AUTO-EXPIRY] started (blacklist expiry sweeper)")
-    # ตารางถูกสร้างโดยเว็บตอน start — ตัวนี้ขึ้นพร้อมกันจึงอาจมาถึงก่อน (ดู wait_for_table)
+
     await wait_for_table("ip_black_list", "AUTO-EXPIRY")
     print(f"[AUTO-EXPIRY] interval: {SWEEP_INTERVAL_SECONDS}s")
 

@@ -1,4 +1,4 @@
-# เส้นทางเกี่ยวกับ LINE:
+
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,24 +20,21 @@ from settings_cache import ensure_loaded
 from LINE_API import config as line_config, line_client
 
 
-# router = admin API (ต้อง login) — mount บน app หลักที่อยู่หลังบ้าน
 router = APIRouter()
 
-# webhook_router = endpoint เดียวที่ LINE เรียกเข้ามา — แยกออกมาเพื่อเอาไป mount
+
 webhook_router = APIRouter()
 
 
-# ============================================================
-
 @webhook_router.post(LINE_WEBHOOK_PATH)
 async def line_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    # เติม cache จาก DB ก่อน — verify_signature/get_profile เป็นโค้ด sync ที่อ่านค่าจาก cache
+
     await ensure_loaded()
 
     body = await request.body()
     signature = request.headers.get("X-Line-Signature")
 
-    # กันคนอื่นยิง webhook ปลอมเข้ามาสร้าง recipient — ต้องมาจาก LINE จริงเท่านั้น
+
     if not line_client.verify_signature(body, signature):
         raise HTTPException(status_code=403, detail="invalid signature")
 
@@ -60,34 +57,32 @@ async def line_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 await set_line_recipient_status(db, recipient.id, "rejected")
             continue
 
-        # follow / message / event อื่นๆ ที่มี userId -> ลงทะเบียนเป็น pending
+
         existing = await get_line_recipient_by_user_id(db, user_id)
         display_name = existing.display_name if existing else None
         picture_url = existing.picture_url if existing else None
 
-        # ดึง profile เฉพาะตอนยังขาดชื่อหรือยังไม่เคยดึงรูป (ลด API call ต่อทุกข้อความ)
+
         if display_name is None or picture_url is None:
             profile = line_client.get_profile(user_id)
 
             if profile:
                 display_name = profile.get("displayName") or display_name
-                # LINE ไม่ส่ง pictureUrl มาเลยถ้าเจ้าตัวไม่ได้ตั้งรูป -> เก็บ '' ไว้เป็นหลักฐานว่าดึงแล้ว
+
                 picture_url = profile.get("pictureUrl") or ""
 
         await upsert_pending_line_recipient(db, user_id, display_name, picture_url)
 
-    # LINE คาดหวัง 200 เสมอเมื่อรับ event ได้
+
     return {"status": "ok"}
 
-
-# ============================================================
 
 def _serialize(recipient) -> dict:
     return {
         "id": recipient.id,
         "line_user_id": recipient.line_user_id,
         "display_name": recipient.display_name,
-        # '' (ดึงแล้วไม่มีรูป) กับ NULL (ยังไม่เคยดึง) หน้าเว็บทำเหมือนกันคือ fallback เป็นไอคอน
+
         "picture_url": recipient.picture_url or None,
         "status": recipient.status,
         "created_at": iso_utc(recipient.created_at),
@@ -98,12 +93,12 @@ def _serialize(recipient) -> dict:
 
 @router.get("/api/line/oa")
 async def api_line_oa(user=Depends(require_admin)):
-    # ข้อมูล OA ที่หน้า LINE Recipients ใช้บอกว่า "ให้แอดบัญชีไหนถึงจะได้รับแจ้งเตือน"
+
     await ensure_loaded()
 
     oa_id = (line_config.oa_id() or "").strip()
 
-    # basic id ของ LINE ขึ้นต้นด้วย @ เสมอ แต่คนกรอกมักลืมใส่ — เติมให้เฉพาะตอนสร้างลิงก์
+
     link_id = oa_id if oa_id.startswith("@") else f"@{oa_id}"
 
     return {

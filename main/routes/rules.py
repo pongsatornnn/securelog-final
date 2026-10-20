@@ -1,4 +1,4 @@
-# เส้นทางดู/แก้ detection rule (threshold, window) ของ detector ต่างๆ
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,7 +31,7 @@ async def api_get_rules(
             "window_seconds": rule.window_seconds,
             "threshold": rule.threshold,
             "is_active": rule.is_active,
-            # rule ของระบบ (มีค่า default ให้คืนกลับ) — หน้าเว็บใช้ตัดสินว่าจะโชว์ปุ่มคืนค่าไหม
+
             "is_default": is_default_rule(rule.rule_key),
             "updated_at": iso_utc(rule.updated_at),
         }
@@ -74,14 +74,13 @@ async def api_update_rule(
     }
 
 
-# path แบนแบบเดียวกับ /api/alerts_unread_count — ถ้าตั้งเป็น /api/rules/restore-defaults
 @router.post("/api/rules_restore_defaults")
 async def api_restore_default_rules(
     payload: RestoreDefaultRulesRequest | None = None,
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # คืนค่า default ของ detection rule — ไม่ส่ง body / ไม่ส่ง rule_key = คืนทั้งหมด
+
     rule_key = payload.rule_key if payload else None
 
     if rule_key:

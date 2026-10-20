@@ -1,9 +1,5 @@
-/* ย้ายมาจาก templates/line_recipients.html (บล็อก <style> เดิม) */
 .page-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
-/* ─── แถบบอก LINE OA ของระบบ ───
-   คนที่จะได้รับแจ้งเตือนต้องแอด OA ตัวนี้ก่อน แอดมินจึงต้องหยิบ ID ไปบอกต่อได้จากหน้านี้เลย
-   (เดิมต้องเข้าไปดูในหน้า System Settings ซึ่งเป็นหน้าตั้งค่า ไม่ใช่หน้าที่เปิดค้างไว้ทำงาน) */
 .oa-bar {
   display: flex;
   align-items: center;
@@ -40,24 +36,18 @@
   flex-wrap: wrap;
 }
 
-/* ยังไม่ได้ตั้งค่า — บอกให้ชัดว่าไปตั้งที่ไหน ไม่ปล่อยให้แถบว่างจนดูเหมือนหน้าพัง */
 .oa-bar.is-unset { border-style: dashed; }
 .oa-unset {
   font-size: 13px;
   color: var(--text-muted);
 }
 
-/* ─── การ์ดผู้รับแจ้งเตือน ───
-   แนวเดียวกับการ์ด agent (กริดยืดตามความกว้างจอ ใบละคน) — ข้อมูลของผู้รับหนึ่งคนมีแค่
-   ชื่อ + LINE user ID + สถานะ ตารางทั้งตารางจึงเป็นที่ว่างเสียเป็นส่วนใหญ่ */
 .rc-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 12px;
 }
 
-/* สถานะบอก 2 ทางในใบเดียว: แถบสีที่ขอบซ้าย (กวาดตาเห็นทั้งหน้าในทีเดียว)
-   กับป้ายที่มุมขวาบนที่เขียนเป็นคำ (ไม่ต้องเดาว่าสีไหนแปลว่าอะไร) */
 .rc-card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
@@ -92,7 +82,6 @@
   justify-content: center;
 }
 
-/* ไอคอนตัวเดียวกับเมนูซ้ายหัวข้อ LINE Recipients (#ico-line ใน base.html) */
 .rc-icon svg {
   width: 18px;
   height: 18px;
@@ -103,16 +92,14 @@
   stroke-linejoin: round;
 }
 
-/* รูปโปรไฟล์จาก LINE — วางทับกล่องไอคอนเดิมทั้งใบ ขนาดการ์ดจึงไม่ขยับ
-   ไม่ว่าคนนั้นจะมีรูปหรือไม่มี (คนที่ไม่มีรูป/รูปโหลดไม่ขึ้น = เห็นไอคอนเดิม) */
 .rc-avatar {
   width: 34px;
   height: 34px;
   flex: 0 0 auto;
   border-radius: var(--radius);
   border: 1px solid var(--border-color);
-  object-fit: cover;      /* รูป LINE เป็นสี่เหลี่ยมจัตุรัสอยู่แล้ว กันเคสรูปไม่เท่ากันเบี้ยว */
-  background: var(--bg-raised);   /* สีรองระหว่างรูปยังโหลดไม่เสร็จ ไม่ให้เป็นกรอบว่าง */
+  object-fit: cover;
+  background: var(--bg-raised);
 }
 
 .rc-name {
@@ -178,8 +165,6 @@
   gap: 6px;
 }
 
-/* ปุ่มแบ่งความกว้างเท่า ๆ กันเต็มการ์ด — จำนวนปุ่มไม่เท่ากันในแต่ละสถานะ
-   (อนุมัติแล้วไม่มีปุ่มอนุมัติ, ระงับแล้วไม่มีปุ่มระงับ) */
 .rc-actions .btn-mini {
   flex: 1;
   padding: 7px 10px;

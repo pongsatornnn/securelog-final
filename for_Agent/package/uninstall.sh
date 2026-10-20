@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-#
-# SecureLog Agent — ถอนการติดตั้ง agent ออกจากเครื่อง (ลบ service + filebeat + ufw rule + โฟลเดอร์ agent)
-#
-# วิธีใช้:
-#   sudo ./uninstall.sh                 # ถามยืนยันก่อน
-#   sudo ./uninstall.sh --yes           # ไม่ถาม
-#   sudo KEEP_FILEBEAT=1 ./uninstall.sh # เก็บ filebeat ไว้
-#
-# ทำงานเฉพาะฝั่ง agent ไม่ยุ่งกับ central
+
+
 set -euo pipefail
 
 SERVICE_NAME="securelog-agent"          # ชื่อเป๊ะ ห้าม glob (central มี securelog-agent-monitor)
 UNIT_PATH="/etc/systemd/system/$SERVICE_NAME.service"
 FW_TAG="SecureLog agent"                # ป้ายใน comment ของ ufw ที่บอกว่า rule นี้ของ agent
 
-# re-exec จาก /tmp ก่อน เพราะสคริปต์อยู่ในโฟลเดอร์ที่ตัวเองจะลบ
+
 if [ "${_SL_RELOCATED:-0}" != "1" ]; then
     _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     _tmp="$(mktemp /tmp/securelog-uninstall.XXXXXX.sh)"
@@ -29,7 +22,7 @@ log()  { echo -e "\e[32m[UNINSTALL]\e[0m $*"; }
 warn() { echo -e "\e[33m[WARN]\e[0m      $*"; }
 die()  { echo -e "\e[31m[ERROR]\e[0m     $*" >&2; exit 1; }
 
-# ---------- อ่าน flag ----------
+
 ASSUME_YES="${FORCE:-0}"
 KEEP_FILEBEAT="${KEEP_FILEBEAT:-0}"
 for arg in "$@"; do
@@ -45,7 +38,7 @@ done
 
 [ "$(id -u)" -eq 0 ] || die "Must be run as root: sudo ./uninstall.sh"
 
-# ---------- ด่านกันลบผิดโฟลเดอร์ ----------
+
 case "$AGENT_DIR" in
     ""|/|/opt|/home|/root|/etc|/usr|/var|/srv|/tmp)
         die "refusing to operate on '$AGENT_DIR' - this does not look like an agent folder" ;;
@@ -56,7 +49,7 @@ if [ -f "$AGENT_DIR/agent_core.py" ] \
     IS_AGENT_DIR=1
 fi
 
-# ---------- สรุปสิ่งที่จะทำ + ขอยืนยัน ----------
+
 echo ""
 warn "This will REMOVE the SecureLog agent from this machine:"
 echo "     - stop + disable + delete the '$SERVICE_NAME' service"
@@ -88,7 +81,7 @@ fi
 
 echo ""
 
-# ---------- 1) securelog-agent service ----------
+
 if systemctl list-unit-files --plain --no-legend "$SERVICE_NAME.service" 2>/dev/null | grep -q .; then
     systemctl stop    "$SERVICE_NAME.service" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME.service" >/dev/null 2>&1 || true
@@ -103,7 +96,7 @@ fi
 systemctl daemon-reload
 systemctl reset-failed "$SERVICE_NAME.service" 2>/dev/null || true
 
-# ---------- 2) filebeat ----------
+
 if [ "$KEEP_FILEBEAT" = "1" ]; then
     systemctl stop filebeat 2>/dev/null || true
     systemctl disable filebeat >/dev/null 2>&1 || true
@@ -129,7 +122,7 @@ else
     log "Removed filebeat config, registry and logs"
 fi
 
-# ---------- 3) ลบ ufw rule ของ agent (เฉพาะที่มีป้าย SecureLog agent) ----------
+
 if command -v ufw >/dev/null 2>&1; then
     mapfile -t OUR_RULES < <(ufw show added 2>/dev/null | grep -F "comment '$FW_TAG" || true)
     if [ "${#OUR_RULES[@]}" -eq 0 ]; then
@@ -138,7 +131,7 @@ if command -v ufw >/dev/null 2>&1; then
         for line in "${OUR_RULES[@]}"; do
             spec="${line#ufw }"
             spec="${spec% comment *}"
-            # shellcheck disable=SC2086
+
             if ufw --force delete $spec >/dev/null 2>&1; then
                 log "Removed ufw rule: $spec"
             else
@@ -152,7 +145,7 @@ else
     log "ufw not installed - no firewall rule to remove"
 fi
 
-# ---------- 4) ลบโฟลเดอร์ agent ----------
+
 if [ "$IS_AGENT_DIR" = "1" ]; then
     rm -rf "$AGENT_DIR"
     if [ -d "$AGENT_DIR" ]; then

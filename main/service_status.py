@@ -1,4 +1,4 @@
-# บอกว่า service ตัวไหน "ยังรันด้วยค่าเก่า" หลัง `.env` ถูกแก้ — ใช้กับแถบเตือนในหน้า System Settings
+
 
 import os
 import subprocess
@@ -11,36 +11,36 @@ from shared import iso_utc
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(REPO_ROOT, ".env")
 
-# ชื่อ unit ทั้งหมดมาจาก systemd/_gen.sh (ขึ้นต้น securelog- เสมอ) — ใช้ glob จะได้ไม่ต้องไล่แก้
+
 UNIT_GLOB = "securelog-*.service"
 WEB_UNIT = "securelog-web.service"
 TARGET_UNIT = "securelog.target"
 
 SYSTEMCTL_TIMEOUT = 5
 
-# process นี้อ่าน .env เข้าหน่วยความจำตอน import — ค่าที่ถืออยู่จึง "สดถึง" เวลานี้
+
 _env_applied_at = time.time()
 
 
 def mark_env_applied() -> None:
-    # เรียกเมื่อ process นี้เขียน .env แล้ว **อัปเดตค่าในหน่วยความจำตามไปด้วยแล้ว**
+
     global _env_applied_at
     _env_applied_at = time.time()
 
 
 def _iso(epoch: float) -> str:
-    # epoch -> string เดียวกับที่ทั้งระบบส่งให้ frontend (UTC ลงท้าย Z ผ่าน shared.iso_utc)
+
     naive_utc = datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
     return iso_utc(naive_utc) or ""
 
 
 def _monotonic_to_epoch(usec: int) -> float:
-    # systemd ให้เวลาเริ่ม unit เป็น monotonic (ไมโครวินาทีตั้งแต่ boot) — แปลงเป็น epoch
+
     return (time.time() - time.monotonic()) + usec / 1_000_000
 
 
 def _query_units() -> list[dict]:
-    # ถาม systemd ตรง ๆ — คืน list ว่างถ้าไม่มี unit ตรง glob (เช่นเครื่อง dev ที่ยังไม่ได้ติดตั้ง)
+
     result = subprocess.run(
         ["systemctl", "show", UNIT_GLOB, "--no-pager",
          "--property=Id", "--property=ActiveState", "--property=SubState",
@@ -60,7 +60,7 @@ def _query_units() -> list[dict]:
 
 
 def restart_status() -> dict:
-    # สรุปว่าตอนนี้มี service ไหนต้องรีสตาร์ตบ้าง — ปลอดภัยที่จะเรียกบ่อย (อ่านอย่างเดียวทั้งหมด)
+
     info = {
         "ok": False,
         "problem": "",
@@ -100,7 +100,7 @@ def restart_status() -> dict:
         active = fields.get("ActiveState") == "active" and fields.get("SubState") == "running"
         started_at = _monotonic_to_epoch(int(fields.get("ActiveEnterTimestampMonotonic") or 0))
 
-        # ตัวเว็บ (process นี้) เทียบกับเวลาที่ "รับค่าใหม่เข้าหน่วยความจำ" ไม่ใช่เวลาที่ unit start
+
         fresh_since = max(started_at, _env_applied_at) if unit == WEB_UNIT else started_at
         stale = env_mtime > fresh_since
 
@@ -128,7 +128,7 @@ def restart_status() -> dict:
     info["ok"] = True
 
     if pending:
-        # ค้างทั้งหมด = สั่งทีเดียวที่ target สั้นกว่า · ค้างบางตัว = ระบุชื่อ จะได้ไม่ไปแตะตัวที่ปกติ
+
         info["restart_command"] = (
             f"sudo systemctl restart {TARGET_UNIT}"
             if len(pending) == len(info["units"])

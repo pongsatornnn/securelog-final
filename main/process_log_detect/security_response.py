@@ -1,4 +1,4 @@
-# การตอบสนองอัตโนมัติเมื่อ detector เจอการโจมตี — ใช้ร่วมกันทุก detector (auth/web/firewall)
+
 
 import ipaddress
 import time
@@ -23,11 +23,6 @@ from central_ips import is_central_ip
 GLOBAL_COMMAND_CHANNEL = "global_commands"
 
 
-# ช่วง IP ที่ห้าม block เด็ดขาด ไม่ว่าจะสั่งจากหน้าเว็บหรือ detector สั่งเอง
-#   0.0.0.0          เครื่องที่ยังไม่ได้ IP (ต้นทางของ DHCP DISCOVER) ไม่ใช่เครื่องจริงสักเครื่อง
-#   255.255.255.255  ปลายทาง broadcast ของวง
-#   127.0.0.0/8      loopback ของเครื่องเอง — บล็อกแล้วเท่ากับตัดขาตัวเอง service ในเครื่องคุยกันไม่ได้
-#   ::1              loopback ฝั่ง IPv6 (ระบบเป็น IPv4-only แต่กันไว้ไม่ให้หลุดมาทางไหนก็ตาม)
 NON_BLOCKABLE_NETWORKS = tuple(
     ipaddress.ip_network(cidr)
     for cidr in ("0.0.0.0/32", "255.255.255.255/32", "127.0.0.0/8", "::1/128")
@@ -35,10 +30,8 @@ NON_BLOCKABLE_NETWORKS = tuple(
 
 
 def overlapping_non_blockable(value):
-    # คืนช่วงต้องห้ามที่ค่านี้ "ทับอยู่" — รับได้ทั้ง IP เดี่ยวและช่วง subnet
-    #
-    # ต้องใช้ overlaps ไม่ใช่ "อยู่ใน" เพราะวงที่กินทับ loopback แค่บางส่วน (เช่น 127.0.0.0/4)
-    # ก็บล็อกไม่ได้เหมือนกัน · เทียบ version ก่อนเสมอ ไม่งั้น overlaps ข้าม v4/v6 จะโยน TypeError
+
+
     net = parse_entry(value)
 
     if net is None:
@@ -51,12 +44,12 @@ def overlapping_non_blockable(value):
 
 
 def is_non_blockable_ip(value) -> bool:
-    # True ถ้าค่านี้อยู่/ทับช่วงที่ห้าม block (unspecified / broadcast / loopback)
+
     return bool(overlapping_non_blockable(value))
 
 
 def non_blockable_reason(value) -> str:
-    # ข้อความอธิบายว่าทำไมบล็อกไม่ได้ — ใช้ตอบกลับหน้าเว็บให้ตรงกับเหตุผลจริง
+
     hits = overlapping_non_blockable(value)
 
     if not hits:
@@ -75,12 +68,12 @@ def non_blockable_reason(value) -> str:
 
 
 def _severity_rank(ttl_seconds: int | None) -> float:
-    # อันดับความรุนแรงของการ block จาก TTL: None (ถาวร) = รุนแรงสุด (∞),
+
     return float("inf") if ttl_seconds is None else float(ttl_seconds)
 
 
 def base_command_payload(command: str, ip_address: str, event: str | None, source: str) -> dict:
-    # โครง payload มาตรฐานของคำสั่งถึง agent (ip ใส่ซ้ำ 2 key ตามที่ agent เดิมรองรับ)
+
     return {
         "command": command,
         "ip_address": ip_address,
@@ -93,12 +86,12 @@ def base_command_payload(command: str, ip_address: str, event: str | None, sourc
 
 
 def publish_alert_event(alert_summary: dict) -> None:
-    # ส่ง alert ที่เพิ่งบันทึกลง DB ขึ้น Redis pub/sub เพื่อให้ dashboard (SSE) เห็นแบบ real-time
+
     publish_json(SECURITY_ALERTS_STREAM_CHANNEL, alert_summary, log_prefix="ALERT-STREAM")
 
 
 def publish_block_ip_command(ip_address: str, event: str) -> dict:
-    # Broadcast คำสั่ง block_ip ไปยังทุก Agent
+
     payload = base_command_payload("block_ip", ip_address, event, source="auto_detect")
     result = publish_json(GLOBAL_COMMAND_CHANNEL, payload, log_prefix="AUTO-BLOCK")
 
@@ -111,7 +104,7 @@ def publish_block_ip_command(ip_address: str, event: str) -> dict:
 
 
 def publish_unblock_ip_command(ip_address: str, event: str = "expired") -> dict:
-    # Broadcast คำสั่ง unblock_ip ไปทุก Agent (ใช้ตอน blacklist หมดอายุ ให้ agent ลบ ufw rule)
+
     payload = base_command_payload("unblock_ip", ip_address, event, source="auto_expiry")
     result = publish_json(GLOBAL_COMMAND_CHANNEL, payload, log_prefix="AUTO-EXPIRY")
 
@@ -124,7 +117,7 @@ def publish_unblock_ip_command(ip_address: str, event: str = "expired") -> dict:
 
 
 def publish_sync_whitelist_command(ip_addresses: list[str]) -> dict:
-    # Broadcast whitelist ปัจจุบันไปทุก Agent ให้ใช้เป็น never-block list
+
     payload = {
         "command": "sync_whitelist",
         "ips": ip_addresses,
@@ -143,7 +136,7 @@ def publish_sync_whitelist_command(ip_addresses: list[str]) -> dict:
 
 
 async def broadcast_whitelist_from_db() -> None:
-    # โหลด whitelist ล่าสุดจาก DB แล้ว broadcast ให้ทุก Agent (เรียกหลัง admin แก้ whitelist)
+
     try:
         async with AsyncSessionLocal() as db:
             rows = await get_ip_whitelist(db)
@@ -156,23 +149,22 @@ async def broadcast_whitelist_from_db() -> None:
 
 
 async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
-    # ตัดสินใจว่า source_ip ที่ detector ตรวจจับได้ควรถูก block หรือไม่
+
     if not source_ip:
         return "no_ip"
 
     if is_non_blockable_ip(source_ip):
-        # ไม่ใช่การโจมตีของ host ใด (หรือเป็นตัวเครื่องเอง) block ไปก็ไม่มีผลนอกจากทำตัวเองพัง
+
         print(f"[AUTO-BLOCK] IP {source_ip} {non_blockable_reason(source_ip)} -> ไม่ block (เก็บแค่ alert)")
         return "not_blockable"
 
     if is_central_ip(source_ip):
-        # ทราฟฟิกจากตัว central เอง (เช่น health check / เครื่องมือของแอดมินบน central) — block ไปก็
-        # ตัดขาตัวเอง agent ก็ไม่ยอม block อยู่แล้ว เก็บแค่ alert
+
+
         print(f"[AUTO-BLOCK] IP {source_ip} เป็นของ Central Server -> ไม่ block (เก็บแค่ alert)")
         return "not_blockable"
 
-    # แอดมินตั้งชนิดนี้ไว้ที่หน้า Rules ว่า "แจ้งเตือนอย่างเดียว" — ตรวจจับและบันทึก alert ตามปกติ
-    # แต่ไม่แตะ blacklist และไม่สั่ง agent เลย · เช็คก่อนเปิด session เพราะตัดจบได้โดยไม่ต้อง query
+
     if not await should_auto_block(detection_type):
         print(
             f"[AUTO-BLOCK] {detection_type} ตั้งไว้เป็นแจ้งเตือนอย่างเดียว "
@@ -183,7 +175,7 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
     async with AsyncSessionLocal() as db:
         whitelist_ip = await find_whitelist_covering(db, source_ip)
         if whitelist_ip:
-            # แถวที่เจออาจเป็น subnet ไม่ใช่ IP ตัวนั้นเป๊ะ ๆ — print ให้เห็นว่าโดนวงไหนกัน
+
             via = "" if whitelist_ip.ip_address == source_ip else f" (อยู่ในวง {whitelist_ip.ip_address})"
             print(f"[AUTO-BLOCK] IP {source_ip} อยู่ใน Whitelist{via} -> ไม่ block (เก็บแค่ alert)")
             return "whitelisted"
@@ -191,12 +183,12 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
         blacklist_ip = await get_blacklist_by_ip(db, source_ip)
 
         if blacklist_ip and blacklist_ip.is_active:
-            # block ปัจจุบันเป็นถาวรอยู่แล้ว (expires_at=None) = รุนแรงสุด ไม่มีชนิดไหน upgrade ได้
+
             if blacklist_ip.expires_at is None:
                 print(f"[AUTO-BLOCK] IP {source_ip} อยู่ใน Blacklist ถาวรอยู่แล้ว -> ไม่แตะ")
                 return "already_blacklisted"
 
-            # ยัง block อยู่แต่ไม่ถาวร -> เทียบความรุนแรง (base TTL) ของชนิดใหม่กับของเดิม
+
             current_ttl = (await get_ttl(blacklist_ip.event)).get("ttl_seconds")
             new_ttl = (await get_ttl(detection_type)).get("ttl_seconds")
 
@@ -221,7 +213,7 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
             return "already_blacklisted"
 
         if blacklist_ip and not blacklist_ip.is_active:
-            # เคยโดน block แต่หมดอายุไปแล้ว กลับมาโจมตีอีก -> re-block + escalate
+
             new_count = blacklist_ip.block_count + 1
             expires_at = await compute_expiry(detection_type, new_count)
             await reactivate_blacklist(
@@ -240,7 +232,7 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
             )
             return "blocked"
 
-        # ไม่เคยมีใน blacklist -> block ใหม่ครั้งแรก
+
         expires_at = await compute_expiry(detection_type, 1)
         await save_ip_blacklist(
             db,
@@ -249,7 +241,7 @@ async def handle_attack_ip(source_ip: str | None, detection_type: str) -> str:
                 "attack_type": detection_type,
                 "expires_at": expires_at,
                 "block_count": 1,
-                # ไม่มีคนกด — บอกให้ชัดว่ามาจาก detector ตัวไหน จะได้ไม่ปนกับที่แอดมินเพิ่มเอง
+
                 "created_by": f"detector:{detection_type}",
             },
         )

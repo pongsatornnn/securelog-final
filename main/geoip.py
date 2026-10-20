@@ -1,11 +1,5 @@
-# หาประเทศของ IP จากไฟล์ฐานข้อมูล GeoIP แบบ offline (DB-IP Lite Country, รูปแบบ .mmdb)
-# ใช้เติมธงประเทศข้าง Attacker IP ในหน้า Alerts / Dashboard
-#
-# ไม่ส่ง IP ออกไปถาม service ภายนอก — อ่านจากไฟล์บนเครื่อง central ล้วน ๆ
-# ไฟล์อยู่ที่ main/database/geoip/dbip-country-lite.mmdb (โหลด/อัปเดตด้วย update_geoip.sh เดือนละครั้ง)
-# ไม่มีไฟล์ หรือยังไม่ได้ลง maxminddb -> คืน None เงียบ ๆ หน้าเว็บแค่ไม่โชว์ธง ระบบไม่ล้ม
-#
-# ข้อมูล IP โดย DB-IP (https://db-ip.com) — สัญญาอนุญาต CC BY 4.0
+
+
 
 import ipaddress
 import os
@@ -18,7 +12,7 @@ try:
 except ImportError:  # ยังไม่ได้ pip install maxminddb — _get_reader ลอง import ใหม่เป็นระยะ
     maxminddb = None
 
-# ลงไลบรารีทีหลังได้โดยไม่ต้อง restart (setup-server.sh ข้อ 3) — ลอง import ใหม่ไม่ถี่กว่านี้
+
 IMPORT_RETRY_SECONDS = 60
 _next_import_try = 0.0
 
@@ -28,7 +22,7 @@ GEOIP_DB_PATH = Path(
     or Path(__file__).resolve().parent / "database" / "geoip" / "dbip-country-lite.mmdb"
 )
 
-# IP ภายในองค์กร/ทดสอบ — ไม่มีประเทศ แสดงเป็น "เครือข่ายภายใน" แทน
+
 PRIVATE_COUNTRY = {"code": None, "name": "เครือข่ายภายใน", "private": True}
 
 _reader = None
@@ -36,7 +30,7 @@ _reader_mtime: float | None = None
 
 
 def _get_reader():
-    # เปิดไฟล์ครั้งแรกที่ใช้ และเปิดใหม่เองเมื่อไฟล์ถูกอัปเดต (mtime เปลี่ยน) ไม่ต้อง restart service
+
     global _reader, _reader_mtime, maxminddb, _next_import_try
 
     if maxminddb is None:
@@ -94,8 +88,8 @@ def _lookup_cached(ip: str) -> dict | None:
 
 
 def lookup_country(ip: str | None) -> dict | None:
-    # คืน {"code": "TH", "name": "Thailand", "private": False}
-    #   หรือ PRIVATE_COUNTRY ถ้าเป็น IP ภายใน · None ถ้าไม่รู้ (IP ผิดรูปแบบ / ไม่มีไฟล์ / ไม่อยู่ในฐานข้อมูล)
+
+
     if not ip:
         return None
 

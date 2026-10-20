@@ -35,7 +35,7 @@ function agentsApp() {
       error: '',
       creating: false,
 
-      // สถานะการโหลดรายการ — ต้องแยก "กำลังโหลด" / "โหลดไม่สำเร็จ" / "ไม่มีข้อมูล" ออกจากกัน
+
       loading: true,
       loadError: '',
 
@@ -81,7 +81,7 @@ function agentsApp() {
             }
           }
         } catch (err) {
-          // หน้านี้ refresh เองทุก 3 วิ — ถ้าเคยโหลดสำเร็จแล้วเน็ตสะดุดรอบเดียว ไม่ต้องล้าง
+
           this.loadError = err.message || 'โหลด Client Server ไม่สำเร็จ'
           console.error(err)
         } finally {
@@ -145,7 +145,7 @@ function agentsApp() {
         this.stopLinkCountdown()
       },
 
-      // นับถอยหลังอายุลิงก์ดาวน์โหลด (ตรงกับ DOWNLOAD_LINK_TTL ฝั่ง server = 5 นาที)
+
       startLinkCountdown() {
         this.stopLinkCountdown()
         this.linkRemaining = this.linkTtlSeconds
@@ -200,7 +200,7 @@ function agentsApp() {
         }, 1800)
       },
 
-      // ปุ่ม Copy ท้ายคำสั่งแต่ละบรรทัดในคู่มือ — คำสั่งคือ <code> ที่อยู่ก่อนปุ่ม
+
       async copyGuideLine(btn) {
         const text = btn.previousElementSibling.textContent
         await this.copyTextToClipboard(text)
@@ -218,7 +218,7 @@ function agentsApp() {
       buildLinuxDownloadCommand(url) {
         const fullUrl = this.buildFullDownloadUrl(url)
         if (!fullUrl) return ''
-        // เครื่อง agent ยังไม่มี ca.crt ของเรา (มันอยู่ *ใน* zip ที่กำลังจะโหลด — ไก่กับไข่)
+
         return `wget --no-check-certificate -O agent_package.zip "${fullUrl}"`
       },
 
@@ -243,7 +243,7 @@ function agentsApp() {
         return this.copyTextToClipboard(this.buildLinuxDownloadCommand(url), 'copiedRegenDownloadCommand')
       },
 
-      // ไม่ต้องตรวจ Host IP แล้ว — ไม่มีช่องให้กรอก ระบบผูกเองจากที่ agent รายงานเข้ามาครั้งแรก
+
       validateAgentForm(form) {
         if (!String(form.hostname || '').trim()) return 'กรุณากรอก Hostname'
 
@@ -387,12 +387,12 @@ function agentsApp() {
       },
 
       async deleteAgent(agent) {
-        // log/alert ของเครื่องนี้ถูกลบไปด้วยและกู้คืนไม่ได้ — ต้องบอกจำนวนก่อนกด ไม่ใช่มารู้ทีหลัง
+
         const alertCount = agent.alert_count || 0
         const ok = await this.$store.ui.confirm({
           title: 'ลบ Client Server',
           message: 'ยืนยันที่จะลบ Client Server',
-          // ใส่ป้ายกำกับหน้าค่า เพราะลำพัง agent_id กับ hostname ลอย ๆ 2 บรรทัดแยกไม่ออกว่าอันไหนคืออะไร
+
           detail:
             `Agent id : ${agent.agent_id}\nHostname : ${agent.hostname || '-'}\n` +
             `Log/Alert ที่จะถูกลบ : ${alertCount.toLocaleString('th-TH')} รายการ (กู้คืนไม่ได้)\n` +

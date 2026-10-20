@@ -1,10 +1,9 @@
-# สร้าง prompt จาก SecurityAlert (metadata + raw log ในแถวนั้น) แล้วให้ Gemini สรุปเป็นภาษาไทย
+
 
 from AI_API import config, gemini_client
 from alerts import get_attack_type_label
 
 
-# response_action ที่เก็บใน DB -> คำอธิบายให้ AI รู้ว่าเกิดอะไรกับ IP นี้ไปแล้ว
 RESPONSE_ACTION_TEXT = {
     "blocked": "ระบบบล็อก IP ต้นทางนี้อัตโนมัติแล้ว (เพิ่มเข้า blacklist + สั่ง Agent block)",
     "already_blacklisted": "IP ต้นทางนี้อยู่ใน blacklist อยู่ก่อนแล้ว (ถูกบล็อกอยู่)",
@@ -116,5 +115,5 @@ def build_prompt(alert, agent=None, severity: str = "LOW") -> str:
 
 
 def summarize_alert(alert, agent=None, severity: str = "LOW") -> tuple[bool, str]:
-    # blocking — route ต้องเรียกผ่าน asyncio.to_thread
+
     return gemini_client.generate(build_prompt(alert, agent, severity))

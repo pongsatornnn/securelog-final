@@ -1,7 +1,7 @@
-// ย้ายมาจาก templates/whitelist.html (บล็อก <script> เดิม)
+
 function whitelistApp() {
   return {
-    // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
+
     loading: true,
     loadError: '',
 
@@ -11,13 +11,13 @@ function whitelistApp() {
     bulkResult: null,
     movingId: null,        // id ของแถวที่กำลังย้ายไป Blacklist (กันกดรัว)
 
-    // ย้ายไป Blacklist — ต้องเลือกระยะเวลาบล็อกก่อน จึงเป็น modal ไม่ใช่กล่องยืนยันธรรมดา
+
     showMoveModal: false,
     moveTarget: null,
     isMoving: false,
 
     moveForm: {
-      // ค่าตั้งต้น = ถาวร (พฤติกรรมเดิมของปุ่มนี้) แก้เป็นนาที/ชั่วโมง/วันได้
+
       duration: newDuration('permanent')
     },
 
@@ -30,9 +30,7 @@ function whitelistApp() {
       ]
     },
 
-    // ยุบผลลัพธ์ที่ API ส่งมาเป็น 4 หมวด (added/invalid/blocked_by_blacklist/skipped)
-    // ให้เหลือลิสต์เดียว 1 บรรทัด = 1 IP พร้อมเหตุผล — ผู้ใช้จะได้ไม่ต้องไล่อ่านหลายกล่อง
-    // key ต้องมีชื่อหมวดนำหน้าด้วย เพราะ IP เดียวกันโผล่ได้ 2 หมวด (เช่น พิมพ์ซ้ำในชุดเดียวกัน)
+
     get bulkLines() {
       const r = this.bulkResult && this.bulkResult.results
       if (!r) return []
@@ -48,7 +46,7 @@ function whitelistApp() {
         })
       }
 
-      // หมวดที่ไม่ได้บันทึก — reason จาก API เป็นภาษาไทยอยู่แล้ว ใช้ตรง ๆ ได้
+
       for (const group of ['invalid', 'blocked_by_blacklist', 'skipped']) {
         for (const item of r[group] || []) {
           lines.push({
@@ -247,8 +245,7 @@ function whitelistApp() {
       this.moveTarget = null
     },
 
-    // เอาออกจาก Whitelist + บล็อกตามเวลาที่เลือกในคำขอเดียว — ทำมือทีละหน้าต้องกด Remove
-    // ที่นี่ก่อนแล้วค่อยไปหน้า Blacklist ไม่งั้นจะติดเงื่อนไข "IP อยู่ใน Whitelist"
+
     async moveToBlacklist() {
       const item = this.moveTarget
       if (!item) return

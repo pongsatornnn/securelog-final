@@ -1,7 +1,5 @@
-/* ย้ายมาจาก templates/settings.html (บล็อก <style> เดิม) */
 .page-actions { display: flex; gap: 10px; flex-shrink: 0; }
 
-/* กล่องเตือนหัวหน้า — บอกเส้นแบ่งว่าอะไรตั้งที่นี่ได้ อะไรต้องไปแก้ที่ .env */
 .scope-note {
   background: var(--bg-raised);
   border: 1px solid var(--border-color);
@@ -38,7 +36,6 @@
   font-size: 15px;
 }
 
-/* ปุ่มทดสอบอยู่ขวาสุดของหัวกลุ่ม — ทดสอบทีละบริการ ไม่ใช่ทั้งหน้า */
 .set-group-head .btn-mini { margin-left: auto; }
 
 .set-row {
@@ -74,7 +71,6 @@
 
 .set-input-row .form-input { flex: 1; min-width: 0; }
 
-/* ป้ายสถานะของแต่ละค่า: มาจาก .env / ตั้งเองแล้ว / ยังไม่ได้ตั้ง */
 .set-tag {
   font-size: 11px;
   font-weight: 700;
@@ -101,7 +97,6 @@
   border: 1px solid var(--warning-border);
 }
 
-/* ผลการทดสอบเชื่อมต่อ — โผล่ใต้หัวกลุ่ม */
 .test-result {
   margin-top: 10px;
   padding: 9px 12px;
@@ -110,9 +105,6 @@
   line-height: 1.6;
 }
 
-/* ข้อความ error มีต้นฉบับจากปลายทางต่อท้ายอีกบรรทัด — ต้องขึ้นบรรทัดใหม่ตาม \n จริง
-   และตัดคำได้ เพราะข้อความของ Google เป็นประโยคยาวไม่มีเว้นวรรคให้ตัด
-   (ใส่ที่ตัวข้อความเท่านั้น ถ้าใส่ที่กล่อง การเว้นบรรทัดในไฟล์ HTML จะกลายเป็นช่องว่างจริง) */
 .test-result-text {
   white-space: pre-line;
   overflow-wrap: anywhere;
@@ -130,7 +122,6 @@
   border: 1px solid var(--danger-border);
 }
 
-/* แถบบันทึกลอยอยู่ล่างสุด โผล่เฉพาะตอนมีอะไรเปลี่ยน — กันกดบันทึกทั้งที่ไม่ได้แก้อะไร */
 .save-bar {
   position: sticky;
   bottom: 0;
@@ -156,12 +147,8 @@
 .save-bar .btn-secondary { margin-left: auto; }
 .save-bar .btn-primary { margin-left: 0; }
 
-/* ── กลุ่ม Redis ของ central ──
-   ขอบสีเตือนเพราะไม่ใช่ "ค่าที่บันทึกไว้" เหมือนกลุ่มอื่น แต่กดแล้วไปแก้ users.acl + .env
-   ของเครื่องจริง กระทบทุก service ทันที */
 .redis-group { border-left: 3px solid var(--warning); }
 
-/* เลือกวิธีได้รหัสใหม่ (กรอกเอง / ให้สุ่ม) — อยู่ใน popup */
 .redis-modes {
   display: flex;
   gap: 18px;
@@ -179,7 +166,6 @@
   cursor: pointer;
 }
 
-/* ค่าที่สุ่มได้/รหัสที่เพิ่งตั้ง — ตัวหนังสือ monospace ตัดบรรทัดได้ กันอ่านผิดตอนคัดลอกด้วยมือ */
 .redis-value {
   display: flex;
   align-items: center;
@@ -199,7 +185,6 @@
   color: var(--text-main);
 }
 
-/* บรรทัด "แก้ล่าสุดโดยใคร" — อยู่เหนือ hint ปกติ ตัวเล็กกว่าและจางกว่าเนื้อหาหลัก */
 .set-audit {
   display: flex;
   align-items: center;
@@ -207,7 +192,6 @@
   flex-wrap: wrap;
 }
 
-/* ตารางประวัติใน popup — คอลัมน์ค่าเก่า/ใหม่ยาวได้ ให้ตัดบรรทัดแทนดันตารางบาน */
 .history-table {
   width: 100%;
   border-collapse: collapse;
@@ -227,13 +211,10 @@
 .history-table td.val { font-family: monospace; font-size: 12px; }
 .history-empty { color: var(--text-dim); padding: 14px 2px; }
 
-/* ── popup เปลี่ยนรหัส (โครงเดียวกับ popup เปลี่ยนรหัสผ่านในหน้า Profile) ──
-   .modal* / .btn-close / .form-input มาจาก app.css แล้ว เหลือเฉพาะที่หน้านี้ต่างจริง */
 .modal { --modal-width: 460px; }
 
 .form-group { margin-bottom: 18px; }
 
-/* ค่าที่แก้ผ่าน popup — แสดงค่าที่ mask ไว้แทนช่องกรอก ให้รู้ว่ามีค่าอยู่แล้วแต่พิมพ์ทับตรงนี้ไม่ได้ */
 .set-masked {
   flex: 1;
   min-width: 0;
@@ -255,8 +236,6 @@
   cursor: not-allowed;
 }
 
-/* คำเตือน "เปลี่ยนแล้วต้องตามไปทำอะไรต่อ" — อยู่บนสุดของ popup ให้อ่านก่อนกรอก
-   ไม่ใช่หลังกดยืนยัน เพราะสิ่งที่ต้องทำต่อคือสิ่งที่ต้องเตรียมไว้ก่อน */
 .modal-warn {
   background: var(--warning-soft);
   border: 1px solid var(--warning-border);
@@ -298,8 +277,6 @@
   line-height: 1.5;
 }
 
-/* ข้อความบอกว่ากรอกไม่เข้าเงื่อนไข — อยู่ใต้ช่องกรอกที่มีปัญหา ไม่ใช่ toast ที่หายไปเอง
-   เพราะผู้ใช้ต้องอ่านไปพิมพ์แก้ไปพร้อมกัน */
 .field-invalid {
   color: var(--danger);
   font-size: 12px;
@@ -307,9 +284,6 @@
   margin-top: 6px;
 }
 
-/* ── แถบเตือน "ยังไม่ได้รีสตาร์ต" ──
-   อยู่บนสุดของหน้าไม่ใช่ในกล่อง Redis เพราะเป็นเรื่องของ .env ทั้งไฟล์ (แก้ค่าไหนด้วยมือ
-   แล้วลืมรีสตาร์ตก็ขึ้นอันนี้) และต้องเห็นทันทีที่เปิดหน้า ไม่ต้องเลื่อนหา */
 .restart-banner {
   background: var(--warning-soft);
   border: 1px solid var(--warning-border);

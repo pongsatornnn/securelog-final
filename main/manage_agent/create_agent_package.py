@@ -21,7 +21,7 @@ from manage_agent.redis_acl import ensure_agent_credentials, remove_agent_creden
 
 
 def _download_url(token: str) -> str:
-    # โหมด relative: ปล่อยเป็น URL สัมพัทธ์ ให้หน้าเว็บ (ที่อยู่ชั้นเดียวกัน) ประกอบเอง
+
     if RELATIVE_URLS:
         return f"download-agent/{token}"
     return with_base(f"/download-agent/{token}")
@@ -37,7 +37,7 @@ CA_KEY = os.path.join(PROJECT_ROOT, "cert/central/ca.key")
 AGENT_CERT_DIR = os.path.join(PROJECT_ROOT, "cert/agent")
 PACKAGE_DIR = os.path.join(PROJECT_ROOT, "main/agent_packages")
 
-# ชุดไฟล์ติดตั้งฝั่ง agent (setup.sh, agent_core.py, filebeat template ฯลฯ)
+
 AGENT_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "for_Agent/package")
 FILEBEAT_ACL_BINARY = os.getenv(
     "FILEBEAT_ACL_BINARY",
@@ -54,7 +54,7 @@ def now_thai():
 
 
 def central_address() -> tuple[str, str]:
-    # ที่อยู่ + พอร์ต Redis ของ central ที่ agent ต้องต่อกลับมา — มาจาก `.env` ไม่ใช่หน้าเว็บ
+
     host = (os.getenv("AGENT_CENTRAL_HOST") or os.getenv("REDIS_HOST") or "").strip()
     port = (os.getenv("AGENT_CENTRAL_REDIS_PORT") or os.getenv("REDIS_PORT") or "").strip()
 
@@ -62,13 +62,13 @@ def central_address() -> tuple[str, str]:
 
 
 def central_candidates() -> str:
-    # ที่อยู่สำรองของ central ที่ฝังไปกับ package — agent ไล่ลองเองเมื่อที่อยู่หลักต่อไม่ได้
+
     raw = (os.getenv("AGENT_CENTRAL_CANDIDATES") or "").replace(",", " ").split()
     return " ".join(dict.fromkeys(raw))
 
 
 async def build_site_conf(agent_id: str, username: str, password: str) -> str:
-    # สร้างเนื้อไฟล์ site.conf ที่จะฝังไปกับ zip
+
     host, port = central_address()
     if not host:
         raise Exception(
@@ -96,7 +96,7 @@ def run_cmd(cmd: list[str]):
 
 
 def agent_file_paths(agent_id: str) -> tuple[str, str]:
-    # โฟลเดอร์ cert + ไฟล์ zip ของ agent ตัวนี้ — ที่เดียวที่ประกอบ path สองอันนี้
+
     return (
         os.path.join(AGENT_CERT_DIR, agent_id),
         os.path.join(PACKAGE_DIR, f"{agent_id}.zip"),
@@ -104,7 +104,7 @@ def agent_file_paths(agent_id: str) -> tuple[str, str]:
 
 
 def discard_agent_files(agent_id: str) -> None:
-    # ลบ cert + zip ของ agent_id ทิ้ง
+
     agent_dir, zip_path = agent_file_paths(agent_id)
 
     if os.path.isdir(agent_dir):
@@ -212,7 +212,7 @@ def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_con
         f.write(f"CERT_FILE={agent_id}.crt\n")
         f.write(f"KEY_FILE={agent_id}.key\n")
         f.write("CA_FILE=ca.crt\n")
-        # เว้นว่างไว้เสมอ: IP ถูกผูกตอน agent ติดต่อเข้ามาครั้งแรก จาก interface ที่เลือกตอนรัน
+
         f.write("HOST_IP=\n")
         f.write("TIMEZONE=Asia/Bangkok\n")
         f.write(f"PACKAGE_CREATED_AT={created_at}\n")
@@ -245,12 +245,10 @@ def _write_agent_zip(zip_path: str, agent_id: str, cert_info: dict, info_path: s
         zipf.write(cert_info["ca_path"], arcname="ca.crt")
         zipf.write(info_path, arcname="agent_info.txt")
 
-        # Credentials are generated per Agent; never copy a shared site.conf.
+
         zipf.writestr("site.conf", site_conf)
 
-        # zipf.write เก็บ file mode ไว้ด้วย — setup.sh ยังเป็น executable หลังแตก zip
-        # ข้าม site.conf ทุกใบ: ตัวจริงสร้างใหม่ทุกครั้งด้านบน ส่วนไฟล์ .bak ที่ setup-server.sh
-        # ทิ้งไว้มีรหัส Redis ของรอบก่อนอยู่ข้างใน ห้ามติดไปกับ zip ที่ส่งให้เครื่อง agent
+
         for name in sorted(os.listdir(AGENT_TEMPLATE_DIR)):
             path = os.path.join(AGENT_TEMPLATE_DIR, name)
 
@@ -264,8 +262,8 @@ async def create_agent_package(
     hostname: str | None = None,
     description: str | None = None,
 ):
-    # สร้าง agent ใหม่ + cert + zip
-    # เวลาที่ลง DB ต้องเป็นเวลาเครื่อง (UTC) เหมือนตารางอื่น — iso_utc() ต่อ "Z" ให้ตอนส่งออกหน้าเว็บ
+
+
     current_time = datetime.now()
 
     secret_token = generate_token()
@@ -274,7 +272,7 @@ async def create_agent_package(
     secret_token_hash = hash_token(secret_token)
     download_token_hash = hash_token(download_token)
 
-    # ── เก็บกวาดไฟล์กำพร้าจากรอบก่อนที่ล้มเหลว ก่อนเริ่มออกไฟล์ชุดใหม่ ────────────
+
     async with AsyncSessionLocal() as db:
         if await get_agent_by_agent_id(db, agent_id):
             raise ValueError(f"มี {agent_id} อยู่ในระบบแล้ว")
@@ -288,7 +286,7 @@ async def create_agent_package(
         username, password, acl_created = await asyncio.to_thread(ensure_agent_credentials, agent_id)
         site_conf = await build_site_conf(agent_id, username, password)
 
-        # ตั้งแต่จุดนี้มีการเขียนไฟล์ลงดิสก์ — พังตรงไหนก็ตามต้องเก็บกวาดให้หมดก่อนโยนต่อ
+
         cert_info = create_agent_cert(agent_id)
         zip_path = create_agent_zip(agent_id, secret_token, cert_info, site_conf)
 
@@ -326,7 +324,7 @@ async def create_agent_package(
             await asyncio.to_thread(remove_agent_credentials, agent_id)
         raise
 
-    # ล้าง cache เผื่อมี cache เก่าค้างจาก agent_id เดิม
+
     clear_agent_auth_cache(agent_id)
 
     return {
@@ -338,7 +336,7 @@ async def create_agent_package(
 
 
 async def regenerate_agent_package(agent: Agent):
-    # เวลาที่ลง DB ต้องเป็นเวลาเครื่อง (UTC) เหมือนตารางอื่น — iso_utc() ต่อ "Z" ให้ตอนส่งออกหน้าเว็บ
+
     current_time = datetime.now()
 
     secret_token = generate_token()
@@ -375,7 +373,7 @@ async def regenerate_agent_package(agent: Agent):
             db_agent.status = "pending"
             db_agent.updated_at = current_time
 
-            # Invalidate old links in the same DB transaction as the replacement.
+
             await db.execute(
                 update(AgentDownload)
                 .where(AgentDownload.agent_id == db_agent.agent_id,
@@ -406,7 +404,7 @@ async def regenerate_agent_package(agent: Agent):
             if os.path.isfile(path):
                 os.unlink(path)
 
-    # สำคัญมาก: regen token แล้วต้องล้าง cache ทันที
+
     clear_agent_auth_cache(agent.agent_id)
 
     return {

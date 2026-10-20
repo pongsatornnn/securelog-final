@@ -1,6 +1,6 @@
-// เด้งกลับหน้า login อัตโนมัติเมื่อ session หมดอายุ/ถูกเพิกถอน แทนที่จะปล่อยให้หน้าค้าง
+
 (function () {
-  // endpoint ที่ 401 = "ข้อมูลที่กรอกไม่ถูกต้อง" ไม่ใช่ session หมดอายุ ห้ามเด้ง
+
   var BASE = window.APP_BASE || '';
   var AUTH_ENDPOINTS = [BASE + '/api/login', BASE + '/api/change-password'];
 
@@ -26,7 +26,7 @@
   }
 
   function goLogin() {
-    // อยู่หน้า login อยู่แล้วไม่ต้องเด้ง (กันลูป) และเด้งครั้งเดียวพอถึงจะมีหลาย request พร้อมกัน
+
     if (redirecting || window.location.pathname === BASE + '/login') return false;
     redirecting = true;
     window.location.href = BASE + '/login';
@@ -44,7 +44,7 @@
 
       if (bouncedToLogin || res.status === 401) {
         if (goLogin()) {
-          // ค้าง promise ไว้เฉย ๆ ระหว่างที่ browser กำลังเปลี่ยนหน้า เพื่อไม่ให้ผู้ใช้เห็น
+
           return new Promise(function () {});
         }
       }

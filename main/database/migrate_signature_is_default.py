@@ -1,4 +1,4 @@
-# Migration ครั้งเดียว: เพิ่มคอลัมน์ detection_signatures.is_default + backfill ให้แถวเดิม
+
 
 import asyncio
 
@@ -41,7 +41,7 @@ async def migrate() -> None:
             await db.commit()
             print(f"[{LOG_PREFIX}] เพิ่มคอลัมน์ {TABLE}.{COLUMN} แล้ว")
 
-        # ── backfill ──────────────────────────────────────────────────────
+
         touched = {}
 
         for detection_type in DEFAULT_SIGNATURES:

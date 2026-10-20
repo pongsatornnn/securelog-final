@@ -1,4 +1,4 @@
-# เส้นทางจัดการ user (หน้า Manage Users) — เรียกได้เฉพาะบัญชี admin เริ่มต้น (id น้อยสุด) เท่านั้น
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,7 @@ from schemas.user_schema import (
 
 
 async def get_managed_user(db: AsyncSession, user_id: int):
-    # user ที่หน้า Manage Users แตะได้ — บัญชี View ไม่นับ (เปิด/ปิดผ่าน /api/users/view-account เท่านั้น)
+
     target = await get_user_by_id(db, user_id)
     if not target or is_view_role(target.role):
         raise HTTPException(status_code=404, detail="ไม่พบ user นี้")
@@ -38,7 +38,7 @@ async def api_get_users(
     db: AsyncSession = Depends(get_db),
 ):
     users = await get_all_users(db)
-    # บัญชี id น้อยสุด = admin เริ่มต้น (seed ตอน DB ว่าง) — mark ไว้ให้หน้าเว็บซ่อนปุ่มลบ
+
     protected_id = min((u.id for u in users), default=None)
     return [
         {
@@ -66,7 +66,7 @@ async def api_create_user(
     if exists:
         raise HTTPException(status_code=409, detail="มี username นี้อยู่แล้ว")
 
-    # นโยบายรหัสผ่าน — กฎชุดเดียวกับ checklist ที่หน้าเว็บแสดงตอนพิมพ์
+
     failed = password_policy.failed_rules(payload.password)
     if failed:
         raise HTTPException(
@@ -75,7 +75,7 @@ async def api_create_user(
             headers={"X-Password-Policy-Failed": ",".join(r["id"] for r in failed)},
         )
 
-    # admin เป็นคนตั้งรหัสแรกให้ (ไม่ใช่รหัสที่เจ้าของบัญชีตั้งเอง) จึงบังคับเปลี่ยนตอน login
+
     created = await create_user(
         db, payload.username, hash_password(payload.password),
         must_change_password=True,
@@ -95,7 +95,7 @@ async def api_reset_password(
     user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # admin ตั้งรหัสใหม่ให้ user คนไหนก็ได้ (รวมถึงตัวเอง) โดยไม่ต้องรู้รหัสเดิม
+
     target = await get_managed_user(db, user_id)
 
     failed = password_policy.failed_rules(payload.new_password)
@@ -107,7 +107,7 @@ async def api_reset_password(
         )
 
     await set_user_password(db, target, hash_password(payload.new_password), must_change_password=True)
-    # รหัสถูกตั้งใหม่ = session เดิมทุกอันของบัญชีนี้ใช้ต่อไม่ได้ (รวมของ admin เองถ้า reset ตัวเอง)
+
     await end_user_sessions(db, target.id)
 
     return {
@@ -122,7 +122,7 @@ async def api_delete_user(
     user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # admin ลบ user ออกจากระบบถาวร — กันสองเคสที่ห้ามลบ:
+
     target = await get_managed_user(db, user_id)
 
     first_user = await get_first_user(db)
@@ -147,7 +147,7 @@ async def api_set_user_active(
     user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # admin เปิด/ปิดใช้งาน user — บัญชีที่ถูกปิด (is_active=False) จะ login ไม่ได้ และ session ที่
+
     target = await get_managed_user(db, user_id)
 
     if not payload.is_active:
@@ -159,7 +159,7 @@ async def api_set_user_active(
 
     await set_user_active(db, target, payload.is_active)
     if not payload.is_active:
-        # ตัด session ทิ้งด้วย — ไม่งั้นเปิดบัญชีกลับมาแล้ว session เก่าที่ยังไม่หมดอายุจะใช้ได้อีก
+
         await end_user_sessions(db, target.id)
 
     return {
@@ -168,8 +168,6 @@ async def api_set_user_active(
     }
 
 
-# ── บัญชี View (ดูได้อย่างเดียว) — ไม่อยู่ในรายชื่อ user ข้างบน เปิด/ปิดได้ที่การ์ดของมันเองเท่านั้น ──
-
 @router.get("/api/users/view-account")
 async def api_get_view_account(
     user=Depends(require_primary_admin),
@@ -177,7 +175,7 @@ async def api_get_view_account(
 ):
     view_user = await get_view_user(db)
     return {
-        # False = เครื่องนี้ไม่มีบัญชี View (เช่นมี user ชื่อ view ที่สร้างเองอยู่ก่อน) — หน้าเว็บซ่อนการ์ด
+
         "exists": view_user is not None,
         "enabled": bool(view_user and view_user.is_active),
         "username": view_user.username if view_user else None,
@@ -191,8 +189,8 @@ async def api_set_view_account(
     user=Depends(require_primary_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # เปิด = หน้า login มีปุ่ม View ให้ใครก็ได้ที่เปิดหน้า login เข้ามาดู Dashboard / Alerts
-    # ปิด = ปุ่มหาย และ session View ที่ค้างอยู่ตายทันที (require_login เช็ค is_active ทุก request)
+
+
     view_user = await get_view_user(db)
     if not view_user:
         raise HTTPException(status_code=404, detail="ไม่พบบัญชี View ในระบบ")

@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
 
 
-# ไม่มี host_ip ในทั้งสองคำขอโดยตั้งใจ — IP ของ agent ถูกผูกครั้งเดียวตอนที่ agent ติดต่อเข้ามา
 HOSTNAME_MAX = 100
 DESCRIPTION_MAX = 200
 

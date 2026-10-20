@@ -1,4 +1,4 @@
-# Worker: subscribe Redis channel `security_alerts_stream` (ตัวเดียวกับที่ detector
+
 
 import asyncio
 import json
@@ -18,7 +18,6 @@ from LINE_API import config, line_client
 from LINE_API.alert_formatter import format_alert
 
 
-# รอข้อความรอบละกี่วินาทีก่อนวนกลับมาเช็คใหม่ — ไม่ใช่ timeout ที่เป็น error
 PUBSUB_POLL_SECONDS = 5
 
 async def _approved_user_ids() -> list[str]:
@@ -27,26 +26,26 @@ async def _approved_user_ids() -> list[str]:
 
 
 def _is_new_alert(r: redis.Redis, alert_id) -> bool:
-    # True = alert แถวนี้ (id นี้) ยังไม่เคยส่ง -> ส่งได้
+
     if alert_id is None:
         return True
     try:
         key = f"{config.NOTIFY_DEDUP_KEY_PREFIX}{alert_id}"
-        # nx=True เซ็ตเฉพาะตอน key ยังไม่มี, ex=TTL ไว้ล้าง key อัตโนมัติ
+
         return bool(r.set(key, "1", nx=True, ex=config.NOTIFY_DEDUP_TTL_SEC))
     except Exception as e:
-        # fail-open: ถ้า Redis error ให้ส่ง (ยอมส่งซ้ำ ดีกว่าพลาด alert)
+
         print(f"[LINE-NOTIFY] dedup check error (ส่งต่อ): {e}")
         return True
 
 
 async def _should_notify(alert: dict) -> bool:
-    # อ่านจาก blacklist_ttl (cache-first) — แอดมินกดบันทึกที่หน้า Rules แล้ว update_ttl
-    # เคลียร์คีย์ใน Redis ให้ worker นี้เห็นผลทันที ไม่ต้องรอ TTL ของ cache หมด
+
+
     try:
         return await should_notify_line(alert.get("detection_type"))
     except Exception as e:
-        # fail-open แบบเดียวกับ dedup: อ่านค่าไม่ได้ให้ส่ง ดีกว่าเงียบหาย
+
         print(f"[LINE-NOTIFY] อ่านค่าการแจ้ง LINE ไม่ได้ ({e}) — ส่งต่อ")
         return True
 
@@ -54,19 +53,17 @@ async def _should_notify(alert: dict) -> bool:
 def handle_alert(alert: dict, loop: asyncio.AbstractEventLoop, r: redis.Redis) -> None:
     label = alert.get("attack_type", "-")
 
-    # ชนิดนี้เป็นโหมดแจ้งเตือนอย่างเดียว และถูกตั้งที่หน้า Rules ว่าไม่ต้องแจ้ง LINE
-    # — ออกตั้งแต่ตรงนี้ ก่อนกิน dedup key เพื่อให้เปิดกลับมาแล้ว alert แถวเดิมยังส่งได้
-    # หน้าเว็บไม่กระทบ: /api/stream/alerts ซับ channel เดียวกันนี้แยกต่างหาก ได้ครบทุกชนิด
+
     if not loop.run_until_complete(_should_notify(alert)):
         print(f"[LINE-NOTIFY] ข้าม '{label}' (ตั้งไว้ว่าไม่ต้องแจ้ง LINE)")
         return
 
-    # กันสแปม: alert แถวเดิมที่โจมตีซ้ำ (merge, id เดิม) ไม่ส่งซ้ำ
+
     if not _is_new_alert(r, alert.get("id")):
         print(f"[LINE-NOTIFY] ข้าม '{label}' (alert id={alert.get('id')} ส่งไปแล้ว)")
         return
 
-    # อ่านค่า LINE ล่าสุดเข้า cache ก่อนใช้ — worker นี้เป็น process แยกและรันยาว
+
     loop.run_until_complete(ensure_loaded())
 
     if not config.is_configured():
@@ -93,11 +90,10 @@ def start_line_notifier() -> None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # ตารางถูกสร้างโดยเว็บตอน start — worker นี้ขึ้นพร้อมกันจึงอาจมาถึงก่อน (ดู wait_for_table)
+
     loop.run_until_complete(wait_for_table("app_settings", "LINE-NOTIFY"))
 
-    # เตือนตอน start เฉย ๆ ไม่ต้อง exit — แอดมินตั้งค่าทีหลังจากหน้า System Settings ได้
-    # อ่านไม่ได้จริง ๆ ก็ไปต่อ ไม่ตาย เดี๋ยวอ่านใหม่ตอนมี alert เข้ามา (ลูปนั้นกัน exception ไว้แล้ว)
+
     try:
         configured = loop.run_until_complete(_configured_now())
     except Exception as e:
@@ -117,10 +113,7 @@ def start_line_notifier() -> None:
             pubsub = r.pubsub(ignore_subscribe_messages=True)
             pubsub.subscribe(SECURITY_ALERTS_STREAM_CHANNEL)
 
-            # อ่านด้วย get_message ไม่ใช่ listen(): redis-py 8 เอา socket_connect_timeout
-            # มาเป็น socket_timeout ด้วย การ block รออ่านจึงเด้ง TimeoutError ทุก 5 วินาที
-            # ทั้งที่ "ช่วงที่ไม่มีข้อความ" เป็นเรื่องปกติของ pubsub — เดิมต้องรื้อ subscription
-            # ทิ้งแล้ว subscribe ใหม่ทุก 6 วินาที (มีช่วงสั้น ๆ ที่ไม่มีใคร subscribe = ข้อความหาย)
+
             while True:
                 try:
                     message = pubsub.get_message(timeout=PUBSUB_POLL_SECONDS)
@@ -157,7 +150,7 @@ def start_line_notifier() -> None:
             time.sleep(1)
 
         finally:
-            # ปิดเฉพาะ pubsub (คืน connection เข้า pool) — client กลางห้ามปิด
+
             try:
                 if pubsub:
                     pubsub.close()

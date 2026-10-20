@@ -1,4 +1,4 @@
-# Redis client กลางของ process — แก้ปัญหาเดิมที่ทุก operation เปิด connection ใหม่
+
 
 import json
 import time
@@ -8,8 +8,6 @@ import redis
 from redis_config import REDIS_CONFIG
 
 
-# redis-py 6 ขึ้นไปตั้ง retry อัตโนมัติ 3 ครั้งพร้อม backoff — connect timeout 5 วิ จึงกลายเป็น
-# เกือบนาทีกว่าจะรู้ว่าต่อไม่ได้ ที่นี่ไม่ต้องการ retry ชั้นนั้น (ทุก service มีลูปของตัวเองอยู่แล้ว)
 try:
     from redis.retry import Retry
     from redis.backoff import NoBackoff
@@ -19,19 +17,13 @@ except ImportError:
     _NO_RETRY = {}
 
 
-# ต่อ Redis ไม่ได้แล้วพักไว้กี่วินาที ก่อนจะยอมลองใหม่
-#
-# ทำไมต้องมี: หน้าเว็บหนึ่งหน้าเรียก Redis หลายสิบครั้ง ถ้าปลายทางหายไป (ย้าย IP แล้วยังไม่ได้
-# ตั้งค่าเครือข่าย) ทุกครั้งจะจ่ายค่า connect timeout เต็ม ๆ กลายเป็นค้างเป็นนาที ทั้งที่รู้ตั้งแต่
-# ครั้งแรกแล้วว่าต่อไม่ได้ — วัดจริงบนเครื่องทดสอบ: /api/alerts ค้างเกิน 120 วินาที
-# มีตัวนี้แล้ว ครั้งแรกจ่าย 5 วิ ที่เหลือเด้งทันที หน้าเว็บขึ้น error ให้เห็นแทนที่จะแขวน
 REDIS_DOWN_BACKOFF_SECONDS = 10
 
 _down_until = 0.0
 
 
 class _Client(redis.Redis):
-    # ครอบ execute_command เพื่อจำว่า "เพิ่งต่อไม่ได้" — ไม่ได้เปลี่ยนพฤติกรรมตอนใช้งานปกติ
+
     def execute_command(self, *args, **kwargs):
         global _down_until
 
@@ -59,16 +51,8 @@ _client: redis.Redis | None = None
 def get_redis() -> redis.Redis:
     global _client
     if _client is None:
-        # health_check_interval: ping ก่อนใช้ connection ที่ idle นาน กัน error จาก
-        #
-        # socket_connect_timeout: ที่อยู่ใน REDIS_HOST หายไป (ย้าย IP แล้วยังไม่ได้ตั้งค่าเครือข่าย)
-        # ต้องรู้เร็ว ไม่งั้นหน้าเว็บค้างเป็นนาทีโดยไม่มีข้อความบอกอะไรเลย
-        #
-        # ไม่ตั้ง socket_timeout เอง แต่ **redis-py 8 เอา socket_connect_timeout มาใช้เป็น
-        # socket_timeout ให้ด้วย** (วัดจริง: socket_timeout=5 ทั้งที่ไม่ได้ส่งเข้าไป) การอ่าน
-        # pubsub แบบ block จึงเด้ง TimeoutError ทุก 5 วินาทีเมื่อไม่มีข้อความ — ฝั่ง pubsub
-        # (process_agent / LINE alert_subscriber) จึงต้องใช้ get_message(timeout=...) แล้ว
-        # ถือว่า "ว่าง" เป็นเรื่องปกติ ห้ามใช้ listen() ตรง ๆ
+
+
         _client = _Client(
             **REDIS_CONFIG,
             health_check_interval=30,
@@ -79,7 +63,7 @@ def get_redis() -> redis.Redis:
 
 
 def reset_client() -> None:
-    # ทิ้ง client กลางของ process นี้ ให้คำสั่งถัดไปสร้างใหม่จาก REDIS_CONFIG ตัวปัจจุบัน
+
     global _client
 
     old, _client = _client, None
@@ -91,10 +75,8 @@ def reset_client() -> None:
             print(f"[REDIS] ปิด client เก่าไม่สำเร็จ (ข้ามไป): {e}")
 
 
-# ============================================================
-
 def cache_get_json(key: str, *, log_prefix: str = "CACHE"):
-    # คืนค่า JSON ที่ cache ไว้ หรือ None ถ้าไม่มี/อ่านไม่ได้ (ให้ caller fallback DB)
+
     try:
         raw = get_redis().get(key)
 
@@ -126,10 +108,8 @@ def cache_delete(key: str, *, log_prefix: str = "CACHE") -> None:
         print(f"[{log_prefix}] ล้าง cache ไม่ได้: {key} | {e}")
 
 
-# ============================================================
-
 def publish_json(channel: str, payload: dict, *, log_prefix: str = "PUBLISH") -> dict:
-    # publish payload (JSON) ขึ้น channel — คืน {ok, channel, receiver_count}
+
     try:
         receiver_count = get_redis().publish(
             channel,

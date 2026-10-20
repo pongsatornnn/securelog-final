@@ -49,7 +49,7 @@ async def authenticate_user_db(db: AsyncSession, username: str, password: str):
     user = await get_user(db, username)
     if not user or not user.is_active:
         return None
-    # บัญชี View เข้าได้ทางปุ่ม View เท่านั้น (/api/login/view) — ฟอร์มชื่อ/รหัสปฏิเสธเสมอ
+
     if is_view_role(user.role):
         return None
     if not verify_password(password, user.hashed_password):

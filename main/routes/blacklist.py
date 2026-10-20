@@ -1,4 +1,4 @@
-# เส้นทางจัดการ IP Blacklist (manual, ผ่านหน้าเว็บ) — ต่างจาก auto-block ที่มาจาก
+
 
 import ipaddress
 from datetime import datetime, timedelta
@@ -65,7 +65,7 @@ def agent_command_channel(agent_id: str) -> str:
 
 
 def resolve_block_expiry(duration_seconds: int | None) -> datetime | None:
-    # แปลงระยะเวลาที่แอดมินกรอก (วินาที) -> เวลาหมดอายุของการบล็อก · None = ถาวร
+
     if duration_seconds is None:
         return None
 
@@ -85,7 +85,7 @@ def resolve_block_expiry(duration_seconds: int | None) -> datetime | None:
 
 
 def describe_duration(duration_seconds: int | None) -> str:
-    # ระยะเวลาเป็นข้อความไทยสำหรับข้อความตอบกลับ (หน่วยใหญ่สุดที่หารลงตัว)
+
     if duration_seconds is None:
         return "ถาวร"
 
@@ -97,7 +97,7 @@ def describe_duration(duration_seconds: int | None) -> str:
 
 
 def is_longer_block(new_expires_at: datetime | None, current_expires_at: datetime | None) -> bool:
-    # True ถ้าเวลาหมดอายุใหม่ 'บล็อกนานกว่า' ของเดิม (None = ถาวร = นานที่สุด)
+
     if current_expires_at is None:
         return False
 
@@ -113,7 +113,7 @@ def publish_agent_command(
     event: str | None = None,
     agent_id: str | None = None,
 ) -> dict:
-    # ส่งคำสั่งถึง agent เจาะจงตัว (มี agent_id) หรือ broadcast ทุกตัว (ไม่มี)
+
     payload = base_command_payload(command, ip_address, event, source="central_api")
 
     if agent_id:
@@ -137,7 +137,7 @@ async def api_get_blacklist(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # แสดงเฉพาะ IP ที่ยัง block อยู่จริง (ไม่รวมที่หมดอายุไปแล้ว)
+
     ips = await get_active_blacklist(db)
 
     return [
@@ -148,7 +148,7 @@ async def api_get_blacklist(
             "created_at": iso_utc(item.created_at),
             "expires_at": iso_utc(item.expires_at),
             "block_count": item.block_count,
-            # ใครเพิ่ม: ชื่อผู้ใช้ที่กดเอง หรือ detector:<ชนิด> เมื่อระบบบล็อกเอง
+
             "created_by": item.created_by,
             "created_by_user_id": item.created_by_user_id,
         }
@@ -161,7 +161,7 @@ async def api_get_blacklist_ttl(
     user=Depends(require_login),
     db: AsyncSession = Depends(get_db),
 ):
-    # TTL (ระยะเวลา block) ต่อ detection_type — seed default ครบก่อนแล้วคืนทั้งหมด
+
     for dt in BASE_TTL_SECONDS:
         await get_ttl(dt)
 
@@ -190,14 +190,14 @@ async def api_set_escalation_policy(
     payload: UpdateEscalationPolicyRequest,
     user=Depends(require_admin),
 ):
-    # แก้นโยบาย escalation — body: {"multiplier": 2, "max_block_count": 5}
+
     if payload.multiplier < 1:
         raise HTTPException(
             status_code=400,
             detail="ตัวคูณต้องเป็น 1 ขึ้นไป (1 = ไม่ทวีคูณ ใช้เวลาเท่าเดิมทุกครั้ง)",
         )
 
-    # กันตั้งค่าที่ทำให้ TTL บานจนล้น: 10^9 ชั่วโมงก็ไม่มีความหมายอยู่แล้ว
+
     if payload.multiplier > 100:
         raise HTTPException(status_code=400, detail="ตัวคูณมากเกินไป (สูงสุด 100)")
 
@@ -210,7 +210,7 @@ async def api_set_escalation_policy(
     if payload.max_block_count > 1000:
         raise HTTPException(status_code=400, detail="จำนวนครั้งมากเกินไป (สูงสุด 1000)")
 
-    # source="rules" เพราะสองคีย์นี้ตั้งจากหน้า Rules ไม่ใช่หน้า System Settings —
+
     await update_setting(
         ESCALATION_MULTIPLIER_KEY, str(payload.multiplier),
         actor=user["username"], actor_id=user["id"], source="rules",
@@ -234,15 +234,15 @@ async def api_set_blacklist_ttl(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # แก้ TTL ของ detection_type — body: {"ttl_seconds": 3600} หรือ {"ttl_seconds": null} (ถาวร)
-    # จำกัดเฉพาะ detection_type ที่ระบบรู้จัก กันพิมพ์ผิดสร้างแถวขยะที่ไม่มี detector ตัวไหนอ้างถึงเลย
+
+
     if detection_type not in BASE_TTL_SECONDS:
         raise HTTPException(status_code=404, detail=f"ไม่รู้จัก detection_type: {detection_type}")
 
     if payload.ttl_seconds is not None and payload.ttl_seconds <= 0:
         raise HTTPException(status_code=400, detail="ttl_seconds ต้องมากกว่า 0 (หรือเว้นว่างไว้ = ถาวร)")
 
-    # เพดานเดียวกับการบล็อกด้วยมือ — ค่านี้เป็น "ฐาน" ที่ escalation จะเอาไปคูณต่ออีก
+
     if payload.ttl_seconds is not None and payload.ttl_seconds > MAX_TTL_SECONDS:
         raise HTTPException(
             status_code=400,
@@ -260,7 +260,7 @@ async def api_set_blacklist_ttl(
         "block IP อัตโนมัติ" if result["auto_block"]
         else "แจ้งเตือนอย่างเดียว (ไม่ block)"
     )
-    # ชนิดที่ block ส่ง LINE เสมอ — สถานะที่บอกผู้ใช้จึงต้องดูสองค่าคู่กัน
+
     line_text = (
         " · ไม่แจ้ง LINE" if not result["auto_block"] and not result["notify_line"]
         else " + แจ้งเตือน LINE"
@@ -294,8 +294,7 @@ async def api_add_blacklist(
             detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
-    # ที่อยู่ของ central เอง (อ่านสด — ย้าย IP แล้วตามไปเอง) · agent ก็ไม่ยอม block อยู่แล้ว
-    # กันตั้งแต่ตรงนี้เพื่อไม่ให้หน้าเว็บแสดงว่า block ทั้งที่จริงไม่ได้ block
+
     if is_central_ip(ip_address):
         raise HTTPException(status_code=400, detail=CENTRAL_IP_DETAIL)
 
@@ -317,7 +316,7 @@ async def api_add_blacklist(
 
     event = payload.event or "manual_blacklist"
 
-    # ระยะเวลา block: None = ถาวร, มีค่า = block ชั่วคราวหมดอายุตาม admin เลือก
+
     expires_at = resolve_block_expiry(payload.duration_seconds)
 
     blacklist_ip = await get_blacklist_by_ip(db, ip_address)
@@ -325,7 +324,7 @@ async def api_add_blacklist(
     message = "เพิ่ม IP Blacklist สำเร็จ และส่งคำสั่งไปยัง Client Server แล้ว"
 
     if blacklist_ip and blacklist_ip.is_active:
-        # DB บอกว่ายัง block อยู่ — ไม่ตอบ 409 ทิ้ง เพราะเหตุผลที่แอดมินกดเพิ่มซ้ำมักคือ
+
         if is_longer_block(expires_at, blacklist_ip.expires_at):
             ip = await upgrade_blacklist_severity(
                 db, blacklist_ip, event=event, expires_at=expires_at,
@@ -343,7 +342,7 @@ async def api_add_blacklist(
             )
 
     elif blacklist_ip:
-        # เคยถูก block แล้วหมดอายุ -> admin เพิ่มมือใหม่ (ถาวรหรือกำหนดเวลาเองก็ได้)
+
         ip = await reactivate_blacklist(
             db,
             blacklist_ip,
@@ -421,15 +420,13 @@ async def api_delete_blacklist(
     }
 
 
-# ---------------------------------------------------------------------------
-
 @router.post("/api/move_to_whitelist/{blacklist_id}")
 async def api_move_to_whitelist(
     blacklist_id: int,
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # ปลดบล็อก IP แล้วย้ายเข้า Whitelist ในคลิกเดียว (= กด Unblock + เพิ่ม Whitelist)
+
     ip = await get_ip_blacklist_by_id(db, blacklist_id)
 
     if not ip:
@@ -438,7 +435,7 @@ async def api_move_to_whitelist(
     ip_address = ip.ip_address
     event = ip.event
 
-    # 1) ปลดบล็อกก่อน — ต้องทำก่อนเพิ่ม whitelist เพราะ add_whitelist กัน IP ที่ยัง block อยู่
+
     await manual_unblock_blacklist(db, ip)
 
     command_result = publish_agent_command(
@@ -448,7 +445,7 @@ async def api_move_to_whitelist(
         agent_id=None,
     )
 
-    # 2) เพิ่มเข้า whitelist (ถ้ามีอยู่แล้ว หรือมีวงที่ครอบอยู่แล้ว ก็ถือว่าถึงปลายทาง ไม่ต้องเพิ่มซ้ำ)
+
     whitelist_ip = await find_whitelist_covering(db, ip_address)
 
     if not whitelist_ip:
@@ -462,7 +459,7 @@ async def api_move_to_whitelist(
             },
         )
 
-    # 3) อัปเดต never-block list ให้ทุก agent จะได้ไม่โดน auto-block ซ้ำอีก
+
     await broadcast_whitelist_from_db()
 
     return {
@@ -489,7 +486,7 @@ async def api_move_to_blacklist(
     user=Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    # เอา IP ออกจาก Whitelist แล้วบล็อกทันทีในคลิกเดียว
+
     whitelist_ip = await get_ip_whitelist_by_id(db, whitelist_id)
 
     if not whitelist_ip:
@@ -503,20 +500,19 @@ async def api_move_to_blacklist(
             detail=f"IP {ip_address} {non_blockable_reason(ip_address)} จึงบล็อกไม่ได้",
         )
 
-    # ที่อยู่ของ central เอง (อ่านสด — ย้าย IP แล้วตามไปเอง) · agent ก็ไม่ยอม block อยู่แล้ว
-    # กันตั้งแต่ตรงนี้เพื่อไม่ให้หน้าเว็บแสดงว่า block ทั้งที่จริงไม่ได้ block
+
     if is_central_ip(ip_address):
         raise HTTPException(status_code=400, detail=CENTRAL_IP_DETAIL)
 
-    # ตรวจระยะเวลา **ก่อน** ลบออกจาก whitelist — ถ้าไปตอบ 400 ทีหลัง แถวใน whitelist
+
     duration_seconds = payload.duration_seconds if payload else None
     expires_at = resolve_block_expiry(duration_seconds)
 
-    # 1) เอาออกจาก whitelist + broadcast never-block list ใหม่ให้ agent **ก่อน** สั่ง block
+
     await delete_ip_whitelist_by_id(db, whitelist_id)
     await broadcast_whitelist_from_db()
 
-    # 2) เพิ่ม/ปลุกแถวใน blacklist
+
     blacklist_ip = await get_blacklist_by_ip(db, ip_address)
 
     if blacklist_ip:
@@ -593,7 +589,7 @@ async def api_add_blacklist_bulk(
         if not ip_address:
             continue
 
-        # กัน IP ซ้ำใน request เดียวกัน
+
         if ip_address in seen_ips:
             results["skipped"].append({
                 "ip_address": ip_address,
@@ -671,7 +667,7 @@ async def api_add_blacklist_bulk(
         blacklist_ip = await get_blacklist_by_ip(db, ip_address)
 
         if blacklist_ip and blacklist_ip.is_active:
-            # ยัง block อยู่ใน DB -> ส่งคำสั่ง block ซ้ำแทนการปฏิเสธ (เหตุผลเดียวกับ
+
             if is_longer_block(bulk_expires_at, blacklist_ip.expires_at):
                 ip = await upgrade_blacklist_severity(
                     db, blacklist_ip, event=event, expires_at=bulk_expires_at,
@@ -699,7 +695,7 @@ async def api_add_blacklist_bulk(
             continue
 
         if blacklist_ip:
-            # เคยหมดอายุ/ถูกปลดบล็อก -> reactivate (กัน unique violation)
+
             ip = await reactivate_blacklist(
                 db,
                 blacklist_ip,

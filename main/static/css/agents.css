@@ -1,22 +1,10 @@
-/* หน้า Agents — โหลดต่อจาก app.css (ดู templates/agents.html)
-   เหลือเฉพาะของที่เป็นของหน้านี้จริง ๆ: การ์ด agent, แถบ metric, modal ดาวน์โหลด/คู่มือ
-
-   ของที่เคยนิยามซ้ำกับ app.css ถูกตัดออกแล้ว (:root, .page-header, .btn-primary/-secondary/
-   -danger, .form-label/.form-input, .state-box, .modal*, .btn-close, .error-box,
-   .required-mark, .modal-actions) — เดิม :root ที่นี่ประกาศ token ธีมสว่างทับของกลาง
-   ทำให้หน้านี้หน้าเดียวไม่เปลี่ยนเป็นธีมมืดตาม
-   (หมายเหตุ: `.success-result-box` ของหน้านี้เป็นคนละตัวกับ `.result-*` ใน app.css) */
-
 .modal { --modal-width: 760px; }
 
-/* หัวข้อในหน้านี้เป็นหัวของทั้งบล็อก ไม่ใช่หัวข้อย่อยในพาเนล จึงไม่ต้องเป็นตัวพิมพ์ใหญ่ */
 .section-title {
   font-size: 14px;
   text-transform: none;
   letter-spacing: 0;
 }
-
-/* ─── ปุ่มเฉพาะหน้านี้ ─── */
 
 .btn-copy-link {
   display: inline-flex;
@@ -68,8 +56,6 @@
   border-color: var(--warning);
 }
 
-/* ─── ตัวเลขสรุปด้านบน (markup ใช้ .summary-grid/.summary-card อยู่แล้ว) ─── */
-
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -93,7 +79,7 @@
 }
 
 .summary-label {
-  order: 2;                 /* markup วาง label ไว้ก่อนตัวเลข แต่ต้องแสดงใต้ตัวเลข */
+  order: 2;
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
@@ -116,8 +102,6 @@
   gap: 16px;
   margin-bottom: 14px;
 }
-
-/* ─── ตัวกรองสถานะ ─── */
 
 .filter-group {
   display: flex;
@@ -143,8 +127,6 @@
   border-color: var(--primary);
   color: var(--primary);
 }
-
-/* ─── การ์ด agent ─── */
 
 .agent-monitor-grid {
   display: grid;
@@ -192,7 +174,6 @@
   flex: 0 0 auto;
 }
 
-/* ไอคอน server ตัวเดียวกับเมนูซ้าย (#ico-agents ใน base.html) — เป็นเส้น ไม่ใช่ทึบ */
 .agent-icon svg {
   width: 19px;
   height: 19px;
@@ -215,8 +196,6 @@
   color: var(--text-dim);
   font-weight: 600;
 }
-
-/* ─── ป้ายสถานะ online / offline / pending ─── */
 
 .status-badge {
   display: inline-flex;
@@ -306,16 +285,11 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* ยังไม่ผูก IP = สถานะปกติของ agent ที่เพิ่งสร้าง ไม่ใช่ error — ใช้สีจาง ๆ ให้ต่างจากค่าจริง
-   พอให้รู้ว่ายังไม่มีค่า แต่ไม่ตะโกนเหมือนคำเตือน */
 .info-value.is-unbound {
   color: var(--text-dim);
   font-weight: 500;
 }
 
-/* ─── คำเตือน IP ไม่ตรงกับที่ผูกไว้ ───
-   ระหว่างที่ขึ้นแถบนี้ ข้อมูลจาก agent ตัวนั้นถูกทิ้งทั้งหมด (ทั้ง metrics และ log) —
-   ต้องเด่นพอที่จะไม่ถูกมองข้าม เพราะถ้าเป็นเคส DHCP เปลี่ยน IP แปลว่าเครื่องนั้นกำลังเงียบอยู่ */
 .ip-mismatch {
   margin-top: 12px;
   padding: 11px 13px;
@@ -349,8 +323,6 @@
 .ip-mismatch-actions {
   margin-top: 9px;
 }
-
-/* ─── แถบ CPU / RAM / Disk ─── */
 
 .monitor-panel {
   background: var(--bg-main);
@@ -388,8 +360,6 @@
   font-weight: 700;
 }
 
-/* ชื่อ .bar ตรงกับกราฟแท่งของหน้า Dashboard แต่คนละหน้ากันและไฟล์นี้โหลดทีหลัง
-   จึงไม่ชนกันจริง — กราฟใน app.css ใช้ชื่อ .chart-bar แยกไว้ต่างหากแล้ว */
 .bar {
   height: 8px;
   background: var(--bg-raised);
@@ -423,8 +393,6 @@
   text-align: right;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-
-/* ─── ป้ายเปิด/ปิดใช้งาน ─── */
 
 .active-badge {
   display: inline-flex;
@@ -471,8 +439,6 @@
   color: var(--text-dim);
   font-weight: 600;
 }
-
-/* ─── ปุ่มในการ์ด / ในกล่องรายละเอียด ─── */
 
 .agent-actions {
   display: flex;
@@ -526,8 +492,6 @@
   background: var(--danger-soft);
   border-color: var(--danger);
 }
-
-/* ─── modal ดาวน์โหลด / คู่มือติดตั้ง ─── */
 
 .download-modal {
   --modal-width: 760px;
@@ -597,7 +561,6 @@
   color: var(--text-main);
 }
 
-/* บล็อกคำสั่ง/ค่าที่ต้องคัดลอก — เข้มกว่าพื้นการ์ดเพื่อให้แยกออกว่าเป็นของที่ก๊อปได้ */
 .guide-code,
 .result-value {
   margin-top: 8px;
@@ -613,7 +576,6 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* คู่มือ: แยกคำสั่งทีละบรรทัด แต่ละบรรทัดมีปุ่ม Copy ของตัวเอง */
 .guide-code {
   white-space: normal;
   padding: 6px;
@@ -678,8 +640,6 @@
   color: var(--success);
 }
 
-/* ─── ฟอร์มในกล่องเพิ่ม/แก้ไข agent ─── */
-
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -699,8 +659,6 @@
 .form-grid-spaced {
   margin-top: 14px;
 }
-
-/* ─── กล่องผลลัพธ์ / คำเตือน ─── */
 
 .success-result-box {
   margin-top: 0;
@@ -765,8 +723,6 @@
   font-weight: 600;
 }
 
-/* ─── ตารางรายละเอียด agent ─── */
-
 .detail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -797,8 +753,6 @@
   font-weight: 600;
   word-break: break-all;
 }
-
-/* ─── จอเล็ก ─── */
 
 @media (max-width: 1100px) {
   .summary-grid {

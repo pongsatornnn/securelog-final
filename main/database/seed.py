@@ -1,4 +1,4 @@
-# Seed ค่าเริ่มต้นลง DB ตอน start (เรียกจาก `main.py` lifespan ครั้งเดียวต่อการ start)
+
 
 from database.connection import AsyncSessionLocal
 from database.crud import (
@@ -35,14 +35,14 @@ LOG_PREFIX = "SEED"
 
 
 def _merged_keys(section: str, code_defaults) -> list[str]:
-    # key ทั้งหมดที่ต้อง seed = ของใน snapshot (มาก่อน คงลำดับตามไฟล์) + ของในโค้ดที่ snapshot ไม่มี
+
     keys = list(snapshot_section(section).keys())
     keys += [k for k in code_defaults if k not in keys]
     return keys
 
 
 async def seed_detection_rules(db) -> int:
-    # threshold/window ของ detector แต่ละตัว — เดิมถูก seed แบบ lazy ตอน detector เจอ log ตัวแรก
+
     created = 0
 
     for rule_key in _merged_keys("detection_rules", DEFAULT_RULES):
@@ -74,7 +74,7 @@ async def seed_detection_rules(db) -> int:
 
 
 async def seed_blacklist_ttl(db) -> int:
-    # ระยะเวลา block ต่อ detection_type (ttl_seconds = None คือถาวร)
+
     created = 0
 
     for detection_type in _merged_keys("blacklist_ttl", BASE_TTL_SECONDS):
@@ -90,7 +90,7 @@ async def seed_blacklist_ttl(db) -> int:
             notify_line = snap.get("notify_line", True)
         else:
             ttl_seconds = BASE_TTL_SECONDS.get(detection_type)
-            # ป้ายกำกับเดิมจาก blacklist_ttl_cache.load_ttl_from_db — คงข้อความให้เหมือนกัน
+
             description = "ถาวร (default)" if ttl_seconds is None else None
             auto_block = True
             notify_line = True
@@ -109,7 +109,7 @@ async def seed_blacklist_ttl(db) -> int:
 
 
 async def seed_alert_severity(db) -> int:
-    # ระดับความรุนแรงของ alert ต่อ severity_key
+
     created = 0
 
     for severity_key in _merged_keys("alert_severity", DEFAULT_SEVERITY):
@@ -137,7 +137,7 @@ async def seed_alert_severity(db) -> int:
 
 
 async def seed_detection_signatures(db) -> int:
-    # regex ของ signature-based detector — seed "ทั้งชนิด" เฉพาะชนิดที่ยังไม่มีสักแถวเลย
+
     created = 0
 
     for detection_type in _merged_keys("detection_signatures", DEFAULT_SIGNATURES):
@@ -171,7 +171,7 @@ async def seed_detection_signatures(db) -> int:
                 category=row.get("category") or CATEGORY_BY_TYPE.get(detection_type, "web"),
                 description=row.get("description"),
                 is_active=row.get("is_active", True),
-                # แถวชุดนี้คือ signature ของระบบ ไม่ใช่ของที่แอดมินเพิ่มเอง
+
                 is_default=True,
             )
             added += 1
@@ -184,8 +184,8 @@ async def seed_detection_signatures(db) -> int:
 
 
 async def seed_admin_user(db) -> bool:
-    # สร้าง admin/admin ตอน users ว่างเปล่าเท่านั้น (เครื่อง deploy ใหม่ที่ยังไม่เคยมี user เลย)
-    # import ตรงนี้เพื่อไม่ให้ database/ ผูกกับ auth ตอน import module (auth ใช้แค่ตอน seed จริง)
+
+
     from auth import hash_password
 
     if await get_all_users(db):
@@ -200,7 +200,7 @@ async def seed_admin_user(db) -> bool:
 
 
 async def seed_view_user(db) -> bool:
-    # บัญชี View (ดูได้อย่างเดียว) — สร้างครั้งเดียว ปิดใช้งานไว้ก่อน admin เปิดเองที่หน้า Manage Users
+
     from auth import hash_password
     from view_account import VIEW_USERNAME, unusable_password
 
@@ -208,7 +208,7 @@ async def seed_view_user(db) -> bool:
         return False
 
     if await get_user(db, VIEW_USERNAME):
-        # มี user ชื่อ view ที่คนสร้างไว้เองอยู่แล้ว — ไม่ไปแตะบัญชีของเขา ปุ่ม View จะไม่ขึ้น
+
         print(f"[{LOG_PREFIX}] มี user ชื่อ '{VIEW_USERNAME}' ที่สร้างไว้เองอยู่แล้ว — ข้ามการสร้างบัญชี View")
         return False
 
@@ -218,14 +218,14 @@ async def seed_view_user(db) -> bool:
 
 
 async def seed_defaults() -> None:
-    # เรียกจาก lifespan ตอน start — เงียบถ้าไม่มีอะไรต้องเติม
+
     async with AsyncSessionLocal() as db:
         rules = await seed_detection_rules(db)
         ttls = await seed_blacklist_ttl(db)
         severities = await seed_alert_severity(db)
         signatures = await seed_detection_signatures(db)
         admin_created = await seed_admin_user(db)
-        # ต่อจาก admin เสมอ — ให้ admin ได้ id น้อยสุดบนเครื่องใหม่
+
         await seed_view_user(db)
 
     total = rules + ttls + severities + signatures

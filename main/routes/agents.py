@@ -1,4 +1,4 @@
-# เส้นทางจัดการ Agent: list/create/update/delete, regen download token,
+
 
 import logging
 import os
@@ -55,7 +55,7 @@ def get_agent_runtime(agent_id: str) -> dict | None:
 
 
 def resolve_agent_live_state(agent) -> dict:
-    # ใช้ Redis runtime เป็นตัวตัดสิน online/offline แบบ real-time
+
     runtime = get_agent_runtime(agent.agent_id)
     now_ts = time.time()
 
@@ -105,7 +105,7 @@ def agent_to_dict(agent):
         "agent_id": agent.agent_id,
         "hostname": agent.hostname,
         "host_ip": agent.ip_address,
-        # สถานะการผูก IP — host_ip ว่าง = ยังไม่เคยผูก (รอ agent รายงานมาครั้งแรก)
+
         "ip_interface": agent.ip_interface,
         "pending_ip": agent.pending_ip,
         "pending_ip_at": iso_utc(agent.pending_ip_at),
@@ -129,7 +129,7 @@ async def api_get_agents(
     db: AsyncSession = Depends(get_db),
 ):
     agents = await get_agents(db)
-    # นับ alert ทีเดียวทุก agent (group by) — หน้าเว็บเอาไปบอกก่อนกดลบว่าจะลบ log ไปกี่รายการ
+
     alert_counts = await count_alerts_by_agent(db)
     return [
         {**agent_to_dict(agent), "alert_count": alert_counts.get(agent.agent_id, 0)}
@@ -159,7 +159,7 @@ async def api_create_agent(
             description=payload.description,
         )
     except Exception as exc:
-        # ข้อความที่ส่งออกไปตั้งใจไม่บอกรายละเอียดภายใน แต่ถ้าไม่ log ไว้เลย ตอนเกิดปัญหาจริง
+
         logger.exception("สร้าง package ของ %s ไม่สำเร็จ", agent_id)
         raise HTTPException(
             status_code=500,
@@ -186,7 +186,7 @@ async def api_update_agent(
 
     old_is_active = agent.is_active
 
-    # ไม่ส่ง ip_address ไปด้วย — IP ที่ผูกไว้แก้ผ่าน API นี้ไม่ได้โดยตั้งใจ
+
     agent = await update_agent(
         db=db,
         agent=agent,
@@ -226,7 +226,7 @@ async def api_delete_agent(
         logger.exception("ลบบัญชี Redis ACL ของ %s ไม่สำเร็จ", agent_id)
         raise HTTPException(status_code=500, detail="ลบ Agent แล้ว แต่ลบบัญชี Redis ACL ไม่สำเร็จ; ตรวจ users.acl")
 
-    # ลบไฟล์ cert/package ของ Agent ออกจากเครื่อง Central ด้วย
+
     package_path = AGENT_PACKAGES_DIR / f"{agent_id}.zip"
     if package_path.exists():
         package_path.unlink()
@@ -236,7 +236,7 @@ async def api_delete_agent(
 
     clear_agent_auth_cache(agent_id)
 
-    # IP ที่เครื่องนี้เคยรายงานว่าโจมตี ยังอยู่ใน blacklist ตามเดิม — บอกให้ชัดในข้อความตอบกลับ
+
     return {
         "status": "ok",
         "deleted_alerts": deleted_alerts,
@@ -311,7 +311,7 @@ async def download_agent_package(
     agent = await get_agent_by_agent_id(db, download.agent_id)
     cert_dir = Path(agent.key_path).parent if agent and agent.key_path else None
 
-    # ลบไฟล์ zip + cert dir ของ agent ทิ้งหลังส่งให้ client จบแล้ว
+
     return FileResponse(
         path=str(zip_path),
         filename=zip_path.name,

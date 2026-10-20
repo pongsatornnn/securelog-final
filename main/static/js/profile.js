@@ -1,5 +1,5 @@
-// ย้ายมาจาก templates/profile.html (บล็อก <script> เดิม)
-// ค่าที่มาจาก server อ่านผ่าน window.PAGE_DATA ที่ template ประกาศไว้
+
+
 function profileApp() {
   return {
     username: window.PAGE_DATA.username,
@@ -16,7 +16,7 @@ function profileApp() {
     pw: { current: '', next: '', confirm: '' },
     policyReady: false,
 
-    // ตัวอักษรแรกของชื่อที่แสดง (ไม่มีชื่อก็ใช้ username) สำหรับวงกลม avatar
+
     initial() {
       return (this.savedName || this.username || '?').trim().charAt(0)
     },
@@ -45,7 +45,7 @@ function profileApp() {
         this.savedName = data.name
         this.name = data.name
         this.nameSuccess = true
-        // อัปเดตคำทักทาย "Hello <name>" มุมขวาบนทันที ไม่ต้องรอเปลี่ยนหน้า
+
         const greet = document.getElementById('topbarName')
         if (greet) greet.textContent = data.name
         setTimeout(() => this.nameSuccess = false, 2500)
@@ -73,7 +73,7 @@ function profileApp() {
       this.policyReady = window.PasswordPolicy.loaded
     },
 
-    // checklist สด ๆ ของรหัสใหม่ (กฎมาจาก server ชุดเดียวกับที่ server บังคับ)
+
     passwordChecks() {
       if (!this.policyReady) return []
       return window.PasswordPolicy.check(this.pw.next)

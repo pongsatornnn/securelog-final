@@ -1,4 +1,4 @@
-# Agent auth cache — verify token ของ agent โดยเช็ค Redis cache ก่อน (TTL 60s)
+
 
 import time
 import hmac
@@ -17,7 +17,7 @@ from redis_client import cache_get_json, cache_set_json, cache_delete
 AUTH_CACHE_TTL_SECONDS = 60
 DB_LAST_SEEN_UPDATE_SECONDS = 30
 
-# ถี่สุดที่ยอมให้เขียน pending_ip ลง DB ต่อ agent หนึ่งตัว — log ที่ถูกปฏิเสธมาเป็นชุด
+
 IP_MISMATCH_RECORD_SECONDS = 60
 
 CACHE_KEY_PREFIX = "agent_auth:"
@@ -46,7 +46,7 @@ async def load_agent_auth_from_db(agent_id: str) -> dict | None:
             "agent_id": agent.agent_id,
             "secret_token_hash": agent.secret_token_hash,
             "is_active": bool(agent.is_active),
-            # None = ยังไม่เคยผูก IP (จะผูกให้รอบแรกที่ auth ผ่าน)
+
             "ip_address": agent.ip_address or None,
             "last_db_update": 0,
             "last_ip_mismatch_record": 0,
@@ -76,7 +76,7 @@ async def update_agent_last_seen(agent_id: str) -> bool:
             return False
 
         agent.status = "online"
-        # เวลาเครื่อง (UTC) เหมือนตารางอื่น — iso_utc() ถือว่าค่าใน DB เป็น UTC
+
         now = datetime.now()
         agent.last_seen = now
         agent.updated_at = now
@@ -91,7 +91,7 @@ async def verify_agent_ip(
     reported_ip: str | None,
     ip_interface: str | None = None,
 ) -> bool:
-    # ตรวจว่า IP ที่ agent รายงานมาตรงกับที่ผูกไว้กับ agent_id นี้หรือไม่
+
     if not reported_ip:
         return True
 
@@ -173,7 +173,7 @@ async def verify_agent_token(
         clear_agent_auth_cache(agent_id)
         return False
 
-    # ตรวจ IP หลังผ่าน token แล้วเท่านั้น — ถ้าตรวจก่อน คนที่ยังไม่มี token ที่ถูกต้องจะใช้
+
     if not await verify_agent_ip(agent_id, cache_data, reported_ip, ip_interface):
         return False
 

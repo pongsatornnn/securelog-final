@@ -1,4 +1,4 @@
-# Cache + DB layer สำหรับ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)
+
 
 from datetime import datetime, timedelta
 
@@ -14,7 +14,7 @@ from blacklist_policy import (
     escalated_ttl_seconds,
 )
 
-# คีย์ของนโยบาย escalation ใน app_settings (แอดมินปรับได้ที่หน้า Rules)
+
 ESCALATION_MULTIPLIER_KEY = "escalation_multiplier"
 ESCALATION_MAX_BLOCK_COUNT_KEY = "escalation_max_block_count"
 
@@ -30,12 +30,12 @@ def ttl_cache_key(detection_type: str) -> str:
 
 
 async def load_ttl_from_db(detection_type: str) -> dict:
-    # อ่าน TTL จาก DB; ถ้ายังไม่มีแถวนี้ seed ค่า default (จาก blacklist_policy) ลง DB ก่อน
+
     async with AsyncSessionLocal() as db:
         row = await get_blacklist_ttl(db, detection_type)
 
         if not row:
-            # snapshot (database/seed_data.json) มาก่อน — ต้องได้ค่าเดียวกับตอน startup seed
+
             snap = snapshot_ttl(detection_type)
 
             if snap is not None:
@@ -72,11 +72,10 @@ async def load_ttl_from_db(detection_type: str) -> dict:
 
 
 async def get_ttl(detection_type: str) -> dict:
-    # Entry point: คืน {'detection_type', 'ttl_seconds', 'auto_block'} (ttl_seconds=None -> ถาวร)
+
     cached = cache_get_json(ttl_cache_key(detection_type), log_prefix=LOG_PREFIX)
 
-    # แคชที่ค้างจากรุ่นก่อนจะไม่มีคีย์ auto_block/notify_line — โหลดใหม่จาก DB
-    # แทนที่จะเดาค่าให้ (เดาผิดทางไหนก็ผิดความตั้งใจของแอดมิน)
+
     if cached is not None and "auto_block" in cached and "notify_line" in cached:
         return cached
 
@@ -84,8 +83,8 @@ async def get_ttl(detection_type: str) -> dict:
 
 
 async def should_auto_block(detection_type: str | None) -> bool:
-    # False = ชนิดนี้ถูกตั้งไว้ที่หน้า Rules ว่า "แจ้งเตือนอย่างเดียว ไม่ต้อง block"
-    # การ block ด้วยมือจากหน้าเว็บไม่ผ่านทางนี้ และไม่มีวันถูกปิดด้วยค่านี้
+
+
     if not detection_type or detection_type == MANUAL_EVENT:
         return True
 
@@ -94,12 +93,8 @@ async def should_auto_block(detection_type: str | None) -> bool:
 
 
 async def should_notify_line(detection_type: str | None) -> bool:
-    # True = ชนิดนี้ส่งแจ้งเตือนเข้า LINE ได้ (หน้าเว็บ/Dashboard ได้ครบทุกชนิดอยู่แล้ว
-    # ไม่เกี่ยวกับค่านี้ — ตัวกรองนี้อยู่ที่ worker ของ LINE ตัวเดียว)
-    #
-    # เงื่อนไขที่ผู้ใช้กำหนด: ชนิดที่ block อัตโนมัติ "ยังไงก็ต้องแจ้ง" จึงส่งเสมอโดยไม่ต้องตั้งค่า
-    # — ค่า notify_line ใช้เฉพาะกับชนิดที่เป็นแจ้งเตือนอย่างเดียว (auto_block = False)
-    # ซึ่งไม่มีการ block ให้เห็น จะเลือกว่าให้เตือนเข้า LINE ด้วยหรือดูเอาจากหน้าเว็บอย่างเดียวก็ได้
+
+
     if not detection_type or detection_type == MANUAL_EVENT:
         return True
 
@@ -117,7 +112,7 @@ async def update_ttl(
     auto_block: bool | None = None,
     notify_line: bool | None = None,
 ) -> dict:
-    # แก้ TTL/โหมดตอบสนอง (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)
+
     async with AsyncSessionLocal() as db:
         row = await upsert_blacklist_ttl(
             db,
@@ -148,7 +143,7 @@ async def update_ttl(
 
 
 async def get_escalation_policy() -> dict:
-    # นโยบาย escalation ที่ใช้จริงตอนรัน — อ่านจาก app_settings (cache-first เหมือนค่าอื่น)
+
     return {
         "multiplier": await get_int_setting_async(ESCALATION_MULTIPLIER_KEY, minimum=1),
         "max_block_count": await get_int_setting_async(ESCALATION_MAX_BLOCK_COUNT_KEY, minimum=1),
@@ -156,7 +151,7 @@ async def get_escalation_policy() -> dict:
 
 
 async def compute_expiry(detection_type: str | None, block_count: int) -> datetime | None:
-    # คำนวณ expires_at จาก detection_type + block_count โดยดึง base TTL จาก DB/cache
+
     if not detection_type or detection_type == MANUAL_EVENT:
         return None
 

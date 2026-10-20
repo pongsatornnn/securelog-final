@@ -1,19 +1,5 @@
-# ตั้งรหัสผ่าน "ผู้ใช้ของ dashboard" ใหม่ตอนลืมรหัส — รันบนเครื่อง central ตรง ๆ ไม่ผ่านหน้าเว็บ
-#
-# หน้า Manage Users รีเซ็ตรหัสให้คนอื่นได้ก็จริง แต่ต้องมี admin ที่ล็อกอินอยู่แล้วเป็นคนกด
-# ถ้าลืมรหัสของ admin คนสุดท้ายก็เข้าไม่ได้เลยทั้งระบบ ไฟล์นี้เขียนลงตาราง users ให้ตรง ๆ
-# โดยใช้ **นโยบายรหัสผ่านและวิธี hash ชุดเดียวกับหน้าเว็บ** (password_policy + auth.hash_password)
-# แก้ที่เดียวแล้วทั้งสองทางเปลี่ยนตาม ไม่มีทางหลุดจากกัน
-#
-# วิธีใช้ (บนเครื่อง central ด้วย venv ของโปรเจกต์):
-#   venv/bin/python main/reset_dashboard_password.py --list
-#   venv/bin/python main/reset_dashboard_password.py --user admin --generate
-#   venv/bin/python main/reset_dashboard_password.py --user admin --password 'Abcd1234!' --yes
-#   เติม --activate ถ้าบัญชีถูกปิดใช้งานไว้ · --unlock ถ้าลองรหัสผิดจนหน้า login ล็อก IP
-#   · --no-force-change ถ้าไม่อยากให้ระบบบังคับเปลี่ยนรหัสตอนล็อกอินครั้งแรก
-#
-# **ไม่ต้องรีสตาร์ต service** — ตอน login ระบบอ่านรหัสจากฐานข้อมูลสดทุกครั้ง ไม่มี cache คั่น
-# (ต่างจาก reset_redis_admin_password.py ที่แก้รหัส Redis แล้วต้องรีสตาร์ตทุกตัว)
+
+
 
 import argparse
 import asyncio
@@ -33,7 +19,6 @@ from login_lockout import FAIL_KEY_PREFIX
 from redis_client import get_redis
 
 
-# ชุดอักขระของรหัสที่สุ่มให้ — ต้องครบทุกข้อของ password_policy (เล็ก/ใหญ่/เลข/อักขระพิเศษ)
 GENERATE_LENGTH = 16
 SYMBOLS = "!@#$%^&*-_=+"
 
@@ -43,7 +28,7 @@ def say(message: str = "") -> None:
 
 
 def generate_password() -> str:
-    # สุ่มให้ครบทุกกลุ่มก่อนแล้วค่อยเติมที่เหลือ — แล้วตรวจซ้ำด้วยนโยบายจริงกันพลาด
+
     while True:
         pool = string.ascii_lowercase + string.ascii_uppercase + string.digits + SYMBOLS
         chars = [
@@ -60,11 +45,9 @@ def generate_password() -> str:
             return password
 
 
-# ── IP ที่โดนล็อกหน้า login ────────────────────────────────────────────────
-
 def locked_ips() -> list[tuple[str, int, int]]:
-    # ตัวนับ login ผิดเก็บเป็นคีย์ `login_fail:<ip>` ใน Redis — คืน (ip, จำนวนครั้ง, ttl)
-    # client กลางของโปรเจกต์ไม่ได้ตั้ง decode_responses ทั้งคีย์และค่าจึงเป็น bytes ต้องแปลงเอง
+
+
     try:
         client = get_redis()
         rows = []
@@ -79,7 +62,7 @@ def locked_ips() -> list[tuple[str, int, int]]:
 
 
 def unlock_all() -> int:
-    # ล้างตัวนับของทุก IP — คนที่ลืมรหัสมักลองผิดจนโดนล็อกไปแล้วก่อนจะมาหาไฟล์นี้
+
     try:
         client = get_redis()
         keys = [k if isinstance(k, str) else k.decode()
@@ -91,8 +74,6 @@ def unlock_all() -> int:
         say(f"  ปลดล็อกไม่สำเร็จ (Redis: {e}) — รหัสใหม่ยังใช้ได้ รอให้ตัวนับหมดอายุเองก็ได้")
         return 0
 
-
-# ── รายชื่อผู้ใช้ ─────────────────────────────────────────────────────────
 
 async def show_list() -> int:
     async with AsyncSessionLocal() as db:
@@ -118,8 +99,6 @@ async def show_list() -> int:
 
     return 0
 
-
-# ── ตัวจริง ───────────────────────────────────────────────────────────────
 
 async def reset(username: str, new_password: str, assume_yes: bool,
                 force_change: bool, activate: bool, unlock: bool) -> int:

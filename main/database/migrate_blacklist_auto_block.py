@@ -1,8 +1,5 @@
-# Migration ครั้งเดียว: เพิ่มคอลัมน์เลือกโหมดตอบสนองต่อการโจมตีแต่ละชนิด
-#   auto_block = true  -> block IP อัตโนมัติ (พฤติกรรมเดิม — ค่าตั้งต้นของทุกแถว)
-#   auto_block = false -> แจ้งเตือนอย่างเดียว ไม่แตะ blacklist และไม่สั่ง agent
-#
-# รันครั้งเดียวต่อเครื่อง: cd main && ../venv/bin/python -m database.migrate_blacklist_auto_block
+
+
 
 import asyncio
 
@@ -35,7 +32,7 @@ async def migrate() -> None:
         if COLUMN in existing:
             print(f"[{LOG_PREFIX}] มี {TABLE}.{COLUMN} อยู่แล้ว ข้าม")
         else:
-            # DEFAULT TRUE ทำให้แถวเดิมทุกแถวได้ค่า true ไปในตัว = พฤติกรรมเดิมไม่เปลี่ยน
+
             await db.execute(
                 text(
                     f"ALTER TABLE {TABLE} ADD COLUMN IF NOT EXISTS {COLUMN} {COLUMN_TYPE}"
@@ -68,7 +65,7 @@ async def migrate() -> None:
             f"(block อัตโนมัติ {len(rows) - len(alert_only)} / แจ้งเตือนอย่างเดียว {len(alert_only)})"
         )
 
-        # cache ฝั่ง Redis ที่ค้างอยู่ไม่มีคีย์ auto_block — get_ttl โหลดใหม่ให้เองอยู่แล้ว
+
         print(f"[{LOG_PREFIX}] cache เดิมใน Redis ไม่ต้องล้าง (get_ttl โหลดใหม่ให้เองเมื่อไม่มีคีย์)")
 
 

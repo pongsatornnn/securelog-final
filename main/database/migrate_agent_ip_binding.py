@@ -1,4 +1,4 @@
-# Migration ครั้งเดียว: เพิ่มคอลัมน์สำหรับผูก IP เข้ากับ Agent
+
 
 import asyncio
 
@@ -41,7 +41,7 @@ async def migrate() -> None:
 
         await db.commit()
 
-        # สรุปสถานะการผูก IP ของ agent ที่มีอยู่ ให้เห็นว่าหลัง migration ตัวไหนล็อกแล้ว
+
         rows = (
             await db.execute(
                 text("SELECT agent_id, ip_address FROM agents ORDER BY agent_id")

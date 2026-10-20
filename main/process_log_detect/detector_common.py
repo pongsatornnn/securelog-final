@@ -1,4 +1,4 @@
-# โค้ดกลางที่ detector ทุกตัว (auth / web / firewall) ใช้ร่วมกัน
+
 
 import json
 import time
@@ -22,15 +22,11 @@ from rule_cache import get_rule
 from redis_client import get_redis
 
 
-# ถ้า attacker ยิงต่อเนื่อง (ครบ threshold ซ้ำๆ ในเวลาไม่ห่างกันมาก) จะ merge
 ALERT_MERGE_COOLDOWN_SECONDS = 60
 
 
-# BLPOP รอของในคิวนานสุดกี่วินาทีก่อนวนรอบใหม่ — ต้อง **น้อยกว่า** socket timeout ของ redis-py
 QUEUE_BLOCK_TIMEOUT_SECONDS = 3
 
-
-# ============================================================
 
 def safe_json_loads(raw: Any, log_prefix: str = "DETECT") -> dict | None:
     try:
@@ -52,21 +48,19 @@ def safe_json_loads(raw: Any, log_prefix: str = "DETECT") -> dict | None:
 
 
 def parse_agent_time_to_epoch(log: dict) -> float:
-    # ใช้เวลา log ฝั่ง Agent เป็นหลักในการนับ window
+
     value = log.get("agent_event_time_thai")
 
     if not value:
         return time.time()
 
     try:
-        # format จาก normalize: 2026-06-26 14:30:05
+
         dt = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
         return dt.timestamp()
     except Exception:
         return time.time()
 
-
-# ============================================================
 
 def prune_old_events(
     events: deque,
@@ -74,7 +68,7 @@ def prune_old_events(
     window_seconds: int,
     max_events: int,
 ) -> None:
-    # ตัด event ที่พ้น window + cap จำนวนสูงสุดกัน memory โตไม่จำกัด
+
     while events and now_ts - events[0]["ts"] > window_seconds:
         events.popleft()
 
@@ -85,8 +79,6 @@ def prune_old_events(
 def get_events_in_window(events: deque, now_ts: float, window_seconds: int) -> list[dict]:
     return [event for event in events if now_ts - event["ts"] <= window_seconds]
 
-
-# ============================================================
 
 async def save_alert_to_db(
     *,
@@ -102,7 +94,7 @@ async def save_alert_to_db(
     source_ip: str | None = None,
     username: str | None = None,
 ) -> None:
-    # เขียน alert ลง DB — merge เข้าแถวเดิมของเหตุการณ์เดียวกันที่ยัง active ใน cooldown
+
     try:
         first_event_at = None
         last_event_at = None
@@ -170,10 +162,8 @@ async def save_alert_to_db(
         print(f"[{log_prefix}] บันทึก alert ลง DB ไม่สำเร็จ: {detection_type} | {e}")
 
 
-# ============================================================
-
 def seed_rules(loop: asyncio.AbstractEventLoop, rule_keys, log_prefix: str) -> None:
-    # เรียก get_rule ครั้งแรกของแต่ละ rule เพื่อ seed ค่า default ลง DB
+
     for rule_key in rule_keys:
         try:
             loop.run_until_complete(get_rule(rule_key))
@@ -181,8 +171,6 @@ def seed_rules(loop: asyncio.AbstractEventLoop, rule_keys, log_prefix: str) -> N
             print(f"[{log_prefix}] seed rule {rule_key} ไม่สำเร็จ: {e}")
 
 
-# ตารางถูกสร้างโดยเว็บตอน start — detector อาจมาถึงก่อน (ดู wait_for_table ใน database/connection)
-# ถ้าไม่รอ: seed rule/โหลด signature จะล้มเงียบ ๆ แล้ววิ่งต่อแบบ "ไม่มี signature เลย" จนครบรอบ refresh
 DETECTOR_GATE_TABLE = "detection_rules"   # ตารางที่ detector ทุกตัวต้องใช้ (get_rule เรียกทุกครั้ง)
 
 
@@ -193,7 +181,7 @@ def run_detector_loop(
     startup_messages: tuple[str, ...] = (),
     on_start: Callable[[asyncio.AbstractEventLoop], None] | None = None,
 ) -> None:
-    # โครง worker มาตรฐานของ detector: blpop จาก queue -> decode -> process_log(log, loop)
+
     r = get_redis()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -203,7 +191,7 @@ def run_detector_loop(
     for message in startup_messages:
         print(f"[{log_prefix}] {message}")
 
-    # รอให้ฐานพร้อมก่อนค่อย seed rule / โหลด signature (ไม่งั้นล้มเงียบแล้วได้ของว่างไปใช้)
+
     loop.run_until_complete(wait_for_table(DETECTOR_GATE_TABLE, log_prefix))
 
     if on_start:

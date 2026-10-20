@@ -1,17 +1,15 @@
-// ย้ายมาจาก templates/rules.html (บล็อก <script> เดิม)
-// แท็บที่มีในหน้านี้ — ใช้เป็นทั้งค่าใน state และชื่อใน URL hash
+
+
 const RULE_TABS = ['rules', 'policy']
 
-// เดิมแยกเป็น 2 แท็บ (#ttl / #severity) ตอนนี้รวมเป็นแท็บเดียว — ลิงก์เก่าที่ใครบุ๊กมาร์กไว้
-// หรือที่เขียนอยู่ในเอกสารยังเปิดเข้าแท็บที่ถูกต้องได้
+
 const LEGACY_TAB_ALIASES = { ttl: 'policy', severity: 'policy' }
 
 function rulesApp() {
   return {
     tab: 'rules',
 
-    // จำแท็บที่เปิดอยู่ไว้ใน URL (#policy) — รีเฟรชหน้าแล้วยังอยู่แท็บเดิม
-    // และส่งลิงก์ตรงไปยังแท็บที่ต้องการให้คนอื่นได้
+
     initTab() {
       const fromHash = window.location.hash.replace('#', '')
       const name = LEGACY_TAB_ALIASES[fromHash] || fromHash
@@ -21,9 +19,7 @@ function rulesApp() {
     selectTab(name) {
       this.tab = name
 
-      // replaceState ไม่ใช่การเซ็ต location.hash ตรง ๆ เพราะ (1) การเซ็ต hash ทำให้
-      // เบราว์เซอร์กระโดดสกรอลล์ไปหา element ที่ id ตรงกัน (2) จะสะสมประวัติจนกด back
-      // แล้วต้องย้อนทีละแท็บกว่าจะออกจากหน้านี้
+
       history.replaceState(null, '', name === 'rules' ? window.location.pathname : '#' + name)
     },
 
@@ -34,9 +30,7 @@ function rulesApp() {
     isSubmitting: false,
     isRestoring: false,
 
-    // 3 ชุดข้อมูลของหน้านี้โหลดคนละ endpoint กัน — แยกสถานะ "กำลังโหลด/โหลดไม่สำเร็จ" ของแต่ละชุด
-    // ไม่งั้นชุดที่โหลดพลาดจะดูเหมือน "ยังไม่มีข้อมูล" ทั้งที่ค่าจริงมีอยู่ใน DB
-    // (severity กับ TTL แสดงรวมในแท็บเดียว แต่ยังแยกสถานะกันเพื่อบอกได้ว่าพลาดฝั่งไหน)
+
     loadingRules: true,
     rulesError: '',
     loadingTtl: true,
@@ -50,7 +44,7 @@ function rulesApp() {
       is_active: true,
     },
 
-    // ข้อมูลดิบของ 2 endpoint เก็บแยกกันเหมือนเดิม ส่วน policyItems คือผลรวมที่ตารางใช้แสดง
+
     ttlItems: [],
     severityItems: [],
     policyItems: [],
@@ -59,24 +53,23 @@ function rulesApp() {
     editingPolicy: null,
     isSubmittingPolicy: false,
 
-    // นโยบาย escalation — มากับ /api/blacklist_ttl ก้อนเดียวกับ ttlItems
-    // escSaved = ค่าที่บันทึกอยู่จริง ใช้เทียบว่าฟอร์มเปลี่ยนหรือยัง (กันกดบันทึกซ้ำโดยไม่ได้แก้)
+
     escSaved: { multiplier: 2, max_block_count: 5 },
     escForm: { multiplier: 2, max_block_count: 5 },
     isSubmittingEsc: false,
 
     policyForm: {
       severity: 'LOW',
-      // 'block' = block IP อัตโนมัติ · 'alert_only' = แจ้งเตือนอย่างเดียว (ตรง ๆ กับ auto_block ฝั่ง API)
+
       response: 'block',
-      // ส่ง LINE ไหม — ใช้ได้เฉพาะตอน response = 'alert_only' (โหมด block แจ้งเสมอ)
+
       notify_line: true,
-      // กรอกตัวเลขเอง + เลือกหน่วย นาที/ชั่วโมง/วัน/ถาวร (ชุดเดียวกับหน้า Blacklist/Whitelist)
-      // helper อยู่ที่ static/js/common.js — ดู macro duration_picker
+
+
       duration: newDuration('hours'),
     },
 
-    // severity กับ TTL ใช้ key ชุดเดียวกัน (detection_type) จึงใช้ label ชุดเดียวร่วมกัน
+
     attackLabels: {
       ssh_brute_force: 'SSH Brute Force',
       sudo_failed: 'Sudo Authentication Failure',
@@ -100,20 +93,19 @@ function rulesApp() {
       return parts.join(' · ')
     },
 
-    // รวม 2 ชุดเป็นแถวเดียวต่อประเภทการโจมตี — ใช้ union ของ key ไม่ใช่ฝั่งใดฝั่งหนึ่งเป็นหลัก
-    // เพื่อให้ประเภทที่มีค่าอยู่ฝั่งเดียวยังโผล่ในตาราง (เห็นว่าอีกฝั่งขาด) ไม่ใช่หายไปเงียบ ๆ
+
     buildPolicyItems() {
       const bySeverity = new Map(this.severityItems.map(i => [i.severity_key, i]))
       const byTtl = new Map(this.ttlItems.map(i => [i.detection_type, i]))
 
-      // เรียงตาม key เหมือนที่ทั้ง 2 endpoint เรียงมา (ORDER BY ฝั่ง DB)
+
       const keys = [...new Set([...bySeverity.keys(), ...byTtl.keys()])].sort()
 
       this.policyItems = keys.map(key => {
         const sev = bySeverity.get(key)
         const ttl = byTtl.get(key)
 
-        // 2 ตารางมี updated_at คนละอัน — คอลัมน์เดียวจึงแสดงอันที่ใหม่กว่า
+
         const updated = [sev && sev.updated_at, ttl && ttl.updated_at].filter(Boolean).sort()
 
         return {
@@ -122,16 +114,16 @@ function rulesApp() {
           severity: sev ? sev.severity : null,
           hasTtl: !!ttl,
           ttl_seconds: ttl ? ttl.ttl_seconds : undefined,   // null = ถาวร (ต่างจาก undefined = ไม่มีแถว)
-          // API รุ่นก่อนไม่ส่งคีย์นี้มา — ไม่มีมา = block อัตโนมัติ (พฤติกรรมเดิม)
+
           auto_block: ttl ? ttl.auto_block !== false : true,
-          // เช่นกัน ไม่มีมา = แจ้ง LINE (พฤติกรรมเดิมคือแจ้งทุกชนิด)
+
           notify_line: ttl ? ttl.notify_line !== false : true,
           updated_at: updated.length ? updated[updated.length - 1] : null,
         }
       })
     },
 
-    // โหลดทั้ง 2 ฝั่งพร้อมกัน — ทั้งตอนเข้าหน้า ตอนกด Refresh และตอนกดลองใหม่
+
     async loadPolicy() {
       await Promise.all([this.loadAlertSeverity(), this.loadBlacklistTtl()])
     },
@@ -159,8 +151,7 @@ function rulesApp() {
       }
     },
 
-    // หน่วยเดียวกับที่ช่องกรอกใน modal ใช้ (common.js) — คอลัมน์ "ระยะเวลา Block"
-    // กับค่าที่กรอกไว้จะได้อ่านตรงกันเสมอ
+
     formatTtl(seconds) {
       return formatDuration(seconds)
     },
@@ -183,7 +174,7 @@ function rulesApp() {
           multiplier: data.escalation_multiplier,
           max_block_count: data.max_block_count_before_permanent,
         }
-        // ไม่เขียนทับสิ่งที่ผู้ใช้กำลังพิมพ์ค้างอยู่ระหว่างกดบันทึก
+
         if (!this.isSubmittingEsc) this.escForm = { ...this.escSaved }
 
         this.ttlError = ''
@@ -196,10 +187,7 @@ function rulesApp() {
       }
     },
 
-    // ─── นโยบาย escalation ───
 
-    // ใช้ประเภทที่ "มีวันหมดอายุ" ตัวแรกเป็นตัวอย่าง — ถ้าเลือกประเภทที่ตั้งถาวรไว้
-    // ตัวอย่างจะขึ้นว่าถาวรทุกครั้ง ซึ่งไม่ช่วยให้เห็นผลของตัวคูณเลย
     get escSampleItem() {
       return this.ttlItems.find(i => i.ttl_seconds !== null && i.ttl_seconds > 0) || null
     },
@@ -212,9 +200,7 @@ function rulesApp() {
       return this.escSampleItem ? this.escSampleItem.ttl_seconds : 3600
     },
 
-    // เฉพาะแถวตัวอย่าง escalation — ค่าที่คูณแล้วโตเป็นหลักพันชั่วโมงได้
-    // ถ้าใช้ formatTtl ตัวเดิมจะขึ้นว่า "87600 ชั่วโมง" ซึ่งอ่านแล้วไม่เห็นภาพ
-    // (ไม่ไปแตะ formatTtl เพราะคอลัมน์ "ระยะเวลา Block" ต้องคงหน่วยเดิมที่ตรงกับช่องกรอกใน modal)
+
     formatEscTtl(seconds) {
       const DAY = 86400
       const YEAR = 365 * DAY
@@ -242,9 +228,7 @@ function rulesApp() {
           || this.escForm.max_block_count !== this.escSaved.max_block_count
     },
 
-    // คิดแบบเดียวกับ blacklist_policy.escalated_ttl_seconds ฝั่ง Python เป๊ะ ๆ
-    // (base × multiplier^(n-1) ตัดที่เพดาน 10 ปี · n เกิน max = ถาวร)
-    // ถ้าสูตรสองฝั่งหลุดจากกันเมื่อไร ตัวอย่างจะโกหกผู้ใช้ทันที
+
     escPreview() {
       if (!this.escValid()) return []
 
@@ -252,7 +236,7 @@ function rulesApp() {
       const base = this.escSampleBase
       const { multiplier, max_block_count } = this.escForm
 
-      // โชว์ครั้งแรก ๆ ไม่เกิน 5 ช่อง แล้วปิดท้ายด้วยครั้งที่กลายเป็นถาวรเสมอ
+
       const shown = Math.min(max_block_count, 5)
       const steps = []
 
@@ -261,7 +245,7 @@ function rulesApp() {
         steps.push({ n: String(n), label: this.formatEscTtl(ttl), permanent: false })
       }
 
-      // มีครั้งที่ถูกข้ามไป (max มากกว่าที่โชว์ไหว) บอกให้รู้ว่าไม่ได้ต่อกัน
+
       if (max_block_count > shown) {
         steps.push({ n: '…', label: '…', permanent: false })
       }
@@ -308,14 +292,13 @@ function rulesApp() {
     openPolicyEditModal(item) {
       this.editingPolicy = item
 
-      // แปลงวินาทีกลับเป็นตัวเลข+หน่วยที่คนกรอก (วัน > ชั่วโมง > นาที ตามที่หารลงตัว)
-      // undefined = ไม่มีแถว TTL (ช่องนี้จะถูกซ่อนอยู่แล้ว) — ตั้งเป็นชั่วโมงไว้เฉย ๆ
+
       this.policyForm = {
         severity: item.severity || 'LOW',
         response: item.auto_block === false ? 'alert_only' : 'block',
         notify_line: item.notify_line !== false,
-        // เก็บระยะเวลาที่ตั้งไว้เดิมไว้เสมอ แม้ตอนนี้เลือกแจ้งเตือนอย่างเดียว (ช่องถูกซ่อน)
-        // สลับกลับมา block แล้วได้ค่าเดิมคืน ไม่ต้องตั้งใหม่
+
+
         duration: item.ttl_seconds === undefined
           ? newDuration('hours')
           : durationFromSeconds(item.ttl_seconds),
@@ -332,7 +315,7 @@ function rulesApp() {
     canSubmitPolicy() {
       if (!this.editingPolicy) return false
       if (!this.editingPolicy.hasTtl) return true
-      // แจ้งเตือนอย่างเดียว = ไม่ได้ใช้ระยะเวลา ไม่ต้องบังคับให้กรอกถูก
+
       if (this.policyForm.response === 'alert_only') return true
       return isValidDuration(this.policyForm.duration)
     },
@@ -345,17 +328,15 @@ function rulesApp() {
 
       const auto_block = this.policyForm.response !== 'alert_only'
 
-      // โหมดแจ้งเตือนอย่างเดียวซ่อนช่องเวลาไว้ — ส่งค่าเดิมกลับไปเพื่อไม่ให้ระยะเวลาที่ตั้งไว้หาย
+
       const ttl_seconds = auto_block
         ? durationSeconds(this.policyForm.duration)   // null = ถาวร
         : item.ttl_seconds
 
-      // ช่อง LINE มีให้ตั้งเฉพาะโหมดแจ้งเตือนอย่างเดียว — โหมด block ส่ง LINE เสมอ
-      // ค่าที่เก็บไว้จึงคงของเดิม ไว้ใช้ตอนสลับกลับมาเป็นแจ้งเตือนอย่างเดียว
+
       const notify_line = auto_block ? item.notify_line : this.policyForm.notify_line
 
-      // ยิงเฉพาะฝั่งที่ค่าเปลี่ยนจริง — เปิด modal มาแก้อย่างเดียวแล้วกดบันทึก จะไม่ไปแตะ
-      // updated_at ของอีกตารางและไม่ล้าง cache ของฝั่งที่ไม่ได้แก้โดยไม่จำเป็น
+
       const jobs = []
 
       if (item.hasSeverity && this.policyForm.severity !== item.severity) {
@@ -367,7 +348,7 @@ function rulesApp() {
         })
       }
 
-      // ระยะเวลากับโหมดอยู่ตารางเดียวกัน ยิง endpoint เดียวจบ — เปลี่ยนอย่างใดอย่างหนึ่งก็ส่ง
+
       if (item.hasTtl && (ttl_seconds !== item.ttl_seconds
                           || auto_block !== item.auto_block
                           || notify_line !== item.notify_line)) {
@@ -391,8 +372,7 @@ function rulesApp() {
       try {
         const saved = []
 
-        // เป็นคนละ endpoint กัน ไม่มี transaction ครอบ — ยิงเรียงกันแล้วหยุดทันทีที่ตัวใดพลาด
-        // ตัวที่ผ่านไปก่อนหน้ามีผลไปแล้ว จึงโหลดใหม่ทั้งคู่ให้ตารางตรงกับของจริงเสมอ
+
         for (const job of jobs) {
           const res = await fetch(job.url, {
             method: 'POST',
@@ -521,8 +501,7 @@ function rulesApp() {
       return this.form.window_seconds > 0 && this.form.threshold > 0
     },
 
-    // ── คืนค่า default ────────────────────────────────────────────────
-    // ทั้งสองปุ่มยิง endpoint เดียวกัน ต่างกันแค่ส่ง rule_key มาด้วยหรือไม่
+
     async restoreRules(ruleKey) {
       this.isRestoring = true
 

@@ -1,4 +1,4 @@
-# Migration ครั้งเดียว: รวม ssh_brute_force_fast + ssh_brute_force_slow เป็น ssh_brute_force
+
 
 import asyncio
 
@@ -21,7 +21,7 @@ NEW_RULE_KEY = "ssh_brute_force"
 
 async def migrate() -> None:
     async with AsyncSessionLocal() as db:
-        # เก็บค่าเก่าไว้ print ให้เห็นว่าลบอะไรไป (เผื่อแอดมินเคยปรับ threshold ไว้เอง)
+
         old_rules = (
             await db.execute(
                 select(DetectionRule).where(DetectionRule.rule_key.in_(OLD_RULE_KEYS))
@@ -59,7 +59,7 @@ async def migrate() -> None:
     for severity_key in OLD_SEVERITY_KEYS:
         cache_delete(severity_cache_key(severity_key), log_prefix=LOG_PREFIX)
 
-    # เรียก get_rule/get_severity เพื่อ seed แถวใหม่ลง DB ให้ทันที (ปกติ startup seed ให้อยู่แล้ว
+
     new_rule = await get_rule(NEW_RULE_KEY)
     new_severity = await get_severity(NEW_RULE_KEY)
 

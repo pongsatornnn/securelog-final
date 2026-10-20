@@ -1,6 +1,3 @@
-/* ย้ายมาจาก templates/error.html (บล็อก <style> เดิม) */
-/* หน้านี้ไม่ extends base.html เพราะต้องแสดงได้ทั้งตอนล็อกอินอยู่และตอนยังไม่ล็อกอิน
-   (base.html ต้องมีตัวแปร user เสมอ) — แสดงแค่หมายเลข status ไม่บอกรายละเอียดอะไรเพิ่ม */
 body {
   display: flex;
   align-items: center;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#
+
 set -euo pipefail
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -8,10 +8,10 @@ warn() { printf '  \033[1;33m[!]\033[0m %s\n' "$*"; }
 SETUP_ERRORS=0
 ENV_WRITTEN=0
 err()  { SETUP_ERRORS=$((SETUP_ERRORS + 1)); printf '  \033[1;31m[ERR]\033[0m %s\n' "$*" >&2; }
-# ข้อความแดงที่ "ไม่ใช่ error" (เป็นสิ่งที่ต้องไปทำต่อ) — ไม่ให้ไปนับรวมกับความล้มเหลวของสคริปต์
+
 red()  { printf '  \033[1;31m%s\033[0m\n' "$*"; }
 
-# ---------------------------------------------------------------------------
+
 term_cols() {  # ความกว้างจอตอนนี้ — tput ถาม terminal ตรง ๆ ใช้ได้แม้ stdout ถูกจับไว้ใน $( )
     local c=""
     c="$(tput cols 2>/dev/null)" || c=""
@@ -34,7 +34,7 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
         return 0
     fi
 
-    # สร้าง log ตอนใช้จริงครั้งแรก — ขั้นย้ายโปรเจกต์ด้านล่าง exec ทับตัวเอง ถ้าสร้างไว้ก่อนจะค้างทิ้ง
+
     if [ -z "$STEP_LOG" ]; then
         STEP_LOG="$(mktemp)"
         trap 'rm -f "$STEP_LOG"' EXIT
@@ -49,9 +49,8 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
     printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
     while kill -0 "$pid" 2>/dev/null; do
         spent=$((SECONDS - start))
-        # ★ ทั้งบรรทัดต้องสั้นกว่าความกว้างจอเสมอ ถ้ายาวเกินจอจะห่อไปบรรทัดใหม่ แล้ว \r จะกลับไป
-        #   ต้น "บรรทัดที่ห่อ" ไม่ใช่บรรทัดเดิม \033[K ก็ล้างได้แค่บรรทัดนั้น ตัวหมุนเลยไหลลงมา
-        #   เป็นแถว | / - \ แทนที่จะหมุนอยู่กับที่ (ของเดิมยาว 120 คอลัมน์ตอนมี hint ต่อท้าย)
+
+
         dsp="$desc"
         room=$(( SPIN_COLS - 1 - ${#dsp} - ${#spent} - 8 ))   # "  X desc (Ns)" กินไป 8 ตัว
         if [ "$room" -lt 0 ]; then                            # จอแคบจนชื่อขั้นเองยังไม่พอ
@@ -61,8 +60,8 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
             room=0
         fi
         hint=''
-        # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
-        # มันยังเดินอยู่ — แปะเฉพาะตอนที่เหลือที่ว่างพอจริง ๆ ("  | " กินอีก 4 ตัว)
+
+
         if [ "$spent" -ge 15 ] && [ "$room" -ge 16 ]; then
             tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-"$(( room - 4 ))")"
             [ -n "$tail_line" ] && hint="  "$'\033[2m'"| $tail_line"$'\033[0m'
@@ -85,7 +84,7 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
 
 [ "$(id -u)" -eq 0 ] || { err "Must be run as root: sudo ./setup-server.sh"; exit 1; }
 
-# ---------------------------------------------------------------------------
+
 SELF="$(readlink -f "$0")"
 SRC_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 
@@ -94,7 +93,7 @@ INSTALL_DIR="$(readlink -f "${INSTALL_DIR:-$SRC_DIR}")"
 if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
     log "Moving project to $INSTALL_DIR"
     mkdir -p "$INSTALL_DIR"
-    # copy ทุกอย่างยกเว้น venv (สร้างใหม่ให้ตรงเครื่อง) และ .git (ไม่จำเป็นบน production)
+
     tar -C "$SRC_DIR" --exclude=venv --exclude=.git -cf - . | tar -C "$INSTALL_DIR" -xf -
     ok "Copied to $INSTALL_DIR - continuing from there"
     exec bash "$INSTALL_DIR/setup-server.sh" "$@"
@@ -105,15 +104,15 @@ log "Installing at $INSTALL_DIR"
 PROJECT_DIR="$INSTALL_DIR"
 cd "$PROJECT_DIR"
 
-# ตรวจว่าเป็น repo จริง (กันรันผิดที่)
+
 for need in main/main.py systemd/_gen.sh systemd/_hosts.sh requirements.txt .env.example; do
     [ -e "$PROJECT_DIR/$need" ] || { err "$need not found in $PROJECT_DIR - project files are incomplete"; exit 1; }
 done
 
-# ตัวช่วยเลือก IP ที่จะ bind + env_get/env_set (ใช้ชุดเดียวกับ systemd/_gen.sh จะได้ตรงกันทั้งสองทาง)
+
 source "$PROJECT_DIR/systemd/_hosts.sh"
 
-# ---------------------------------------------------------------------------
+
 ENV_FILE="$PROJECT_DIR/.env"
 ENV_EXISTED=0
 [ -f "$ENV_FILE" ] && ENV_EXISTED=1
@@ -152,20 +151,20 @@ AGENT_CENTRAL_CANDIDATES="${AGENT_CENTRAL_CANDIDATES:-}"
 preload_env AGENT_CENTRAL_CANDIDATES AGENT_CENTRAL_CANDIDATES
 preload_env FORWARDED_ALLOW_IPS  FORWARDED_ALLOW_IPS
 
-# ---- ทางเข้าเว็บ: ค่าที่ระบบใช้อยู่ตอนนี้ (ไว้เป็นค่าตั้งต้นของคำถาม/ของการรันซ้ำ) ----
+
 OLD_ROOT_PATH="$(env_get ROOT_PATH "$ENV_FILE")"
 OLD_FORWARDED_ALLOW="$(env_get FORWARDED_ALLOW_IPS "$ENV_FILE")"
 
-# ที่อยู่ของ central ที่ระบบใช้อยู่ "ตอนนี้" — ไว้เทียบว่ารอบนี้ IP เปลี่ยนไหม
+
 CURRENT_BIND_HOST="$(env_get REDIS_HOST "$ENV_FILE")"
 
-# พอร์ต Redis ที่ระบบใช้อยู่ "ตอนนี้" — ต้องอ่านเก็บไว้ก่อนขั้น 6 เขียนทับ .env เพราะเป็นพอร์ต
+
 OLD_REDIS_PORT="$(env_get REDIS_PORT "$ENV_FILE")"
 if [ -z "$OLD_REDIS_PORT" ] && [ "$ENV_EXISTED" = "1" ]; then
     OLD_REDIS_PORT=6380
 fi
 
-# ค่าที่ระบบ "ใช้อยู่ตอนนี้" ตัวอื่น ๆ อ่านเก็บไว้ตั้งแต่ก่อนถาม — ขั้น 6 เขียนทับ .env ไปแล้ว
+
 OLD_DB_NAME="$(env_get DB_NAME "$ENV_FILE")"
 OLD_DB_USER="$(env_get DB_USER "$ENV_FILE")"
 OLD_DB_HOST="$(env_get DB_HOST "$ENV_FILE")"
@@ -175,15 +174,15 @@ OLD_REDIS_USER="$(env_get REDIS_USER "$ENV_FILE")"
 OLD_REDIS_PASS="$(env_get REDIS_PASS "$ENV_FILE")"
 INSTALLED_APP_USER=""   # เติมตอนขั้น 1 (ฟังก์ชัน installed_app_user ประกาศทีหลัง)
 
-# postgres อยู่ไหน: DB_HOST คือค่าที่แอปใช้ต่อ (ลง .env) · PG_HOST คือที่ที่สคริปต์ต่อไปสร้าง role/db
+
 PG_HOST_PRESET="${PG_HOST:-}"   # ตั้ง PG_HOST มาเองทาง env ไหม — ถ้าใช่ ตอบ DB_HOST ใหม่ก็ไม่ไปแตะ
 PG_HOST="${PG_HOST:-${DB_HOST:-localhost}}"
 DB_HOST="${DB_HOST:-$PG_HOST}"
 DB_PORT="${DB_PORT:-5432}"
 
-# ---------------------------------------------------------------------------
+
 RECONFIGURE="${RECONFIGURE:-}"
-# ข้อ 3 ของเมนูข้างล่าง (หรือ preset UPDATE_GEOIP_ONLY=1 ตอนไม่มี tty) — อัปเดตไฟล์ GeoIP อย่างเดียวแล้วจบ
+
 UPDATE_GEOIP_ONLY="${UPDATE_GEOIP_ONLY:-0}"
 GEOIP_DB="$PROJECT_DIR/main/database/geoip/dbip-country-lite.mmdb"
 if [ -s "$GEOIP_DB" ]; then
@@ -226,12 +225,12 @@ RECONFIGURE="${RECONFIGURE:-0}"
 if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
     log "Updating the GeoIP database only (nothing else is touched)"
     echo "  now: $GEOIP_STATE"
-    # รันเป็นเจ้าของโฟลเดอร์โปรเจกต์ (= user ที่ service รัน) ไม่ใช่ root — ไฟล์ที่ได้ service อ่านได้แน่นอน
-    # service เปิดไฟล์ใหม่เองเมื่อไฟล์เปลี่ยน และ import maxminddb ใหม่เองเมื่อเพิ่งลง ไม่ต้อง restart
+
+
     GEOIP_OWNER="$(stat -c %U "$PROJECT_DIR/main")"
     GEOIP_FAILED=0
 
-    # ── 1) ไลบรารีอ่านไฟล์ (maxminddb) — เครื่องที่อัปเดตด้วย git pull เฉย ๆ จะยังไม่มี ──
+
     VENV_PY="$PROJECT_DIR/venv/bin/python"
     if [ ! -x "$VENV_PY" ]; then
         warn "No venv at $PROJECT_DIR/venv yet - run this script with option 1 to install the system first"
@@ -239,10 +238,10 @@ if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
     elif runuser -u "$GEOIP_OWNER" -- "$VENV_PY" -c "import maxminddb" >/dev/null 2>&1; then
         ok "maxminddb is installed"
     else
-        # เวอร์ชันเดียวกับ requirements.txt (ไม่เจอบรรทัดนั้น = ลงตัวล่าสุด)
+
         MAXMIND_REQ="$(grep -oE '^maxminddb[=<>!~]=?[^[:space:]#]+' "$PROJECT_DIR/requirements.txt" 2>/dev/null | head -1)"
         MAXMIND_REQ="${MAXMIND_REQ:-maxminddb}"
-        # ลงเป็นเจ้าของ venv — ลงด้วย root จะได้ไฟล์ของ root ปนอยู่ใน venv ของ service
+
         if PIP_OUT="$(runuser -u "$GEOIP_OWNER" -- "$PROJECT_DIR/venv/bin/pip" install -q \
                 --disable-pip-version-check --no-input --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}" \
                 "$MAXMIND_REQ" </dev/null 2>&1)"; then
@@ -254,8 +253,7 @@ if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
         fi
     fi
 
-    # ── 2) ไฟล์ฐานข้อมูลประเทศของเดือนนี้ ──
-    # สร้างโฟลเดอร์ในนามเจ้าของ (ไม่ใช่ root แล้ว chown) — โฟลเดอร์แม่ที่ยังไม่มีก็ได้เจ้าของถูกตัวด้วย
+
     runuser -u "$GEOIP_OWNER" -- mkdir -p "$(dirname "$GEOIP_DB")"
     if GEOIP_OUT="$(runuser -u "$GEOIP_OWNER" -- bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
         while IFS= read -r _l; do if [ -n "$_l" ]; then ok "$_l"; fi; done <<< "$GEOIP_OUT"  # สคริปต์ตอบหลายบรรทัด
@@ -272,7 +270,7 @@ if [ "$UPDATE_GEOIP_ONLY" = "1" ]; then
     exit 1
 fi
 
-# ย้ายค่าที่โหลดมาจาก .env ไปเป็น "ค่าตั้งต้นของคำถาม" แทนการเอาไปใช้เงียบ ๆ
+
 reask() {  # reask VAR
     local var="$1" cur
     case "$FROM_ENV_FILE" in *" $var "*) ;; *) return 0 ;; esac
@@ -288,21 +286,20 @@ if [ "$RECONFIGURE" = "1" ]; then
     warn "Setting everything up again - pressing Enter on a question keeps the value it has now"
 fi
 
-# ---------------------------------------------------------------------------
+
 ask() {  # ask VAR "คำถาม" "ค่า default"
     local var="$1" prompt="$2" def="${3:-}" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"      # ถ้า preset มาทาง env แล้วใช้เลย
     if [ -n "$cur" ]; then ok "$var = $cur (from $(value_source "$var"))"; return; fi
-    # ไม่มี tty (รันจากสคริปต์/cron) แต่มีค่าตั้งต้นที่เชื่อได้ = ใช้ค่านั้นเงียบ ๆ เหมือน pick_bind_host
+
     if [ ! -t 0 ]; then
         [ -n "$def" ] || { err "No tty and $var was not preset"; exit 1; }
         eval "$var=\$def"
         ok "$var = $def (default, no tty)"
         return
     fi
-    # ตอบว่างแล้วไม่มีค่าตั้งต้น = ถามใหม่ ไม่ใช่จบสคริปต์ (ตอนติดตั้งใหม่ คำถามรหัสฐานข้อมูล
-    # ไม่มีค่าตั้งต้นให้ เผลอกด Enter ทีเดียวเคยต้องเริ่มตอบใหม่ทั้งชุด)
-    # read คืนค่าไม่ใช่ 0 เมื่อเจอ EOF (สคริปต์อื่นป้อนคำตอบมาแล้วหมด) — ตรงนั้นต้องออก ไม่ใช่วนไม่รู้จบ
+
+
     while :; do
         read -rp "  $prompt${def:+ [$def]}: " ans \
             || { err "$var must not be empty (no answer left to read)"; exit 1; }
@@ -312,7 +309,7 @@ ask() {  # ask VAR "คำถาม" "ค่า default"
     done
     eval "$var=\$ans"
 }
-# ask_secret VAR "คำถาม" ["ค่าเดิม"] — มีค่าเดิม (โหมดตั้งค่าใหม่) กด Enter = ใช้ค่าเดิมต่อ
+
 ask_secret() {  # ask_secret VAR "คำถาม" ["ค่าเดิม"]
     local var="$1" prompt="$2" def="${3:-}" cur ans
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
@@ -321,7 +318,7 @@ ask_secret() {  # ask_secret VAR "คำถาม" ["ค่าเดิม"]
         [ -n "$def" ] || { err "No tty and $var was not preset"; exit 1; }
         eval "$var=\$def"; ok "$var = ****** (unchanged, no tty)"; return
     fi
-    # เหตุผลเดียวกับ ask() — ตอบว่างแล้วไม่มีค่าเดิมให้ใช้ ก็ถามใหม่
+
     while :; do
         read -rsp "  $prompt${def:+ (Enter = keep the current one)}: " ans \
             || { echo; err "$var must not be empty (no answer left to read)"; exit 1; }
@@ -333,7 +330,7 @@ ask_secret() {  # ask_secret VAR "คำถาม" ["ค่าเดิม"]
     eval "$var=\$ans"
 }
 
-# เงื่อนไขเดียวกับ main/redis_password_rules.py — รหัสที่หลุดเงื่อนไขจะทำให้ users.acl/.env เพี้ยน
+
 valid_redis_pass() {
     local p="$1"
     [ "${#p}" -ge 12 ] || return 1
@@ -341,7 +338,7 @@ valid_redis_pass() {
     return 0
 }
 
-# ถามรหัส Redis — ยังไม่มีรหัสเดิม: Enter = สุ่มให้ · มีรหัสเดิมอยู่ (โหมดตั้งค่าใหม่): Enter = ใช้ของเดิม
+
 GENERATED_PASSWORDS=""
 WEAK_SECRETS=""   # รหัสที่อยู่ใน .env อยู่แล้วแต่ไม่ผ่านกติกา (เตือนซ้ำตอนจบ ไม่ขวางการทำงาน)
 ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญชี" ["รหัสเดิม"]
@@ -349,15 +346,15 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
     if [ -n "$cur" ]; then
         if ! valid_redis_pass "$cur"; then
-            # ค่ามาจาก .env = รหัสที่ระบบ "ใช้อยู่จริง" ตอนนี้ (เครื่องที่ลงไว้ก่อนกติกานี้จะมี)
-            # ถ้าตายตรงนี้ = รันสคริปต์ไม่ได้อีกเลยทั้งที่มาทำเรื่องอื่น เช่นแก้ root path -> เตือนแล้วไปต่อ
+
+
             if [ "$(value_source "$var")" = ".env" ]; then
                 warn "$var in .env does not meet the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"
                 warn "  keeping it - it is the password the running system uses right now"
                 warn "  rotate it when you can - on the dashboard: System Settings"
                 WEAK_SECRETS="$WEAK_SECRETS $var"
             else
-                # ค่าที่เพิ่งส่งเข้ามาทาง env = ตั้งใจจะเปลี่ยนรหัส -> ไม่ยอมให้ตั้งรหัสอ่อน
+
                 err "$var fails the rules (min 12 chars; allowed: A-Z a-z 0-9 _-.~@%+=:,/)"
                 exit 1
             fi
@@ -370,7 +367,7 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
         eval "$var=\$def"; ok "$var = ****** (unchanged, no tty)"; return
     fi
 
-    # ให้เลือกเป็นข้อ ๆ ว่าจะเอารหัสแบบไหน (ของเดิมต้องรู้เองว่า Enter = ใช้ค่าเดิม, พิมพ์ new = สุ่ม)
+
     echo ""
     echo "  Redis password for $what"
     if [ -n "$def" ]; then
@@ -427,9 +424,7 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
     eval "$var=\$ans"
 }
 
-# ---- พอร์ตที่ service ของเราจะ bind ----
 
-# port_reject PORT — พิมพ์เหตุผลออกมาถ้ารับพอร์ตนี้ไม่ได้ · ไม่พิมพ์อะไร = ผ่าน
 port_reject() {
     local p="$1"
     if ! valid_port "$p"; then
@@ -442,7 +437,7 @@ port_reject() {
     esac
 }
 
-# มีอย่างอื่นฟังพอร์ตนี้อยู่ไหม — **เตือนอย่างเดียว ไม่บล็อก**: ตัวที่ฟังอยู่อาจเป็นของที่กำลังจะถูก
+
 port_warn_in_use() {  # port_warn_in_use PORT
     local p="$1"
     [ "$p" = "${OLD_REDIS_PORT:-}" ] && return 0
@@ -456,7 +451,7 @@ port_warn_in_use() {  # port_warn_in_use PORT
     fi
 }
 
-# ask_port VAR "คำถาม" "ค่าเดิม" — โครงเดียวกับ ask(): preset ทาง env ชนะ · ไม่มี tty ใช้ค่าเดิม
+
 ask_port() {
     local var="$1" prompt="$2" def="${3:-}" cur ans why
 
@@ -487,7 +482,7 @@ ask_port() {
     port_warn_in_use "$ans"
 }
 
-# user ที่ unit ซึ่งติดตั้งอยู่ตอนนี้รันด้วย — เป็นค่าตั้งต้นที่ "จริง" กว่า SUDO_USER
+
 installed_app_user() {
     local unit="/etc/systemd/system/securelog-web.service"
     [ -f "$unit" ] || return 0
@@ -502,8 +497,7 @@ DEFAULT_USER="$INSTALLED_APP_USER"
 
 ask        APP_USER   "User the services will run as (User=)" "$DEFAULT_USER"
 
-# ตอบเป็นตัวเลข = systemd กับ chown ตีเป็น uid เงียบ ๆ (พิมพ์ 3 = บริการไปรันเป็น 'sys' ทั้งชุด
-# และโปรเจกต์ทั้งโฟลเดอร์ถูก chown ตามไปด้วย) — เจอมาแล้วตอนทดสอบ จึงกันไว้ตรงนี้
+
 case "$APP_USER" in
     *[!0-9]*) ;;
     *) err "APP_USER='$APP_USER' is a number - systemd would read it as a uid; type the user NAME"; exit 1 ;;
@@ -511,7 +505,7 @@ esac
 getent passwd "$APP_USER" >/dev/null 2>&1 \
     || { err "There is no user '$APP_USER' on this machine - create it first, or answer with an existing one"; exit 1; }
 
-# ---- IP 3 ช่อง ถามแยกกัน (ความหมายต่างกัน — อ่านหัวไฟล์ systemd/_hosts.sh) ----
+
 if [ ! -t 0 ] && [ -z "${BIND_HOST:-}" ] && [ -z "$CURRENT_BIND_HOST" ]; then
     err "No tty and BIND_HOST was not preset"; exit 1
 fi
@@ -522,13 +516,12 @@ pick_bind_host BIND_HOST \
     "Address other machines use to reach this central server" \
     "${CURRENT_BIND_HOST:-${DETECTED_IP:-}}" 0 \
     "Goes into the cert SAN, REDIS_HOST and the agent installer - must be a real IP"
-# พอร์ต Redis ถามต่อจากที่อยู่ทันที เพราะเป็นคู่กัน — "agent ต่อกลับมาที่ไหน" คือ IP + พอร์ตนี้
+
 ask_port REDIS_PORT \
     "Port the Redis of this central listens on (mTLS - agents connect to it)" \
     "${OLD_REDIS_PORT:-6380}"
 
-# ---- root path ของเว็บ + ความพร้อมสำหรับ reverse proxy ----
-# ฝั่งนี้ทำแค่ "ระบบ" ให้พร้อม — ใครจะเอา nginx/HAProxy/Apache มาครอบทีหลังก็ทำได้เลย
+
 norm_root_path() {  # "xxx" / "/xxx/" / "//a//b//" -> "/xxx", "/a/b" · "/" หรือว่าง = อยู่ที่ราก
     local v="$1"
     v="${v//\"/}"; v="${v//\'/}"
@@ -536,19 +529,18 @@ norm_root_path() {  # "xxx" / "/xxx/" / "//a//b//" -> "/xxx", "/a/b" · "/" ห�
     [ -n "$v" ] && printf '/%s' "$v" || printf ''
 }
 
-# ค่าตั้งต้นของคำถาม: ค่าที่ส่งมาทาง env > ค่าที่อยู่ใน .env ตอนนี้ > "/" (อยู่ที่ราก)
-# ใช้ OLD_ROOT_PATH เป็นหลักเพราะอ่านจาก .env ตั้งแต่ก่อนโหมด "ตั้งค่าใหม่ทั้งหมด" จะ unset ตัวแปรทิ้ง
+
 ROOT_PATH_DEFAULT="${ROOT_PATH:-${OLD_ROOT_PATH:-/}}"
 [ -n "$ROOT_PATH_DEFAULT" ] || ROOT_PATH_DEFAULT="/"
 
-# มีคนนั่งตอบอยู่ = ถามทุกครั้ง โดยเอาค่าที่ใช้อยู่เป็นค่าตั้งต้น (ไม่งั้นแก้ root path ไม่ได้เลย)
+
 if [ -t 0 ]; then
     case "$FROM_ENV_FILE" in
         *" ROOT_PATH "*) unset ROOT_PATH ;;
     esac
 fi
 
-# รันซ้ำแบบไม่มี tty และไม่ได้สั่งอะไรมา = คงค่าเดิมไว้ (ไม่ต้องเดา)
+
 if [ -z "${ROOT_PATH:-}" ] && [ ! -t 0 ] && [ "$ENV_EXISTED" = "1" ]; then
     ROOT_PATH="$OLD_ROOT_PATH"
     ok "ROOT_PATH = ${ROOT_PATH:-/} (from .env)"
@@ -565,10 +557,7 @@ else
     ok "The dashboard will live at / (the way it has always been)"
 fi
 
-# ---- เตรียมพร้อมสำหรับ reverse proxy เสมอ (ไม่ต้องถาม) ----
-# ตั้ง FORWARDED_ALLOW_IPS ไว้ตั้งแต่แรก = วันไหนเอา nginx/HAProxy มาครอบก็ใช้ได้ทันที ไม่ต้องรื้อ
-# ไม่มี proxy ก็ไม่เสียอะไร: uvicorn เชื่อ X-Forwarded-For เฉพาะที่มาจาก IP ในรายการนี้เท่านั้น
-# request ที่วิ่งตรงมาจากเครือข่ายยังถูกอ่าน IP จาก TCP ตามปกติ
+
 FORWARDED_ALLOW_IPS="${FORWARDED_ALLOW_IPS:-${OLD_FORWARDED_ALLOW:-127.0.0.1}}"
 printf '%s' "$FORWARDED_ALLOW_IPS" | grep -qE '^[0-9A-Fa-f.:*,[:space:]-]+$' \
     || { err "FORWARDED_ALLOW_IPS='$FORWARDED_ALLOW_IPS' should be IP addresses separated by commas"; exit 1; }
@@ -584,13 +573,13 @@ else
     ok "Ready for a reverse proxy at $FORWARDED_ALLOW_IPS (trusts X-Forwarded-For from there)"
 fi
 
-# ---- IP ที่ dashboard ฟัง (คำถามเดิม) ----
+
 _web_default="${WEB_DEFAULT:-$BIND_HOST}"
 pick_bind_host WEB_BIND_HOST \
     "dashboard (HTTPS :8000) - which IP to listen on" "$_web_default" 1 \
     "127.0.0.1 = only a proxy running on this host can reach it; 0.0.0.0 = all interfaces"
 
-# proxy อยู่คนละเครื่องแต่ฟังแค่ loopback = proxy ต่อไม่ถึงตลอดกาล
+
 if [ "$PROXY_IS_LOCAL" = "0" ] && [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
     err "The proxy at $FORWARDED_ALLOW_IPS is not on this host, but the dashboard would listen on 127.0.0.1 only"
     err "  it could never reach it - bind the dashboard to an IP that $FORWARDED_ALLOW_IPS can dial"
@@ -601,7 +590,7 @@ pick_bind_host WEBHOOK_BIND_HOST \
     "LINE webhook (HTTP :8080) - which IP to listen on" "${HOOK_DEFAULT:-0.0.0.0}" 1 \
     "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 is fine"
 
-# ★ IP ของ central เปลี่ยนจากรอบก่อน = ต้องไล่แก้ให้ครบทุกที่ที่ IP เดิมฝังอยู่ ไม่งั้นระบบจะ
+
 IP_CHANGED=0
 if [ -n "$CURRENT_BIND_HOST" ] && [ "$CURRENT_BIND_HOST" != "$BIND_HOST" ]; then
     IP_CHANGED=1
@@ -609,7 +598,7 @@ if [ -n "$CURRENT_BIND_HOST" ] && [ "$CURRENT_BIND_HOST" != "$BIND_HOST" ]; then
     warn "  cert SAN, .env, site.conf and the units will all follow"
 fi
 
-# ★ พอร์ต Redis เปลี่ยน = เรื่องเดียวกับย้าย IP ในแง่ของ agent (ที่อยู่ที่ฝังไว้ในเครื่องเขาผิดไปแล้ว)
+
 PORT_CHANGED=0
 if [ -n "$OLD_REDIS_PORT" ] && [ "$OLD_REDIS_PORT" != "$REDIS_PORT" ]; then
     PORT_CHANGED=1
@@ -617,11 +606,11 @@ if [ -n "$OLD_REDIS_PORT" ] && [ "$OLD_REDIS_PORT" != "$REDIS_PORT" ]; then
     warn "  redis-mtls.conf (the old file is kept as .bak), .env, site.conf, firewall and a restart of centralredis"
 fi
 
-# DB_HOST/DB_PORT ปกติไม่ใช่คำถาม (ตั้งผ่าน env เอาเมื่อ postgres อยู่คนละเครื่อง) — โหมดตั้งค่าใหม่
+
 if [ "$RECONFIGURE" = "1" ]; then
     ask DB_HOST "PostgreSQL host the services connect to" "${ENV_DEFAULT[DB_HOST]:-$DB_HOST}"
     ask DB_PORT "PostgreSQL port"                         "${ENV_DEFAULT[DB_PORT]:-$DB_PORT}"
-    # ที่ที่สคริปต์ต่อไปสร้าง role/db ตามค่าที่เพิ่งตอบ เว้นแต่ตั้ง PG_HOST มาเองทาง env
+
     [ -n "$PG_HOST_PRESET" ] || PG_HOST="$DB_HOST"
 fi
 
@@ -629,11 +618,11 @@ ask        DB_NAME    "PostgreSQL database name"        "${ENV_DEFAULT[DB_NAME]:
 ask        DB_USER    "PostgreSQL user"                 "${ENV_DEFAULT[DB_USER]:-$APP_USER}"
 ask_secret DB_PASSWORD "PostgreSQL password for $DB_USER" "${ENV_DEFAULT[DB_PASSWORD]:-}"
 
-# ตอบ DB_PORT ใหม่ได้แล้ว = ต้องกันค่าที่ไม่ใช่พอร์ต ไม่งั้นไปตายที่ psql ด้วย error ที่อ่านไม่รู้เรื่อง
+
 printf '%s' "$DB_PORT" | grep -qE '^[0-9]{1,5}$' \
     || { err "DB_PORT='$DB_PORT' is not a port number"; exit 1; }
 
-# ชื่อ role/database ถูกเอาไปต่อเป็นคำสั่ง SQL ตรง ๆ — จำกัดให้เป็น identifier ปกติของ postgres
+
 valid_pg_ident() { printf '%s' "$1" | grep -qE '^[A-Za-z_][A-Za-z0-9_]{0,62}$'; }
 for _v in DB_NAME DB_USER; do
     valid_pg_ident "${!_v}" || {
@@ -642,7 +631,7 @@ for _v in DB_NAME DB_USER; do
     }
 done
 
-# .env เป็นไฟล์ KEY=VALUE ที่ python-dotenv อ่าน — อักขระพวกนี้ทำให้ค่าที่อ่านได้ไม่ตรงกับที่กรอก
+
 case "$DB_PASSWORD" in
     *[\'\"\#\$\`\\]*|*" "*)
         warn "DB_PASSWORD contains one of  ' \" # \$ \` \\  or a space - .env may read it back differently"
@@ -652,7 +641,7 @@ esac
 
 ask        REDIS_USER "Redis user for central"          "${ENV_DEFAULT[REDIS_USER]:-admin}"
 
-# ชื่อ user ถูกเขียนลง users.acl แบบ token คั่นด้วยช่องว่าง — มีช่องว่าง/อักขระแปลกปนคือไฟล์เสีย
+
 printf '%s' "$REDIS_USER" | grep -qE '^[A-Za-z0-9_.-]{1,64}$' \
     || { err "REDIS_USER='$REDIS_USER' is not valid (A-Z a-z 0-9 _ - . only)"; exit 1; }
 
@@ -660,13 +649,13 @@ ask_redis_secret REDIS_PASS       "account $REDIS_USER (central uses it for Redi
 
 APP_GROUP="${APP_GROUP:-$APP_USER}"
 
-# ---------------------------------------------------------------------------
+
 CHANGES=()
 DB_TARGET_CHANGED=0
 REDIS_ACL_CHANGED=0
 
 if [ "$ENV_EXISTED" = "1" ]; then
-    # IP ถูกเตือนไปแล้วตอนตอบคำถาม แต่ต้องอยู่ในสรุปก่อนยืนยันด้วย — มันคือข้อที่กระทบหนักที่สุด
+
     if [ "$IP_CHANGED" = "1" ]; then
         CHANGES+=("central address $CURRENT_BIND_HOST -> $BIND_HOST (cert SAN, .env, site.conf and units all follow)")
     fi
@@ -689,7 +678,7 @@ if [ "$ENV_EXISTED" = "1" ]; then
         CHANGES+=("postgres moves to $DB_HOST:$DB_PORT (was $OLD_DB_HOST:$OLD_DB_PORT)")
     fi
     if [ -n "$OLD_DB_PASSWORD" ] && [ "$OLD_DB_PASSWORD" != "$DB_PASSWORD" ]; then
-        # ตรงกับสิ่งที่ขั้น 5 ทำจริง: ทับให้เฉพาะตอนใส่ FORCE_DB_PASSWORD=1 ไม่งั้นมันหยุด
+
         if [ "${FORCE_DB_PASSWORD:-0}" = "1" ]; then
             CHANGES+=("password of postgres role '$DB_USER' is reset to the one typed now (ALTER ROLE, FORCE_DB_PASSWORD=1)")
         else
@@ -706,28 +695,28 @@ if [ "$ENV_EXISTED" = "1" ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
+
 log "Database check (read-only - nothing has been installed or changed yet)"
 
 PG_SUPERUSER="${PG_SUPERUSER:-postgres}"
-# peer auth (sudo -u postgres) ใช้ได้เฉพาะ postgres ที่อยู่บนเครื่องนี้เท่านั้น (ขั้น 5 ใช้ค่านี้ต่อ)
+
 PG_LOCAL=0
 case "$PG_HOST" in localhost|127.0.0.1|::1|"") PG_LOCAL=1 ;; esac
 
-# ตารางที่ชี้ขาดว่า "ฐานนี้เป็นของระบบนี้" — ไม่นับ users ที่ชื่อโหลเกินกว่าจะใช้ตัดสิน (ขั้น 5 ใช้ชุดเดียวกัน)
+
 OUR_TABLES_SQL="'agents','security_alerts','ip_black_list','ip_white_list','detection_rules','detection_signatures','alert_severity','alert_reads','blacklist_ttl','line_recipients','agent_downloads','app_settings'"
 
 DB_STATE=""      # ไปโผล่ในบรรทัดสรุปท้ายสคริปต์ด้วย
 DB_ROWS=""
-# จำนวน agent ที่ "ลงทะเบียนไว้ในฐาน" — สัญญาณที่เชื่อได้ว่ามีเครื่อง agent อยู่ข้างนอกจริง
+
 EXISTING_AGENTS=""
 
-# ต่อด้วย role ของแอปเองทาง TCP = เส้นทางเดียวกับที่ service ต่อจริง (ล้มเหลวคืนค่าว่าง ไม่ทำสคริปต์ตาย)
+
 app_psql() {  # app_psql SQL [DATABASE]
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
         -d "${2:-$DB_NAME}" -tAc "$1" 2>/dev/null || true
 }
-# สำรองสำหรับตอน role ของแอปยังล็อกอินไม่ได้ — peer auth ไม่ต้องรหัส จึงไม่ต้องไปถามอะไรเพิ่มตอนนี้
+
 peer_psql() {  # peer_psql SQL [DATABASE]
     [ "$PG_LOCAL" = "1" ] || return 0
     sudo -n -u "$PG_SUPERUSER" psql -p "$DB_PORT" -d "${2:-$DB_NAME}" -tAc "$1" 2>/dev/null || true
@@ -737,7 +726,7 @@ db_rows() {  # db_rows TABLE VIA(app|peer) — จำนวนแถว (ว่�
     "${2}_psql" "SELECT count(*) FROM public.$1"
 }
 
-# ★ ใจความของขั้นนี้: ฐานนี้ "มีข้อมูลอยู่เท่าไร" — ตอบเป็นจำนวนแถวจริง ไม่ใช่แค่ว่ามีตารางกี่ตัว
+
 report_db_contents() {  # report_db_contents VIA(app|peer)
     local via="$1" pub our ag al us
     pub="$("${via}_psql" "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
@@ -790,21 +779,19 @@ elif command -v pg_isready >/dev/null 2>&1 && ! pg_isready -h "$DB_HOST" -p "$DB
 else
     ok "PostgreSQL answers on $DB_HOST:$DB_PORT"
 
-    # ⚠️ ต้องรู้ก่อนว่า "ล็อกอินได้ทางไหนบ้าง" ไม่งั้นแยก 2 อย่างนี้ไม่ออก แล้วรายงานผิด:
+
     CAN_APP=0
     if [ "$(app_psql "SELECT 1" postgres)" = "1" ]; then CAN_APP=1; fi
     CAN_PEER=0
     if [ "$(peer_psql "SELECT 1" postgres)" = "1" ]; then CAN_PEER=1; fi
 
-    # รอบนี้ตั้งใจเปลี่ยนรหัสอยู่แล้ว = ล็อกอินไม่ผ่านตอนนี้เป็นเรื่องปกติ
+
     PW_CHANGING=0
     if [ "$ENV_EXISTED" = "1" ] && [ -n "$OLD_DB_PASSWORD" ] && [ "$OLD_DB_PASSWORD" != "$DB_PASSWORD" ]; then
         PW_CHANGING=1
     fi
 
-    # ★ ขั้น 5 **ไม่เคย** ทับรหัสของ role ที่มีอยู่แล้วเอง ต้องยืนยันด้วย FORCE_DB_PASSWORD=1 เท่านั้น
-    #   (ข้อความเดิมตรงนี้บอกว่า "step 5 runs ALTER ROLE to set it" แล้วขั้น 5 ไปปฏิเสธ = สัญญาคนละอย่าง
-    #   กับที่ทำจริง เจอตอนเทส 2026-09-17) — บอกให้ตรงตั้งแต่ตรงนี้ จะได้รู้ก่อนว่าต้องใส่ตัวแปรนั้น
+
     say_pw_changing() {
         if [ "${FORCE_DB_PASSWORD:-0}" = "1" ]; then
             ok "'$DB_USER' cannot log in with the new password yet - expected, step 5 resets it (FORCE_DB_PASSWORD=1)"
@@ -841,7 +828,7 @@ else
             report_db_contents app
 
         else
-            # ฐานมีอยู่ แต่ role ของแอปยังเข้าไม่ได้ — บอกสาเหตุที่ตรงเคส แล้วอ่านสภาพฐานผ่าน peer แทน
+
             if [ "$PW_CHANGING" = "1" ]; then
                 say_pw_changing
             elif [ "$CAN_PEER" = "1" ] \
@@ -862,7 +849,7 @@ else
     fi
 fi
 
-# ---------------------------------------------------------------------------
+
 case "${EXISTING_AGENTS:-}" in
     ''|*[!0-9]*) ;;                       # อ่านจำนวน agent ไม่ได้ = ไม่เดา ไม่เตือนมั่ว
     *)
@@ -885,17 +872,17 @@ case "${EXISTING_AGENTS:-}" in
         ;;
 esac
 
-# ก่อนลงมือ: บอกให้เห็นเป็นข้อ ๆ ว่ารอบนี้จะไปแตะอะไรของจริงบ้าง แล้วให้ยืนยันครั้งเดียว
+
 if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
     echo ""
     warn "This run changes things that are already live on this machine:"
     for _c in "${CHANGES[@]}"; do echo "       - $_c"; done
     if [ "$DB_TARGET_CHANGED" = "1" ]; then
         echo "     The old database is left exactly as it is - nothing is copied across."
-        # สถานะฐานปลายทางมาจากขั้น 1.2 ที่เพิ่งตรวจไปจริง ๆ ไม่ใช่คำเตือนลอย ๆ
+
         [ -n "$DB_STATE" ] && echo "     '$DB_NAME' right now: $DB_STATE"
-        # ★ ทะเบียน agent (agent_id + token) อยู่ใน "ฐาน" ไม่ได้อยู่ในไฟล์ฝั่ง agent — ย้ายฐานเมื่อไหร่
-        #   ฐานใหม่ก็ไม่รู้จักเครื่องเดิมสักตัว ต้องบอกตั้งแต่ก่อนกดยืนยัน ไม่ใช่ไปรู้ตอนจบ
+
+
         case "$DB_STATE" in
             *empty*|"to be created")
                 echo "     -> the system starts from scratch there (first login admin/admin again)."
@@ -918,22 +905,11 @@ if [ "$RECONFIGURE" = "1" ] && [ "${#CHANGES[@]}" -gt 0 ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# ย้ายที่อยู่ของ central: agent ตามมาเองยังไง
-#
-# agent คุยกับ central ได้ทางเดียวคือผ่าน Redis ของ central เอง — พอที่อยู่เดิมตาย ช่องทางนั้น
-# ตายไปด้วย สั่งอะไรทีหลังไม่มีใครได้ยิน จึงต้องฝากที่อยู่ใหม่ไว้ "ตอนที่ยังคุยกันได้" เท่านั้น
-#
-# สคริปต์นี้ไม่ยุ่งกับการตั้งค่าเครือข่ายของเครื่อง — หน้าที่นั้นเป็นของแอดมิน (netplan)
-# ที่นี่ทำแค่บอก agent ว่าที่อยู่ใหม่คืออะไร แล้วบอกแอดมินว่าต้องไปทำอะไรต่อ
-#
-#   live   = ที่อยู่ใหม่อยู่บนเครื่องนี้แล้ว -> ประกาศเฉย ๆ ใช้งานต่อได้ทันที
-#   notify = ที่อยู่ใหม่ยังไม่มีบนเครื่อง   -> ประกาศไว้ก่อน แล้วเตือนให้ไปตั้ง IP เอง
-#   skip   = ยังไม่มี agent ในระบบ         -> ไม่ต้องทำอะไร
+
 MIGRATE_MODE="skip"
 
 host_has_ip() {  # host_has_ip IP — เครื่องนี้ถือ IP นี้อยู่แล้วไหม
-    # ไม่จำกัด scope global เพราะ 127.0.0.1 อยู่ scope host — ไม่นับจะกลายเป็น "เครื่องไม่มีที่อยู่นี้"
+
     ip -4 -o addr show 2>/dev/null | awk '{print $4}' | cut -d/ -f1 \
         | grep -qx "$1"
 }
@@ -964,7 +940,7 @@ prefix_of_iface() {  # prefix_of_iface IFACE — /prefix ของ IPv4 ใบ�
 }
 
 ip_is_permanent() {  # ip_is_permanent IP — IP นี้จะยังอยู่หลัง reboot ไหม
-    # มาจาก DHCP (dynamic) = อยู่ · เขียนไว้ใน netplan = อยู่ · นอกนั้นคือแปะไว้ชั่วคราว หายแน่
+
     case "$1" in 127.*) return 0 ;; esac      # loopback มากับเคอร์เนล ไม่ต้องเขียนใน netplan
     ip -4 -o addr show scope global 2>/dev/null | grep -q "inet $1/.* dynamic " && return 0
     grep -rqs -- "$1" /etc/netplan/ 2>/dev/null && return 0
@@ -982,8 +958,8 @@ mono_now() {  # เวลาปัจจุบันในหน่วยเด�
 
 unit_active_age() {  # unit_active_age UNIT — "ตอนนี้" ขึ้นมาแล้วอยู่รอดมากี่วินาที (ไม่ได้รันอยู่ = 0)
     local t now
-    # ตัวที่ตายแล้วรอ systemd ปลุกใหม่ ยังเก็บ ActiveEnterTimestamp ของรอบก่อนไว้ — ถ้าไม่เช็ก
-    # สถานะปัจจุบันก่อน มันจะดูเหมือน "อยู่มานานแล้ว" ทั้งที่กำลังวนรีสตาร์ตอยู่
+
+
     [ "$(systemctl show "$1" -p ActiveState --value 2>/dev/null)" = "active" ] || { printf '0'; return 0; }
     [ "$(systemctl show "$1" -p SubState --value 2>/dev/null)" = "running" ] || { printf '0'; return 0; }
     t="$(systemctl show "$1" -p ActiveEnterTimestampMonotonic --value 2>/dev/null)"
@@ -1015,15 +991,14 @@ if [ "$IP_CHANGED" = "1" ] || [ "$PORT_CHANGED" = "1" ]; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
+
 log "Installing OS packages (apt)"
 export DEBIAN_FRONTEND=noninteractive
 
-# ตีตราเองว่า apt-get update สำเร็จไปเมื่อไร — ห้ามใช้ mtime ของไฟล์ InRelease เพราะ apt ตั้ง
-# mtime ตาม Last-Modified ของมิเรอร์ (ของ noble คือวันปล่อยรุ่น ปี 2024) ไม่ใช่เวลาที่เราโหลดมา
+
 APT_STAMP="/var/lib/apt/lists/.securelog-apt-update-stamp"
 apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำเร็จไปไม่เกินกี่นาที (update-success-stamp
-                     # เป็นของ apt เอง มีติดมากับ unattended-upgrades — เผื่อเครื่องที่ถอดตัวนั้นทิ้ง)
+
     local f
     for f in "$APT_STAMP" /var/lib/apt/periodic/update-success-stamp; do
         [ -f "$f" ] && [ -n "$(find "$f" -mmin -"$1" -print -quit 2>/dev/null)" ] && return 0
@@ -1031,10 +1006,7 @@ apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำ
     return 1
 }
 
-# apt-get update = ไปขอ "รายชื่อแพ็กเกจล่าสุด" จากมิเรอร์ ซึ่ง Ubuntu ออกใหม่ทุกวัน วันละหลายรอบ
-# แปลว่าเครื่องที่ clone มาจาก image เมื่อวานก็ยังต้องโหลดใหม่ ~10 MB แล้วเอา lists ทั้งกอง (~200 MB)
-# มา parse ใหม่อีก 13-15 วิ บนเครื่อง 1 core — ทั้งที่ของที่จะลงมีครบอยู่แล้ว จึงถามก่อนว่าขาดอะไรไหม
-# ค่อยออกเน็ต (FORCE_APT=1 = ทำแบบเดิมทุกรอบ: update แล้ว install ทั้งชุด เผื่ออยากได้รุ่นใหม่กว่า)
+
 APT_PKGS=(python3-venv python3-pip postgresql redis-server tar git curl)
 APT_TARGET=()
 for p in "${APT_PKGS[@]}"; do
@@ -1048,9 +1020,8 @@ else
     APT_LISTS_MAX_AGE_MIN="${APT_LISTS_MAX_AGE_MIN:-60}"
     if [ "${FORCE_APT:-0}" != "1" ] && apt_lists_fresh "$APT_LISTS_MAX_AGE_MIN"; then
         ok "apt package lists were refreshed less than $APT_LISTS_MAX_AGE_MIN minutes ago - apt-get update skipped"
-    # -q ไม่ใช่ -qq: -qq เงียบสนิท (output 0 ตัวอักษร) ตัวหมุนของ run_step เลยไม่มีบรรทัดให้โชว์
-    #   คนดูเห็นแต่ตัวหมุนนิ่ง ๆ นึกว่าค้าง · Languages=none ตัด Translation-* ที่ระบบนี้ไม่ได้ใช้
-    #   Retries/Timeout: มิเรอร์ล่ม = เด้งใน ~15 วิ แทนที่จะค้างรอ default (120 วิ x 3 รอบ)
+
+
     elif run_step "apt-get update" apt-get update -q \
             -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::Languages=none; then
         : > "$APT_STAMP" 2>/dev/null || true
@@ -1060,16 +1031,15 @@ else
     run_step "Installing ${APT_TARGET[*]}" apt-get install -y -qq "${APT_TARGET[@]}"
 fi
 
-# Agent ZIPs require a Filebeat binary that sends Redis AUTH with both the
-# username and password. Build it once on this Central; subsequent runs reuse it.
+
 log "Preparing Filebeat for Agent packages"
 run_step "Building Filebeat 8.19.23 with Redis ACL support" \
     bash "$PROJECT_DIR/for_Agent/build_filebeat_acl.sh"
 
-# ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (mTLS พอร์ตที่เลือกไว้ ตั้งต้น 6380)
+
 systemctl disable --now redis-server >/dev/null 2>&1 || true
 
-# ---------------------------------------------------------------------------
+
 if id "$APP_USER" >/dev/null 2>&1; then
     ok "User '$APP_USER' already exists"
 else
@@ -1078,7 +1048,7 @@ else
     ok "Created user '$APP_USER'"
 fi
 
-# ---------------------------------------------------------------------------
+
 log "Creating venv + installing requirements.txt"
 VENV_CREATED=0
 if [ -x "$PROJECT_DIR/venv/bin/python" ]; then
@@ -1089,18 +1059,18 @@ else
 fi
 
 PIP="$PROJECT_DIR/venv/bin/pip"
-# --disable-pip-version-check: ไม่ต้องแอบถาม PyPI ว่ามี pip รุ่นใหม่ไหมตอนท้ายทุกคำสั่ง
+
 PIP_OPTS=(--disable-pip-version-check --no-input
           --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}")
 
-# เกณฑ์: pip 23 ขึ้นไปลง wheel ทุกตัวใน requirements.txt ได้หมดแล้ว (manylinux ต้องการแค่ >= 20.3)
+
 MIN_PIP_MAJOR=23
 PIP_VER="$("$PIP" --version 2>/dev/null | awk '{print $2}')" || true
 PIP_MAJOR="${PIP_VER%%.*}"
 case "$PIP_MAJOR" in ''|*[!0-9]*) PIP_MAJOR=0 ;; esac
 
 if [ "$VENV_CREATED" = "1" ] || [ "$PIP_MAJOR" -lt "$MIN_PIP_MAJOR" ] || [ "${FORCE_PIP_UPGRADE:-0}" = "1" ]; then
-    # ล้มเหลว = เตือนแล้วไปต่อ ไม่ล้มทั้งสคริปต์ — pip ตัวเดิมลง requirements.txt ได้อยู่แล้ว
+
     run_step "Upgrading pip (this one always goes out to PyPI)" \
         "$PIP" install -q "${PIP_OPTS[@]}" --upgrade pip \
         || warn "Could not upgrade pip - carrying on with pip ${PIP_VER:-unknown}, it installs requirements.txt fine"
@@ -1111,14 +1081,13 @@ fi
 run_step "Installing requirements.txt (this is the slow one)" \
     "$PIP" install -q "${PIP_OPTS[@]}" -r "$PROJECT_DIR/requirements.txt"
 
-# ---------------------------------------------------------------------------
+
 log "PostgreSQL: role + database"
 systemctl enable --now postgresql >/dev/null 2>&1 || true
 
 PG_SUPERUSER_PASSWORD="${PG_SUPERUSER_PASSWORD:-}"
-# PG_SUPERUSER / PG_LOCAL ตั้งไว้แล้วที่ขั้น 1.2 (ตอนเช็กฐานก่อนลงมือ) — ใช้ค่าเดียวกันทั้งสองที่
 
-# helper: รัน psql/createdb ในฐานะ superuser — เลือก peer (local + ไม่มีรหัส) หรือ TCP+password
+
 pg_su_psql() {
     if [ "$PG_LOCAL" = "1" ] && [ -z "$PG_SUPERUSER_PASSWORD" ]; then
         sudo -u "$PG_SUPERUSER" psql -p "$DB_PORT" "$@"
@@ -1126,7 +1095,7 @@ pg_su_psql() {
         PGPASSWORD="$PG_SUPERUSER_PASSWORD" psql -h "$PG_HOST" -p "$DB_PORT" -U "$PG_SUPERUSER" -d postgres "$@"
     fi
 }
-# ตัวเดียวกันแต่ต่อเข้า "ฐานของระบบ" — ใช้ตรวจตาราง/ให้สิทธิ์ข้างในฐานนั้น (ต่อ postgres ทำไม่ได้)
+
 pg_su_psql_db() {
     if [ "$PG_LOCAL" = "1" ] && [ -z "$PG_SUPERUSER_PASSWORD" ]; then
         sudo -u "$PG_SUPERUSER" psql -p "$DB_PORT" -d "$DB_NAME" "$@"
@@ -1142,7 +1111,7 @@ pg_su_createdb() {
     fi
 }
 
-# ไม่ได้ preset รหัส superuser -> ลองต่อด้วยวิธีข้างบนก่อน ต่อไม่ได้ค่อยถามรหัส
+
 if [ -z "$PG_SUPERUSER_PASSWORD" ] && ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>&1; then
     if [ "$PG_LOCAL" = "1" ]; then
         warn "Peer auth to PostgreSQL (sudo -u $PG_SUPERUSER) failed - the superuser probably needs a password"
@@ -1151,10 +1120,10 @@ if [ -z "$PG_SUPERUSER_PASSWORD" ] && ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>
     fi
     ask_secret PG_SUPERUSER_PASSWORD "Password for PostgreSQL superuser '$PG_SUPERUSER'"
 fi
-# ค่าที่เอาไปต่อเป็น string literal ใน SQL (รหัสผ่าน) — ' ในค่าต้องกลายเป็น '' ไม่งั้นคำสั่งเพี้ยน
+
 pg_quote_lit() { printf "'%s'" "${1//\'/\'\'}"; }
 
-# ต่อไม่ได้ตั้งแต่ต้นให้ตายตรงนี้พร้อมเหตุผล — ปล่อยไปให้พังที่ CREATE ROLE จะได้ error ที่อ่านไม่รู้เรื่อง
+
 if ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>&1; then
     err "Cannot connect to PostgreSQL as superuser '$PG_SUPERUSER' at $PG_HOST:$DB_PORT"
     err "  Wrong password, or pg_hba.conf does not allow this connection - nothing has been changed in the DB"
@@ -1162,7 +1131,7 @@ if ! pg_su_psql -tAc "SELECT 1" >/dev/null 2>&1; then
     exit 1
 fi
 
-# ---- role: ยังไม่มี = สร้างพร้อมรหัสที่กรอก · มีอยู่แล้ว = "ตรวจ" ว่ารหัสถูกไหม ไม่ใช่ทับ ----
+
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'")" = "1" ]; then
     PG_ROLE_ERR="$(mktemp)"
     if [ "${SKIP_DB_CHECK:-0}" = "1" ]; then
@@ -1200,7 +1169,7 @@ else
 fi
 
 if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" = "1" ]; then
-    # ---- ฐานข้อมูลมีอยู่ก่อนแล้ว: เป็นของระบบนี้จริงหรือของแอปอื่นที่ชื่อบังเอิญตรงกัน? ----
+
     PUBLIC_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")"
     OUR_TABLES="$(pg_su_psql_db -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ($OUR_TABLES_SQL)")"
 
@@ -1218,13 +1187,13 @@ if [ "$(pg_su_psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'")" =
         exit 1
     fi
 
-    # ---- เจ้าของฐาน/ตาราง ต้องเป็น role ที่แอปใช้ ----
+
     DB_OWNER="$(pg_su_psql -tAc "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='$DB_NAME'")"
     if [ "$DB_OWNER" != "$DB_USER" ]; then
         warn "Database '$DB_NAME' is owned by '$DB_OWNER', not '$DB_USER' - handing it over"
         pg_su_psql  -qc "ALTER DATABASE \"$DB_NAME\" OWNER TO \"$DB_USER\"" >/dev/null
         pg_su_psql_db -qc "GRANT ALL ON SCHEMA public TO \"$DB_USER\"" >/dev/null
-        # โอนทีละ object แทน REASSIGN OWNED เพราะ REASSIGN ลามไปทุก object ของ role เดิมในฐานนี้
+
         pg_su_psql_db -tAc "
             SELECT format('ALTER TABLE public.%I OWNER TO %I;', tablename, '$DB_USER')
               FROM pg_tables WHERE schemaname='public'
@@ -1239,7 +1208,7 @@ else
     ok "Created database '$DB_NAME' (owner=$DB_USER) - tables and the admin account are created on first start"
 fi
 
-# ---- ลองล็อกอินด้วยรหัสที่จะเขียนลง .env จริง ๆ ทางเดียวกับที่แอปต่อ (TCP + password) ----
+
 if [ "${SKIP_DB_CHECK:-0}" = "1" ]; then
     warn "SKIP_DB_CHECK=1 - not verifying that '$DB_USER' can actually log in"
 elif ! command -v psql >/dev/null 2>&1; then
@@ -1260,9 +1229,7 @@ else
     fi
 fi
 
-# ---- ที่อยู่ของ central ที่ชุดติดตั้ง agent ใช้ ไม่มีแถวใน DB แล้ว ----
 
-# ---------------------------------------------------------------------------
 log ".env file"
 if [ "$ENV_EXISTED" = "1" ]; then
     ok ".env already exists - syncing the keys this script owns (everything else is left as is)"
@@ -1281,13 +1248,13 @@ if [ "$ENV_EXISTED" = "1" ]; then
     env_sync DB_USER     "$DB_USER"
     env_sync DB_PASSWORD "$DB_PASSWORD"
 
-    # REDIS_HOST คือที่อยู่ของ central ที่ตัวมันเองใช้ต่อ Redis (ผ่าน mTLS ที่ตรวจชื่อใน SAN ด้วย)
+
     env_sync REDIS_HOST "$BIND_HOST"
     env_sync REDIS_PORT "$REDIS_PORT"
     env_sync REDIS_USER "$REDIS_USER"
     env_sync REDIS_PASS "$REDIS_PASS"
 
-    # path ของ cert ผูกกับที่ตั้งโปรเจกต์ — ย้ายโฟลเดอร์ (INSTALL_DIR) แล้วต้องตามไปด้วย
+
     env_sync REDIS_CERT "$PROJECT_DIR/cert/central/central.crt"
     env_sync REDIS_KEY  "$PROJECT_DIR/cert/central/central.key"
     env_sync REDIS_CA   "$PROJECT_DIR/cert/central/ca.crt"
@@ -1295,13 +1262,13 @@ if [ "$ENV_EXISTED" = "1" ]; then
     env_sync WEB_BIND_HOST     "$WEB_BIND_HOST"
     env_sync WEBHOOK_BIND_HOST "$WEBHOOK_BIND_HOST"
 
-    # ทางเข้าเว็บ: prefix ของ URL + proxy ที่เชื่อได้ (systemd/_gen.sh อ่าน FORWARDED_ALLOW_IPS ไปใส่ unit)
+
     env_sync ROOT_PATH           "$ROOT_PATH"
     env_sync FORWARDED_ALLOW_IPS "$FORWARDED_ALLOW_IPS"
 
-    # กลุ่ม agent: AGENT_CENTRAL_* คือค่าที่ชุดติดตั้ง agent ใช้จริง (build_site_conf อ่านจากที่นี่)
+
     env_sync AGENT_CENTRAL_HOST       "$BIND_HOST"
-    # คีย์นี้ปกติปล่อยว่าง แต่ต้องโผล่ใน .env ให้เห็น ไม่งั้นไม่มีใครรู้ว่าตั้งได้ (env_sync ข้ามค่าว่าง)
+
     if grep -qE "^[[:space:]]*AGENT_CENTRAL_CANDIDATES[[:space:]]*=" "$ENV_FILE" 2>/dev/null; then
         env_sync AGENT_CENTRAL_CANDIDATES "$AGENT_CENTRAL_CANDIDATES"
     else
@@ -1316,8 +1283,7 @@ if [ "$ENV_EXISTED" = "1" ]; then
     fi
     env_sync AGENT_CENTRAL_REDIS_PORT "$REDIS_PORT"
 
-    # อายุ session ของ dashboard: ค่า default เดิม 500 นาที (8 ชม.) -> 30 นาที
-    # เปลี่ยนเฉพาะเครื่องที่ยังเป็นค่า default เดิม/ยังไม่มีคีย์ — ถ้าแอดมินตั้งค่าอื่นไว้เองจะไม่แตะ
+
     case "$(env_get JWT_EXPIRE_MIN "$ENV_FILE")" in
         ''|500) env_sync JWT_EXPIRE_MIN 30 ;;
     esac
@@ -1332,7 +1298,6 @@ else
     JWT_SECRET="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
     CSRF_SECRET_VAL="$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
     cat > "$PROJECT_DIR/.env" <<EOF
-# Generated by setup-server.sh - fill in the LINE/GEMINI values later if needed
 DB_HOST=$DB_HOST
 DB_PORT=$DB_PORT
 DB_NAME=$DB_NAME
@@ -1354,28 +1319,17 @@ CSRF_SECRET=$CSRF_SECRET_VAL
 COOKIE_SECURE=true
 ALGORITHM=HS256
 
-# IP each service listens on (systemd/_gen.sh reads these into the unit --host)
-# After editing, re-run sudo systemd/install.sh for the change to take effect
 WEB_BIND_HOST=$WEB_BIND_HOST
 WEBHOOK_BIND_HOST=$WEBHOOK_BIND_HOST
 
-# URL prefix of the whole dashboard - empty = served at /
-# (change it by re-running this script; cookie names follow it automatically)
 ROOT_PATH=$ROOT_PATH
-# Trust X-Forwarded-For only from these IPs - the installer sets 127.0.0.1 so a local proxy works.
-# Empty with a proxy in front = login lockout and rate limit count every user as one.
 FORWARDED_ALLOW_IPS=$FORWARDED_ALLOW_IPS
 
 LINE_CHANNEL_ACCESS_TOKEN=
 LINE_CHANNEL_SECRET=
 GEMINI_API_KEY=
 
-# Values embedded into the agent installer
-# AGENT_CENTRAL_* are read straight from here (re-run this script to change them);
 AGENT_CENTRAL_HOST=$BIND_HOST
-# Backup addresses of this central, e.g. "192.168.56.120 central.local" (space or comma separated).
-# They go into the cert SAN and into every agent package, so the agents can follow this server
-# to another IP on their own - see CENTRAL_MOVE.md
 AGENT_CENTRAL_CANDIDATES=$AGENT_CENTRAL_CANDIDATES
 AGENT_CENTRAL_REDIS_PORT=$REDIS_PORT
 EOF
@@ -1384,24 +1338,24 @@ EOF
     ok "Created .env (JWT/CSRF secrets generated automatically, mode 600)"
 fi
 
-# ---------------------------------------------------------------------------
+
 log "Certificates (Redis mTLS + dashboard HTTPS)"
 CERT_DIR="$PROJECT_DIR/cert/central"
 mkdir -p "$CERT_DIR"
 
-# ---- host ที่ต้องอยู่ใน SAN ----
+
 SAN_HOSTS=("$BIND_HOST")
-# รอบที่ย้าย IP: เก็บที่อยู่เดิมไว้ใน SAN ด้วย — agent ที่ยังเกาะที่อยู่เดิมอยู่จะได้ไม่ถูกตัดทันที
-# ที่ Redis restart ด้วย cert ใบใหม่ (มันมีเวลาให้ย้ายตามอย่างเป็นระเบียบ)
+
+
 if [ "$IP_CHANGED" = "1" ] && [ -n "$CURRENT_BIND_HOST" ]; then
     SAN_HOSTS+=("$CURRENT_BIND_HOST")
 fi
-# ที่อยู่สำรองของ central (ไว้ย้าย IP ทีหลังโดย agent ตามเองได้) ต้องอยู่ใน SAN ตั้งแต่ตอนนี้
-# ไม่งั้นวันย้ายจริง agent จะเจอ cert ที่ไม่ครอบ IP ใหม่แล้วปฏิเสธการเชื่อมต่อ
+
+
 for _c in $(printf '%s' "${AGENT_CENTRAL_CANDIDATES:-}" | tr ',' ' '); do
     SAN_HOSTS+=("${_c%%:*}")
 done
-# dashboard bind อีก IP หนึ่ง = คนเปิดเว็บด้วย IP นั้น ต้องมีใน SAN ด้วย ไม่งั้นเบราว์เซอร์ฟ้องทุกครั้ง
+
 if [ "$WEB_BIND_HOST" != "0.0.0.0" ] && [ "$WEB_BIND_HOST" != "$BIND_HOST" ]; then
     SAN_HOSTS+=("$WEB_BIND_HOST")
 fi
@@ -1429,7 +1383,7 @@ add_san 127.0.0.1
 for _h in "${SAN_HOSTS[@]}"; do add_san "$_h"; done
 ALT_NAMES="${ALT_NAMES%$'\n'}"
 
-# ---- cert เดิมครอบ host พวกนั้นครบไหม ----
+
 cert_san() {  # cert_san FILE — openssl เก่าที่ยังไม่มี -ext ตกไปอ่านจาก -text
     openssl x509 -in "$1" -noout -ext subjectAltName 2>/dev/null \
         || openssl x509 -in "$1" -noout -text 2>/dev/null | grep -A1 'Subject Alternative Name'
@@ -1447,7 +1401,7 @@ cert_covers_all() {  # cert_covers_all FILE
     return 0
 }
 
-# CA เดิมเก็บไว้เสมอ — cert ของ agent ที่ออกไปแล้วเซ็นด้วย CA ตัวนี้ ถ้าเปลี่ยน CA ต้องไล่ลง
+
 CERT_ISSUED=0
 CA_CREATED=0
 if [ -f "$CERT_DIR/central.crt" ] || [ -f "$CERT_DIR/dashboard.crt" ]; then
@@ -1531,20 +1485,20 @@ for f in ca.crt central.crt central.key dashboard.crt dashboard.key; do
     [ -f "$CERT_DIR/$f" ] || { err "Failed to issue cert/central/$f"; CERT_OK=0; }
 done
 
-# ---------------------------------------------------------------------------
+
 log "redis/users.acl"
 ACL_FILE="$PROJECT_DIR/redis/users.acl"
 mkdir -p "$PROJECT_DIR/redis"
 
-# Write the Central account and preserve every per-Agent account. Redis's built-in
-# default user cannot be deleted, so keep it disabled with no password or rights.
+
 DEFAULT_ACL_LINE='user default off resetpass -@all resetkeys resetchannels'
 ACL_WRITTEN=0
+# Keep individual Agent accounts when replacing legacy shared accounts.
 if [ ! -f "$ACL_FILE" ] || grep -q '>123 ' "$ACL_FILE" || [ "${FORCE_ACL:-0}" = "1" ] \
    || [ "$REDIS_ACL_CHANGED" = "1" ] || grep -Eq '^user agent_node ' "$ACL_FILE" \
    || [ "$(awk '$1 == "user" && $2 == "default" { print }' "$ACL_FILE")" != "$DEFAULT_ACL_LINE" ]; then
     [ -f "$ACL_FILE" ] && cp -p "$ACL_FILE" "$ACL_FILE.bak.$(date +%Y%m%d%H%M%S)"
-    # Keep per-Agent users issued by the package builder.
+
     AGENT_ACL_LINES="$(awk '$1 == "user" && $2 ~ /^agent_[0-9]+$/ { print }' "$ACL_FILE" 2>/dev/null || true)"
     cat > "$ACL_FILE" <<EOF
 user $REDIS_USER on >$REDIS_PASS +@all ~* &*
@@ -1566,18 +1520,16 @@ else
     fi
 fi
 
-# ---------------------------------------------------------------------------
+
 log "GeoIP database (country flag next to the attacker IP)"
-# ไฟล์ .mmdb ของ DB-IP Lite ~8 MB — ใช้แสดงธงประเทศหน้า Alerts/Dashboard (main/geoip.py)
-# ไม่มีไฟล์ = แค่ไม่โชว์ธง ระบบอื่นทำงานปกติ จึง "เตือนแล้วไปต่อ" เสมอ ไม่ล้มทั้งสคริปต์
-# รันซ้ำ: ไฟล์ยังใหม่ (< 30 วัน) = ไม่ออกเน็ต · บังคับโหลดใหม่ FORCE_GEOIP_UPDATE=1 · ข้ามทั้งขั้น SKIP_GEOIP=1
-# ไม่ใช้ run_step — ล้มเหลวแล้ว run_step นับเป็น [ERR] ของสคริปต์ ทั้งที่ขั้นนี้แค่ "เตือน"
+
+
 if [ "${SKIP_GEOIP:-0}" = "1" ]; then
     warn "SKIP_GEOIP=1 - skipped (no country flags until you run: bash update_geoip.sh)"
 elif [ -s "$GEOIP_DB" ] && [ "${FORCE_GEOIP_UPDATE:-0}" != "1" ] &&
      [ -s "$(dirname "$GEOIP_DB")/holder-country.txt.gz" ] &&
      [ -n "$(find "$GEOIP_DB" -mtime -30 2>/dev/null)" ]; then
-    # ต้องมีทั้งไฟล์ประเทศที่ใช้งาน (.mmdb) และตารางประเทศผู้ถือ IP — ขาดตัวไหนก็โหลดใหม่
+
     ok "GeoIP database is recent - left untouched (force a refresh with FORCE_GEOIP_UPDATE=1)"
 elif GEOIP_OUT="$(bash "$PROJECT_DIR/update_geoip.sh" </dev/null 2>&1)"; then
     while IFS= read -r _l; do if [ -n "$_l" ]; then ok "$_l"; fi; done <<< "$GEOIP_OUT"  # สคริปต์ตอบหลายบรรทัด
@@ -1587,24 +1539,23 @@ else
     warn "Could not download the GeoIP database - country flags stay hidden until you run: bash update_geoip.sh (${GEOIP_OUT##*$'\n'})"
 fi
 
-# ---------------------------------------------------------------------------
+
 log "Setting file ownership to $APP_USER:$APP_GROUP"
 mkdir -p "$PROJECT_DIR/redis/data-redis"
-# สองโฟลเดอร์นี้ถูกสร้างตอน "ออก agent package ครั้งแรก" — ถ้าครั้งแรกนั้นถูกสั่งด้วย sudo
-# (เช่นรัน main/create_agent.py ผ่าน root) โฟลเดอร์จะเป็นของ root แล้วหน้าเว็บที่รันเป็น $APP_USER
-# จะสร้าง agent ไม่ได้อีกเลย ตอบ 500 PermissionError — สร้างไว้ก่อนตรงนี้ให้ chown ข้างล่างจัดการ
+
+
 mkdir -p "$PROJECT_DIR/cert/agent" "$PROJECT_DIR/main/agent_packages"
 chown -R "$APP_USER":"$APP_GROUP" "$PROJECT_DIR"
 ok "chown done"
 
-# ---------------------------------------------------------------------------
+
 log "Generating systemd units + redis-mtls.conf, then installing them"
 APP_USER="$APP_USER" APP_GROUP="$APP_GROUP" PROJECT_DIR="$PROJECT_DIR" BIND_HOST="$BIND_HOST" \
     WEB_BIND_HOST="$WEB_BIND_HOST" WEBHOOK_BIND_HOST="$WEBHOOK_BIND_HOST" \
     REDIS_PORT="$REDIS_PORT" \
     bash "$PROJECT_DIR/systemd/_gen.sh"
 
-# ★ Redis อ่านทั้ง cert และ aclfile ตอน start ครั้งเดียว แก้ไฟล์เฉย ๆ จึงไม่มีผลกับตัวที่รันอยู่
+
 redis_serving_stale_cert() {
     local served ondisk
     [ -f "$CERT_DIR/central.crt" ] || return 1
@@ -1616,23 +1567,10 @@ redis_serving_stale_cert() {
     [ "$served" != "$ondisk" ]
 }
 
-# ---- บอก agent ว่า central ย้ายที่อยู่/พอร์ต ----
-# agent เก็บ "รายการที่อยู่ของ central" ไว้ได้หลายที่ (agent_config.json) พอที่อยู่ที่ใช้อยู่ล่ม
-# มันจะไล่ลองที่อยู่สำรองเอง — ที่นี่จึงแค่ฝากที่อยู่ใหม่ไว้ตอนที่ยังคุยกันได้ แล้วมันตามมาเอง
-#
-# ยิง 2 จังหวะ:
-#   รอบ 1 ก่อน restart Redis — ผ่านที่อยู่+พอร์ต "เดิม" ตอน agent ยังเกาะอยู่ (ได้ยินแน่)
-#          จำเป็นมากตอนเปลี่ยนพอร์ต เพราะพอ Redis ย้ายพอร์ตแล้ว agent จะไม่ได้ยินอะไรอีกเลย
-#   รอบ 2 หลัง service ขึ้นครบ — ที่อยู่ใหม่ใช้ได้จริงแล้ว ตัวที่ต่อกลับมาทันจะย้ายทันที
-#
-# คำสั่งถูกเซ็นด้วย HMAC โดยใช้ secret_token_hash ของ agent ตัวนั้นเป็นกุญแจ (ค่าที่ central
-# มีอยู่แล้วใน DB และ agent คำนวณเองได้จาก token ของตัวเอง) และ agent จะยอมย้ายก็ต่อเมื่อ
-# ต่อ mTLS ที่อยู่ใหม่ได้จริงเท่านั้น — สั่งลอย ๆ ให้ไปเกาะเครื่องอื่นไม่ได้
+
 AGENTS_ANNOUNCED=0
 
-# รอ agent ต่อกลับมาและย้ายตามได้นานสุดเท่านี้ (รวมทั้งรอบประกาศที่สองและตอนทำตารางสถานะ)
-# หมดเวลาแล้วจบเลย ไม่ต้องรอต่อ — ตัวที่ยังไม่กลับมามีที่อยู่ใหม่อยู่ในรายการสำรองแล้ว
-# เดี๋ยวมันย้ายเองตอนที่อยู่เดิมเงียบ ไม่ต้องให้คนนั่งเฝ้าหน้าจอ
+
 AGENT_WAIT_SECONDS=60
 AGENT_WAIT_UNTIL=0
 
@@ -1664,8 +1602,7 @@ announce_central_move() {  # announce_central_move WAIT [ที่อยู่�
     [ "$EXISTING_AGENTS" -gt 0 ] || return 0
     systemctl is-active --quiet centralredis.service || return 0
 
-    # ประกาศได้ก็ต่อเมื่อต่อ Redis ผ่านที่อยู่ "$via" ได้ — ถ้าเครื่องยังไม่มีที่อยู่นั้น (ย้าย IP แล้วยัง
-    # ไม่ได้ตั้งค่าเครือข่าย) ก็ไม่ต้องเสียเวลาลอง รอบแรกที่ยิงผ่านที่อยู่เดิมทำหน้าที่ครบแล้ว
+
     case "$via" in
         *[0-9].[0-9]*)
             if ! host_has_ip "$via"; then
@@ -1712,7 +1649,7 @@ except Exception as e:
 channels = ["agent_commands:%s" % a for a, _ in AGENTS]
 deadline = time.time() + $waited
 
-# เพิ่ง restart Redis ไป agent ยังต่อกลับมาไม่ครบ ประกาศตอนนี้จะไม่มีใครได้ยิน
+
 while time.time() < deadline:
     try:
         if any(n for _, n in r.pubsub_numsub(*channels)):
@@ -1733,7 +1670,7 @@ for agent_id, token_hash in AGENTS:
         "expires_at": now + 900,
         "nonce": secrets.token_hex(16),
     }
-    # ต้องเรียงคีย์ + ไม่มีช่องว่าง ให้ตรงกับที่ agent คำนวณ ไม่งั้นลายเซ็นไม่ตรง
+
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     payload["sig"] = hmac.new(token_hash.encode(), canonical.encode(), hashlib.sha256).hexdigest()
 
@@ -1752,7 +1689,7 @@ PYMOVE
     return 0
 }
 
-# รอบแรก: ยิงผ่านที่อยู่+พอร์ตเดิมตอน agent ยังเกาะอยู่ ก่อน Redis จะ restart ด้วย cert/พอร์ตใหม่
+
 announce_central_move 0 "${CURRENT_BIND_HOST:-$BIND_HOST}" "${OLD_REDIS_PORT:-$REDIS_PORT}"
 
 REDIS_RESTART_REASON=""
@@ -1764,7 +1701,7 @@ fi
 if [ "$ACL_WRITTEN" = "1" ]; then
     REDIS_RESTART_REASON="${REDIS_RESTART_REASON:+$REDIS_RESTART_REASON, and }users.acl was rewritten"
 fi
-# พอร์ตอยู่ใน redis-mtls.conf ซึ่ง Redis อ่านตอน start ครั้งเดียว — ไม่ restart = ยังฟังพอร์ตเก่า
+
 if [ "$PORT_CHANGED" = "1" ]; then
     REDIS_RESTART_REASON="${REDIS_RESTART_REASON:+$REDIS_RESTART_REASON, and }the port moved $OLD_REDIS_PORT -> $REDIS_PORT"
 fi
@@ -1778,8 +1715,6 @@ if [ "$CERT_OK" -eq 1 ]; then
     STARTED=1
 
 
-    # รอบสอง: ตอนนี้ที่อยู่ใหม่พร้อมใช้จริงแล้ว (cert ใบใหม่ + service ขึ้นครบ) agent ที่ต่อกลับมา
-    # จะย้ายตามได้ทันทีโดยไม่ต้องรอที่อยู่เดิมล่ม — เริ่มจับเวลาโควตารอ agent ตรงนี้
     AGENT_WAIT_UNTIL=$(( $(date +%s) + AGENT_WAIT_SECONDS ))
     announce_central_move "$(agent_wait_left)"
 else
@@ -1790,7 +1725,7 @@ else
     STARTED=0
 fi
 
-# ---------------------------------------------------------------------------
+
 log "Firewall (opening the ports this system serves)"
 
 FW_KIND="none"
@@ -1804,13 +1739,13 @@ fi
 
 FW_OPENED=""
 
-# ป้ายที่ใช้บอกว่า "rule นี้สคริปต์นี้เป็นคนเปิด" — เก็บไว้ใน comment ของ ufw เอง ไม่ใช่ไฟล์ข้างนอก
+
 FW_TAG="SecureLog"
 
-# ไฟล์จำพอร์ตที่เปิดเอง — **เฉพาะ firewalld** ซึ่งไม่มี comment ให้ติดป้าย (ufw ไม่ใช้ไฟล์นี้)
+
 FW_OWNED_FILE="$PROJECT_DIR/.fw-owned-ports"
 
-# ---- ufw: อ่าน rule ที่ ufw จำไว้ ----
+
 fw_rules_for() {  # fw_rules_for PORT — บรรทัด rule ทั้งหมดที่เกี่ยวกับพอร์ตนี้
     local port="$1"
     ufw show added 2>/dev/null | sed -n 's/^ufw //p' | awk -v p="$port" '
@@ -1821,13 +1756,13 @@ fw_rules_for() {  # fw_rules_for PORT — บรรทัด rule ทั้ง�
         }'
 }
 
-# มี rule ของพอร์ตนี้อยู่แล้วไหม (ของใครก็ตาม)
+
 fw_port_covered() { [ -n "$(fw_rules_for "$1")" ]; }
 
-# rule ของพอร์ตนี้เป็นของสคริปต์ไหม — ดูจากป้ายใน comment
+
 fw_port_is_ours() { fw_rules_for "$1" | grep -q "comment '$FW_TAG"; }
 
-# ---- เปิดพอร์ต ----
+
 fw_allow() {  # fw_allow PORT "คำอธิบาย"
     local port="$1" what="$2"
 
@@ -1844,7 +1779,7 @@ fw_allow() {  # fw_allow PORT "คำอธิบาย"
             fi
 
             if ! ufw allow "$port"/tcp comment "$FW_TAG $what" >/dev/null 2>&1; then
-                # ufw ก่อน 0.35 ไม่รู้จัก comment — เปิดพอร์ตให้ได้ แต่ไม่มีป้ายบอกว่าเป็นของเรา
+
                 ufw allow "$port"/tcp >/dev/null 2>&1 \
                     || { warn "ufw could not open $port/tcp ($what) - open it yourself"; return 0; }
                 warn "$port/tcp opened, but this ufw cannot store comments - the rule carries no owner tag,"
@@ -1859,7 +1794,7 @@ fw_allow() {  # fw_allow PORT "คำอธิบาย"
             fi
             firewall-cmd --permanent --add-port="$port"/tcp >/dev/null 2>&1 \
                 || { warn "firewalld could not open $port/tcp ($what) - open it yourself"; return 0; }
-            # firewalld ไม่มี comment ให้ติดป้าย -> จดไว้ในไฟล์แทน (รูปแบบ: หนึ่งพอร์ตต่อบรรทัด)
+
             if ! grep -qx "$port" "$FW_OWNED_FILE" 2>/dev/null; then
                 echo "$port" >> "$FW_OWNED_FILE"
             fi
@@ -1871,7 +1806,7 @@ fw_allow() {  # fw_allow PORT "คำอธิบาย"
     FW_OPENED="$FW_OPENED $port"
 }
 
-# ---- ปิดพอร์ตเก่าหลังย้ายพอร์ต Redis ----
+
 fw_close_old_port() {  # fw_close_old_port PORT
     local port="$1"
 
@@ -1938,13 +1873,13 @@ case "$FW_KIND" in
     *)
         fw_allow "$REDIS_PORT" "Redis mTLS (agents send logs in)"
 
-        # ย้ายพอร์ตแล้วพอร์ตเก่าไม่มีอะไรฟังอีก — ปิดให้ **เฉพาะ rule ที่สคริปต์นี้เปิดไว้เอง**
+
         if [ "$PORT_CHANGED" = "1" ]; then
             fw_close_old_port "$OLD_REDIS_PORT"
         fi
 
         if [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
-            # ฟังแค่ loopback = rule ของ 8000 ไม่มีความหมายแล้ว ถอนเฉพาะที่สคริปต์นี้เปิดไว้เอง
+
             fw_close_old_port 8000
             ok "dashboard binds 127.0.0.1 - reachable only from this host (a local proxy, for example)"
         else
@@ -1981,7 +1916,7 @@ case "$FW_KIND" in
         ;;
 esac
 
-# ---------------------------------------------------------------------------
+
 REDIS_CHECK="skipped"
 CAN_CHECK_REDIS=0
 if [ "$STARTED" -eq 1 ] && [ -x "$PROJECT_DIR/venv/bin/python" ] && [ "$CERT_OK" -eq 1 ]; then
@@ -1989,8 +1924,8 @@ if [ "$STARTED" -eq 1 ] && [ -x "$PROJECT_DIR/venv/bin/python" ] && [ "$CERT_OK"
 fi
 
 if [ "$CAN_CHECK_REDIS" = "1" ] && looks_like_ipv4 "$BIND_HOST" && ! host_has_ip "$BIND_HOST"; then
-    # เครื่องยังไม่ถือที่อยู่นี้ (ย้าย IP แล้วรอ netplan) — ต่อยังไงก็ไม่ติด ไม่ต้องเสียเวลาลอง
-    # แล้วพ่นสีแดงให้ตกใจเปล่า ๆ ของจริงจะได้เช็คตอนที่อยู่มาอยู่บนเครื่องแล้ว
+
+
     REDIS_CHECK="not checked yet - waiting for you to apply netplan"
     log "Skipping the Redis self-check - this machine does not hold $BIND_HOST yet"
     echo "       it will work once you apply netplan (see the end of this run)"
@@ -2037,9 +1972,7 @@ PYCHK
     esac
 fi
 
-# ---------------------------------------------------------------------------
-# agent แต่ละตัวกำลังเกาะ central ที่ไหนอยู่ — ค่านี้ agent รายงานมาเองทุกวินาที (agent_runtime)
-# จึงใช้ยืนยันได้จริงว่าย้ายตามครบหรือยัง ไม่ใช่เดาจากไฟล์ config
+
 agent_status_table() {  # agent_status_table [ที่อยู่ที่คาดว่า agent ต้องย้ายไป] [วินาทีที่ยอมรอ]
     local keys want="${1:-}" wait_left="${2:-0}"
     [ "$AGENTS_PRESENT" = "1" ] || return 0
@@ -2088,8 +2021,7 @@ def snapshot():
         rows.append((agent_id, "online", where))
     return rows
 
-# เพิ่งประกาศย้ายไป agent ใช้เวลาสักครู่กว่าจะสลับสายและรายงานที่อยู่ใหม่ — รอให้มันเสร็จก่อน
-# ไม่งั้นตารางจะโชว์ที่อยู่เก่าทั้งที่อีกวินาทีเดียวมันก็ย้ายแล้ว
+
 want = "$want"
 deadline = time.time() + $wait_left
 
@@ -2110,14 +2042,13 @@ for agent_id, status, where in snapshot():
 
 print("  %d of %d online" % (online, len(agents)))
 
-# ★ มีตัวที่ไม่รายงาน = ห้ามปล่อยให้บรรทัดสรุปข้างบน ("ไม่มีอะไรเปลี่ยน ใช้ต่อได้") ขัดกับตารางนี้
-#   สาเหตุที่เจอบ่อยคือรหัส Redis ฝั่ง agent เปลี่ยนไปแล้วแต่เครื่องนั้นยังถือชุดติดตั้งเก่า
+
 if online < len(agents):
     print("  The ones that are not reporting need a fresh install package if the agent Redis")
     print("  password, the central address/port or the Root CA changed at any point since they")
     print("  were installed: dashboard -> Regenerate Download Link -> unzip there -> sudo ./setup.sh")
 
-# หมดโควตารอแล้วแต่ยังไม่ครบ = เรื่องปกติ ไม่ใช่ความผิดพลาด บอกให้ชัดจะได้ไม่ต้องนั่งลุ้น
+
 if want:
     late = [a for a, s, w in snapshot() if s == "online" and w != want]
     if late:
@@ -2128,8 +2059,7 @@ PYSTAT
     rm -f "$keys"
 }
 
-# ---------------------------------------------------------------------------
-# สรุปทีเดียวตอนจบ — ระหว่างทางพิมพ์แค่ว่ากำลังทำอะไร ผลรวมมาอยู่ตรงนี้ที่เดียว
+
 DID=()          # รอบนี้ทำอะไรไปบ้าง
 NOTES=()        # เรื่องที่ควรรู้ แต่ไม่ต้องทำอะไร
 ACTIONS=()      # เรื่องที่ต้องไปทำต่อ (พิมพ์ตัวแดงท้ายสุด)
@@ -2137,7 +2067,7 @@ ACTIONS=()      # เรื่องที่ต้องไปทำต่อ (
 if [ "$WEB_BIND_HOST" = "0.0.0.0" ]; then WEB_URL_HOST="$BIND_HOST"; else WEB_URL_HOST="$WEB_BIND_HOST"; fi
 DASH_URL="https://$WEB_URL_HOST:8000$ROOT_PATH/"
 
-# ---- รอบนี้ทำอะไรไปบ้าง ----
+
 [ "$IP_CHANGED" = "1" ]   && DID+=("moved the central address $CURRENT_BIND_HOST -> $BIND_HOST")
 [ "$PORT_CHANGED" = "1" ] && DID+=("moved the Redis port $OLD_REDIS_PORT -> $REDIS_PORT")
 [ "$CA_CREATED" = "1" ]   && DID+=("created a new Root CA")
@@ -2150,7 +2080,7 @@ DASH_URL="https://$WEB_URL_HOST:8000$ROOT_PATH/"
 [ "$STARTED" -eq 1 ]      && DID+=("installed the systemd units and (re)started the stack")
 [ "${#DID[@]}" -gt 0 ]    || DID+=("nothing - everything was already in the state you asked for")
 
-# ---- เรื่องที่ควรรู้ ----
+
 NOTES+=("proxy ready - trusts X-Forwarded-For from $FORWARDED_ALLOW_IPS · sample nginx: REVERSE_PROXY.md")
 [ "$PROXY_IS_LOCAL" = "1" ] && NOTES+=("proxy on another host? re-run with FORWARDED_ALLOW_IPS=<its ip>")
 [ "$STARTED" -eq 1 ] && [ "$ENV_WRITTEN" = "2" ] && NOTES+=("first login is admin/admin")
@@ -2162,7 +2092,7 @@ if [ -n "$GENERATED_PASSWORDS" ]; then
     done <<< "$GENERATED_PASSWORDS"
 fi
 
-# ---- เรื่องที่ต้องไปทำต่อ ----
+
 if [ -n "$WEAK_SECRETS" ]; then
     ACTIONS+=("Rotate the weak Redis password(s):$WEAK_SECRETS")
     ACTIONS+=("    do it on the dashboard: System Settings - it rewrites redis/users.acl and .env together")
@@ -2170,8 +2100,7 @@ if [ -n "$WEAK_SECRETS" ]; then
     ACTIONS+=("    changing the agent account's password means every agent machine has to be installed again")
 fi
 
-# ที่อยู่ที่ระบบชี้ไปต้องเป็นของเครื่องนี้จริง ๆ ไม่งั้น service ตัวเองก็ต่อ Redis ไม่ได้
-# สคริปต์ไม่ตั้งค่าเครือข่ายให้ (พลาดแล้วเครื่องหลุดจากเน็ตถาวร กู้ยากกว่าเดิม) — สั่งให้แอดมินไปทำ
+
 if ! host_has_ip "$BIND_HOST" || ! ip_is_permanent "$BIND_HOST"; then
     _iface="$(iface_of_ip "$BIND_HOST")"
     [ -n "$_iface" ] || _iface="$(iface_toward "$BIND_HOST")"
@@ -2197,7 +2126,7 @@ if ! host_has_ip "$BIND_HOST" || ! ip_is_permanent "$BIND_HOST"; then
     esac
 fi
 
-# ---- agent: ต้องลงใหม่ไหม ----
+
 AGENT_COUNT_KNOWN=0
 case "${EXISTING_AGENTS:-}" in ''|*[!0-9]*) ;; *) AGENT_COUNT_KNOWN=1 ;; esac
 AGENT_LINE=""
@@ -2228,9 +2157,7 @@ PYACL
     [ "${MISSING_AGENT_ACL:-0}" -gt 0 ] && AGENT_REASONS+=("$MISSING_AGENT_ACL registered Agents have no per-Agent Redis account; regenerate their packages")
     [ "$CA_CREATED" = "1" ] && AGENT_REASONS+=("a new Root CA was issued - their certificates are signed by the old one")
 
-    # ★ เปลี่ยนฐาน = ทะเบียน agent อยู่ในฐานเก่า ฐานใหม่ไม่รู้จักใครเลย ต่อให้รหัส Redis/ที่อยู่
-    #   ไม่ได้เปลี่ยนสักอย่าง central ก็ปฏิเสธทั้ง metrics และ log ("ไม่พบ Agent ใน DB")
-    #   ของเดิมตกไปเข้าเงื่อนไขท้ายสุดแล้วบอกว่า "ไม่มีอะไรเปลี่ยน ใช้ต่อได้" ซึ่งตรงข้ามกับความจริง
+
     if [ "$DB_TARGET_CHANGED" = "1" ]; then
         AGENT_LINE="the list above comes from '$DB_NAME' - agents registered in the old database are unknown here and get rejected"
         ACTIONS+=("Register every agent again - this run switched to another database:")
@@ -2253,12 +2180,7 @@ PYACL
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# ★ ตัวที่ต่อฐาน/Redis ไม่ได้จะขึ้นมา "active running" แล้วอยู่ได้สิบกว่าวินาทีค่อยตาย (เช่นรอ DNS
-#   ของ host ที่เพี้ยนหมดเวลา) แล้ว systemd ปลุกใหม่วนไป — อ่านสถานะแวบเดียวตอนสรุปจะรายงาน
-#   "N/N running" ทั้งที่ระบบใช้งานไม่ได้ · เกณฑ์ที่ใช้คือ **ตอนนี้อยู่รอดต่อเนื่องนานพอหรือยัง**
-#   ไม่ใช่ "เคยถูกรีสตาร์ตไหม" เพราะตอนฐานใหม่เอี่ยม line-notifier จะขึ้นก่อนเว็บสร้างตารางเสร็จ
-#   แล้วตายรอบเดียว (app_settings ยังไม่มี) จากนั้นก็ทำงานได้ตลอด — แบบนั้นไม่ใช่ของพัง
+
 UNIT_SETTLE_SECONDS="${UNIT_SETTLE_SECONDS:-45}"   # เพดานเวลาที่ยอมรอ (0 = ไม่รอเลย)
 UNIT_MIN_UPTIME="${UNIT_MIN_UPTIME:-20}"           # อยู่รอดต่อเนื่องเกินนี้ = พ้นช่วงที่มันจะพัง
 if [ "$STARTED" = "1" ] && [ "$UNIT_SETTLE_SECONDS" -gt 0 ]; then
@@ -2278,7 +2200,7 @@ UNITS_ALL="$(systemctl --no-pager --plain --no-legend list-units --all 'centralr
 UNITS_N="$(printf '%s\n' "$UNITS_ALL" | grep -c . || true)"
 UNITS_BAD="$(printf '%s\n' "$UNITS_ALL" | awk '$3 != "active" || $4 != "running"' || true)"
 
-# รอมาจนหมดเวลาแล้วยัง "เพิ่งขึ้นมาหยก ๆ" = มันวนตายวนเกิดอยู่ ไม่ใช่ตัวที่นิ่งแล้ว
+
 if [ "$STARTED" = "1" ] && [ "$UNIT_SETTLE_SECONDS" -gt 0 ]; then
     for _u in $(unit_names); do
         _age="$(unit_active_age "$_u")"

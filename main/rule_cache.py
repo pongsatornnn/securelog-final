@@ -1,4 +1,4 @@
-# Cache + DB layer สำหรับ detection rules (window_seconds/threshold ต่อ rule_key)
+
 
 from database.connection import AsyncSessionLocal
 from database.crud import get_detection_rule, upsert_detection_rule
@@ -13,9 +13,8 @@ CACHE_KEY_PREFIX = "detection_rule:"
 LOG_PREFIX = "RULE-CACHE"
 
 
-# ค่า default ของแต่ละ rule (ใช้ตอน seed ครั้งแรกที่ยังไม่มีแถวใน DB)
 DEFAULT_RULES = {
-    # กฎเดียวครอบทั้งยิงถี่และยิงช้าสะสม (เดิมแยก fast 60s/5 กับ slow 900s/10)
+
     "ssh_brute_force": {
         "category": "auth",
         "window_seconds": 15 * 60,
@@ -28,7 +27,7 @@ DEFAULT_RULES = {
         "threshold": 3,
         "description": "Sudo authentication failure",
     },
-    # Web signature-based detection
+
     "web_sql_injection": {
         "category": "web",
         "window_seconds": 300,
@@ -53,14 +52,14 @@ DEFAULT_RULES = {
         "threshold": 2,
         "description": "Command Injection จาก Web Access Log (signature-based)",
     },
-    # App-level DoS (HTTP flood) — rate-based: นับ request ทั้งหมดต่อ IP
+
     "web_http_flood": {
         "category": "web",
         "window_seconds": 60,
         "threshold": 300,
         "description": "App-level DoS (HTTP flood): 1 IP ยิง request ถี่เกินปกติ (นับทุก request ต่อ IP)",
     },
-    # Firewall behavior/rate-based detection (จาก UFW/iptables deny log)
+
     "firewall_port_scan": {
         "category": "firewall",
         "window_seconds": 60,
@@ -73,7 +72,7 @@ DEFAULT_RULES = {
         "threshold": 5,
         "description": "Firewall Deny Flood: 1 IP โดน firewall ปฏิเสธถี่มาก (นับจำนวน event deny)",
     },
-    # Login lockout — ป้องกัน brute force รหัสผ่านหน้า login ของ dashboard เอง (ล็อกตาม IP)
+
     "login_lockout": {
         "category": "login",
         "window_seconds": 15 * 60,
@@ -88,7 +87,7 @@ def rule_cache_key(rule_key: str) -> str:
 
 
 def effective_default(rule_key: str) -> dict | None:
-    # ค่า default ที่ใช้จริงของ rule นี้ = ค่าใน snapshot (database/seed_data.json) ทับค่าในโค้ด
+
     code = DEFAULT_RULES.get(rule_key)
     snap = snapshot_rule(rule_key)
 
@@ -99,7 +98,7 @@ def effective_default(rule_key: str) -> dict | None:
 
 
 async def load_rule_from_db(rule_key: str) -> dict:
-    # อ่าน rule จาก DB ถ้ายังไม่เคยมีแถวนี้ (รันครั้งแรก) จะ seed ค่า default ลง DB ให้อัตโนมัติ
+
     default = effective_default(rule_key)
 
     async with AsyncSessionLocal() as db:
@@ -131,7 +130,7 @@ async def load_rule_from_db(rule_key: str) -> dict:
 
 
 async def get_rule(rule_key: str) -> dict:
-    # Entry point หลักที่ detector เรียกใช้ก่อนประเมิน threshold ทุกครั้ง
+
     cached = cache_get_json(rule_cache_key(rule_key), log_prefix=LOG_PREFIX)
 
     if cached:
@@ -147,7 +146,7 @@ async def update_rule(
     threshold: int,
     is_active: bool = True,
 ) -> dict:
-    # ใช้ตอนแก้ rule (จาก CLI/API) เขียนลง DB แล้วเคลียร์ cache ทันที
+
     default = effective_default(rule_key) or {}
 
     async with AsyncSessionLocal() as db:
@@ -186,18 +185,18 @@ async def update_rule(
 
 
 def is_default_rule(rule_key: str) -> bool:
-    # rule นี้เป็นของระบบ (มีค่า default ให้คืนกลับ) หรือไม่ — ใช้ตัดสินว่าปุ่มคืนค่าแตะได้ไหม
+
     return effective_default(rule_key) is not None
 
 
 async def restore_default_rule(rule_key: str) -> dict | None:
-    # คืน rule ตัวเดียวกลับเป็นค่า default ของระบบ (window/threshold/is_active)
+
     default = effective_default(rule_key)
 
     if not default:
         return None
 
-    # is_active ไม่ได้อยู่ใน DEFAULT_RULES — ค่าตั้งต้นของทุก rule คือเปิดใช้งาน
+
     return await update_rule(
         rule_key,
         window_seconds=default["window_seconds"],
@@ -207,7 +206,7 @@ async def restore_default_rule(rule_key: str) -> dict | None:
 
 
 async def restore_default_rules() -> dict:
-    # คืนทุก rule ที่เป็นของระบบกลับเป็นค่า default
+
     restored = []
 
     for rule_key in DEFAULT_RULES:

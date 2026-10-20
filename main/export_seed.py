@@ -1,4 +1,4 @@
-# Export ค่า config ปัจจุบันใน DB ออกเป็น snapshot (`database/seed_data.json`)
+
 
 import asyncio
 import json
@@ -17,7 +17,6 @@ from database.crud import (
 from database.defaults import SEED_DATA_PATH
 
 
-# section -> ชื่อไทยไว้ print สรุป
 SECTION_LABELS = {
     "detection_rules": "detection rule",
     "alert_severity": "severity",
@@ -27,7 +26,7 @@ SECTION_LABELS = {
 
 
 async def collect() -> dict:
-    # อ่าน config ทั้ง 4 ตารางจาก DB ปัจจุบัน แล้วจัดรูปเป็น dict พร้อมเขียนเป็น JSON
+
     async with AsyncSessionLocal() as db:
         rules = await get_all_detection_rules(db)
         severities = await get_all_alert_severity(db)
@@ -77,7 +76,7 @@ async def collect() -> dict:
 
 
 def load_previous() -> dict:
-    # snapshot เดิม (ถ้ามี) ไว้เทียบว่ารอบนี้เปลี่ยนอะไรบ้าง
+
     if not SEED_DATA_PATH.exists():
         return {}
 
@@ -89,7 +88,7 @@ def load_previous() -> dict:
 
 
 def print_diff(old: dict, new: dict) -> bool:
-    # print สิ่งที่ต่างจาก snapshot เดิมทีละ section — คืน True ถ้ามีอะไรเปลี่ยน
+
     changed = False
 
     for section, label in SECTION_LABELS.items():
@@ -115,7 +114,7 @@ def print_diff(old: dict, new: dict) -> bool:
             print(f"    - หายไป  {key}")
         for key in edited:
             print(f"    ~ แก้ไข   {key}")
-            # section signature เป็น list ของ pattern — บอกแค่จำนวน ไม่ต้องพ่น regex ทั้งก้อน
+
             if section == "detection_signatures":
                 print(f"        {len(old_section[key])} -> {len(new_section[key])} รายการ")
                 continue
@@ -153,7 +152,7 @@ async def main():
         print("\n--dry-run: ไม่ได้เขียนไฟล์")
         return
 
-    # เขียนผ่านไฟล์ชั่วคราวแล้วค่อย replace กันไฟล์พังถ้าเขียนไม่จบ (ระบบอ่านไฟล์นี้ตอน start)
+
     tmp_path = SEED_DATA_PATH.with_suffix(".json.tmp")
     with tmp_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)

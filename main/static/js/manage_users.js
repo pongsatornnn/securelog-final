@@ -1,10 +1,10 @@
-// ย้ายมาจาก templates/manage_users.html (บล็อก <script> เดิม)
-// ค่าที่มาจาก server อ่านผ่าน window.PAGE_DATA ที่ template ประกาศไว้
+
+
 function manageUsersApp() {
   return {
     users: [],
 
-    // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
+
     loading: true,
     loadError: '',
 
@@ -22,7 +22,7 @@ function manageUsersApp() {
 
     currentUsername: window.PAGE_DATA.username,
 
-    // บัญชี View (ดูอย่างเดียว) — ไม่อยู่ใน users[] มีแค่สถานะเปิด/ปิด
+
     viewAccount: { exists: false, enabled: false },
     viewSaving: false,
 
@@ -108,7 +108,7 @@ function manageUsersApp() {
       this.policyReady = window.PasswordPolicy.loaded
     },
 
-    // checklist ของรหัสที่ admin ตั้งให้ (ตอนสร้างบัญชี / ตอนรีเซ็ตรหัสให้คนอื่น)
+
     createChecks() {
       if (!this.policyReady) return []
       return window.PasswordPolicy.check(this.createForm.password)

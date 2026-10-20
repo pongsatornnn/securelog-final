@@ -14,8 +14,6 @@ from process_log_detect.detector_common import QUEUE_BLOCK_TIMEOUT_SECONDS, safe
 TZ = ZoneInfo("Asia/Bangkok")
 
 
-# ============================================================
-
 RAW_LOGS_QUEUE = "raw_logs_queue"
 
 NORMALIZED_AUTH_QUEUE = "normalized_auth_logs_queue"
@@ -24,19 +22,17 @@ NORMALIZED_FIREWALL_QUEUE = "normalized_firewall_logs_queue"
 NORMALIZED_SYSLOG_QUEUE = "normalized_syslog_logs_queue"
 NORMALIZED_UNKNOWN_QUEUE = "normalized_unknown_logs_queue"
 
-# คิวที่ไม่มี detector มาประมวลผลต่อ — ไม่ push ทิ้งไปเลย กัน Redis โตเปล่า ๆ
+
 DROPPED_QUEUES = {NORMALIZED_SYSLOG_QUEUE, NORMALIZED_UNKNOWN_QUEUE}
 
 
-# ============================================================
-
 def now_thai() -> str:
-    # เวลาที่ Central normalize log นี้
+
     return datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def parse_filebeat_timestamp(timestamp: str | None) -> tuple[str | None, str | None]:
-    # @timestamp จาก Filebeat คือเวลาฝั่ง Agent / เวลาที่ Filebeat อ่าน log
+
     if not timestamp:
         return None, None
 
@@ -58,8 +54,6 @@ def parse_filebeat_timestamp(timestamp: str | None) -> tuple[str | None, str | N
         return timestamp, None
 
 
-# ============================================================
-
 def get_message(event: dict) -> str:
     return str(event.get("message", "")).strip()
 
@@ -79,7 +73,7 @@ def get_secret_token(event: dict) -> str | None:
 
 
 def get_host_ip(event: dict) -> str | None:
-    # IP ของเครื่อง agent ที่ filebeat แนบมากับทุก event (processor add_fields target: host)
+
     host = event.get("host", {})
     if not isinstance(host, dict):
         return None
@@ -89,7 +83,7 @@ def get_host_ip(event: dict) -> str | None:
 
 
 def base_normalized_event(event: dict) -> dict:
-    # Field กลางที่ detector ต้องใช้จริง
+
     agent_event_time_utc, agent_event_time_thai = parse_filebeat_timestamp(
         event.get("@timestamp")
     )
@@ -127,8 +121,6 @@ def to_int(value: str | None) -> int | None:
     except Exception:
         return None
 
-
-# ============================================================
 
 SSH_FAILED_RE = re.compile(
     r"Failed password for (?:(?P<invalid_prefix>invalid user) )?"
@@ -201,7 +193,7 @@ def normalize_auth(event: dict) -> dict | None:
 
     match = INVALID_USER_RE.search(message)
     if match:
-        # ไม่ส่ง Invalid user แยกเข้า Redis
+
         return None
 
     match = SUDO_AUTH_FAILURE_RE.search(message)
@@ -223,11 +215,9 @@ def normalize_auth(event: dict) -> dict | None:
         })
         return normalized
 
-    # log auth ที่ไม่เกี่ยวกับ detect scope เช่น session opened/closed, cron, systemd
+
     return None
 
-
-# ============================================================
 
 WEB_ACCESS_RE = re.compile(
     r'(?P<source_ip>\d+\.\d+\.\d+\.\d+)\s+'
@@ -283,8 +273,6 @@ def normalize_web(event: dict) -> dict:
 
     return normalized
 
-
-# ============================================================
 
 UFW_ACTION_RE = re.compile(r"\[UFW (?P<action>\w+)\]")
 
@@ -378,8 +366,6 @@ def normalize_iptables(event: dict) -> dict:
     )
 
 
-# ============================================================
-
 SYSLOG_RE = re.compile(
     r"^(?P<syslog_time>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+"
     r"(?P<syslog_hostname>\S+)\s+"
@@ -412,8 +398,6 @@ def normalize_syslog(event: dict) -> dict:
     return normalized
 
 
-# ============================================================
-
 def normalize_unknown(event: dict) -> dict:
     normalized = base_normalized_event(event)
     normalized.update({
@@ -421,8 +405,6 @@ def normalize_unknown(event: dict) -> dict:
     })
     return normalized
 
-
-# ============================================================
 
 def is_ufw_log(log_type: str | None, message: str) -> bool:
     if log_type in ["ufw", "ufw_log", "ufwlog"]:
@@ -468,7 +450,7 @@ def is_syslog(log_type: str | None, message: str) -> bool:
 
 
 def is_auth_pattern(message: str) -> bool:
-    # ใช้ดักกรณี auth failure / ssh brute force หลุดมาปนกับ syslog
+
     return bool(
         SSH_FAILED_RE.search(message)
         or SSH_ACCEPTED_RE.search(message)
@@ -476,8 +458,6 @@ def is_auth_pattern(message: str) -> bool:
         or SUDO_INCORRECT_PASSWORD_RE.search(message)
     )
 
-
-# ============================================================
 
 def normalize_event(event: dict) -> tuple[str | None, dict | None]:
     log_type = event.get("log_type")
@@ -513,8 +493,6 @@ def normalize_event(event: dict) -> tuple[str | None, dict | None]:
     return NORMALIZED_UNKNOWN_QUEUE, normalize_unknown(event)
 
 
-# ============================================================
-
 def push_normalized_log(
     r: redis.Redis,
     queue_name: str,
@@ -528,8 +506,6 @@ def push_normalized_log(
         json.dumps(normalized, ensure_ascii=False)
     )
 
-
-# ============================================================
 
 def start_normalizer() -> None:
     r = get_redis()

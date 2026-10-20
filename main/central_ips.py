@@ -1,13 +1,5 @@
-# ที่อยู่ของเครื่อง Central Server เอง — ห้ามใส่ลง blacklist (ทั้งจากหน้าเว็บและที่ detector สั่ง block เอง)
-#
-# ไม่เขียน IP ตายตัว อ่านสดจาก 3 แหล่ง เพราะ central ย้าย IP ได้ (setup-server.sh):
-#   1) IP ทุกตัวบนการ์ดเครือข่ายของเครื่องตอนนี้ (รวม IP สำรองที่แปะไว้ระหว่างย้ายเครื่อง)
-#   2) REDIS_HOST / AGENT_CENTRAL_HOST ใน .env — ที่อยู่ที่ agent ใช้ต่อเข้ามา
-#   3) AGENT_CENTRAL_CANDIDATES ใน .env — ที่อยู่สำรองที่ agent อาจถอยกลับไปใช้ (รวมที่อยู่เดิมก่อนย้าย)
-# ฝั่ง agent ก็มีรายการ "ไม่มีวัน block central" แบบเดียวกันอยู่แล้ว (agent_core.rebuild_never_block_nets)
-# ที่นี่กันตั้งแต่ต้นทาง ไม่ให้หน้าเว็บแสดงว่า block ทั้งที่จริง agent ไม่ทำ
-#
-# อ่านใหม่ทุก ๆ CACHE_SECONDS — ย้าย IP แล้วตามไปเองโดยไม่ต้อง restart
+
+
 
 import ipaddress
 import json
@@ -29,7 +21,7 @@ _cache: tuple[float, frozenset] = (0.0, frozenset())
 
 
 def _host_of(entry: str) -> str:
-    # "192.168.56.119:6381" -> "192.168.56.119" · ไม่มีพอร์ตก็คืนตามเดิม
+
     entry = entry.strip().strip('"')
     if entry.count(":") == 1:
         entry = entry.split(":", 1)[0]
@@ -78,7 +70,7 @@ def central_addresses() -> frozenset:
 
 
 def is_central_ip(value) -> bool:
-    # True ถ้าค่านี้คือ/ครอบ IP ของ central (รับได้ทั้ง IP เดี่ยวและช่วง CIDR)
+
     net = parse_entry(value)
     if net is None:
         return False

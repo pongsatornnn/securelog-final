@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#
+
 set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +10,7 @@ log()  { echo -e "\e[32m[SETUP]\e[0m $*"; }
 warn() { echo -e "\e[33m[WARN]\e[0m  $*"; }
 die()  { echo -e "\e[31m[ERROR]\e[0m $*" >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
+
 term_cols() {  # ความกว้างจอตอนนี้ — tput ถาม terminal ตรง ๆ ใช้ได้แม้ stdout ถูกจับไว้ใน $( )
     local c=""
     c="$(tput cols 2>/dev/null)" || c=""
@@ -50,8 +50,8 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
     printf '\033[?25l'                 # ซ่อน cursor ไม่ให้กระพริบวิ่งตามตัวหมุน
     while kill -0 "$pid" 2>/dev/null; do
         spent=$((SECONDS - start))
-        # ★ ทั้งบรรทัดต้องสั้นกว่าความกว้างจอเสมอ ถ้ายาวเกินจอจะห่อไปบรรทัดใหม่ แล้ว \r จะกลับไป
-        #   ต้น "บรรทัดที่ห่อ" ไม่ใช่บรรทัดเดิม ตัวหมุนเลยไหลลงมาเป็นแถว | / - \ แทนที่จะหมุนอยู่กับที่
+
+
         dsp="$desc"
         room=$(( SPIN_COLS - 1 - ${#dsp} - ${#spent} - 14 ))  # "[SETUP] desc (Ns) X" กินไป 14 ตัว
         if [ "$room" -lt 0 ]; then                            # จอแคบจนชื่อขั้นเองยังไม่พอ
@@ -61,8 +61,8 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
             room=0
         fi
         hint=''
-        # เกิน 15 วิ = ไม่ใช่ขั้นที่ผ่านไวแล้ว เอาบรรทัดล่าสุดใน log มาแปะข้างตัวหมุนให้เห็นว่า
-        # มันยังเดินอยู่ — แปะเฉพาะตอนที่เหลือที่ว่างพอจริง ๆ ("  | " กินอีก 4 ตัว)
+
+
         if [ "$spent" -ge 15 ] && [ "$room" -ge 16 ]; then
             tail_line="$(tail -n 1 "$STEP_LOG" 2>/dev/null | tr -d '\r' | cut -c1-"$(( room - 4 ))")"
             [ -n "$tail_line" ] && hint="  "$'\033[2m'"| $tail_line"$'\033[0m'
@@ -86,10 +86,10 @@ run_step() {  # run_step "คำอธิบาย" cmd [args...]
 [ "$(id -u)" -eq 0 ] || die "Must be run as root: sudo ./setup.sh"
 command -v python3 >/dev/null || die "python3 not found on this machine"
 
-# ---------- 0) ค่าต่อ site (จาก site.conf ข้างสคริปต์ — ไม่ commit ขึ้น git) ----------
+
 SITE_CONF="$INSTALL_DIR/site.conf"
 [ -f "$SITE_CONF" ] || die "$SITE_CONF not found - copy it from site.conf.example and fill in the real values: cp site.conf.example site.conf"
-# shellcheck source=/dev/null
+
 source "$SITE_CONF"
 
 : "${CENTRAL_HOST:?CENTRAL_HOST is missing from site.conf}"
@@ -97,11 +97,11 @@ source "$SITE_CONF"
 : "${REDIS_USERNAME:?REDIS_USERNAME is missing from site.conf}"
 : "${REDIS_PASSWORD:?REDIS_PASSWORD is missing from site.conf}"
 
-# ---------- 1) อ่านค่าเฉพาะ agent จาก agent_info.txt (มากับ zip) ----------
+
 INFO_FILE="$INSTALL_DIR/agent_info.txt"
 [ -f "$INFO_FILE" ] || die "$INFO_FILE not found - extract the agent zip into this folder first"
 
-# key ที่ไม่มีในไฟล์ (เช่น zip เก่าก่อนมี HOST_IP) ต้องคืนค่าว่างเฉย ๆ ไม่ใช่ทำให้สคริปต์ตายเงียบ —
+
 get_info() { grep -E "^$1=" "$INFO_FILE" | head -1 | cut -d= -f2- | tr -d '\r' || true; }
 AGENT_ID="$(get_info AGENT_ID)"
 SECRET_TOKEN="$(get_info SECRET_TOKEN)"
@@ -113,14 +113,12 @@ HOST_IP="$(get_info HOST_IP)"
 [ -n "$AGENT_ID" ] && [ -n "$SECRET_TOKEN" ] || die "agent_info.txt has no AGENT_ID/SECRET_TOKEN"
 log "Installing agent: $AGENT_ID into $INSTALL_DIR"
 
-# Reject an incomplete or modified package before changing the installed config.
+
 ACL_BEAT="$INSTALL_DIR/filebeat-acl"
 [ -f "$ACL_BEAT" ] && [ -f "$INSTALL_DIR/filebeat-acl.sha256" ] || die "patched Filebeat missing from agent package"
 (cd "$INSTALL_DIR" && sha256sum -c filebeat-acl.sha256) || die "patched Filebeat checksum mismatch"
 
-# ---------- 1.5) เลือก interface ที่จะใช้เป็น IP ของเครื่องนี้ ----------
 
-# ชื่อ interface + IPv4 ของแต่ละใบ (ข้าม loopback) — ip -o เอาต์พุตบรรทัดละใบ ตัดคำที่ 2 กับ 4
 mapfile -t IFACE_LINES < <(ip -o -4 addr show scope global 2>/dev/null | awk '{print $2" "$4}' | cut -d/ -f1 | sort -u)
 
 [ "${#IFACE_LINES[@]}" -gt 0 ] || die "No interface with an IPv4 address on this machine - configure networking, then run again"
@@ -132,7 +130,7 @@ for i in "${!IFACE_LINES[@]}"; do
 done
 echo ""
 
-# ค่าที่แนะนำ = ขาที่ route ออกไปหา central จริง (ใบที่คุยกับ central ได้แน่ ๆ)
+
 DEFAULT_IFACE="$(ip -o route get "$CENTRAL_HOST" 2>/dev/null | awk '{for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1)}' | head -1)"
 DEFAULT_INDEX=1
 for i in "${!IFACE_LINES[@]}"; do
@@ -143,8 +141,8 @@ if [ "${#IFACE_LINES[@]}" -eq 1 ]; then
     CHOICE=1
     log "Only one interface - using it automatically"
 else
-    # `if ! read` สำคัญ: ถ้ารันแบบไม่มีคนตอบ (ไม่มี tty / stdin หมด) read คืน non-zero
-    # เปล่า ๆ แบบเดิมจะชน `set -e` แล้วสคริปต์ออกกลางคันโดยไม่มีข้อความอะไรเลย
+
+
     if ! read -rp "Pick the interface to use as this agent's IP [1-${#IFACE_LINES[@]}] (Enter = $DEFAULT_INDEX, the one that routes to central): " CHOICE; then
         CHOICE=""
         echo ""
@@ -169,7 +167,7 @@ warn "on the Agents page and reinstall with the new package"
 
 HOST_IP="$DETECTED_IP"
 
-# ---------- 2) จัดโครงโฟลเดอร์ (cert/ + state/) ----------
+
 mkdir -p "$INSTALL_DIR/cert" "$INSTALL_DIR/state"
 
 for f in "$CERT_FILE" "$KEY_FILE" "$CA_FILE"; do
@@ -180,9 +178,7 @@ for f in "$CERT_FILE" "$KEY_FILE" "$CA_FILE"; do
 done
 log "All cert files present: $CERT_FILE / $KEY_FILE / $CA_FILE"
 
-# ---------- 3) เขียน agent_config.json ให้ agent_core.py ----------
-# ที่อยู่สำรองของ central: จาก site.conf (CENTRAL_CANDIDATES) + ที่อยู่ที่ไฟล์เดิมเคยรู้จัก
-# ลงซ้ำแล้วต้องไม่ลืมที่อยู่ที่ agent เคยย้ายไปเอง ไม่งั้น failover จะเสียของ
+
 CONFIG_BACKUPS="$(python3 - "$INSTALL_DIR/agent_config.json" "$CENTRAL_HOST" "$CENTRAL_REDIS_PORT" \
         "$REDIS_USERNAME" "$REDIS_PASSWORD" "$HOST_IFACE" "${CENTRAL_CANDIDATES:-}" <<'PY'
 import json, os, sys, tempfile
@@ -248,7 +244,7 @@ PY
 )"
 log "Wrote agent_config.json (host_iface=$HOST_IFACE, central=$CENTRAL_HOST:$CENTRAL_REDIS_PORT, backups=$CONFIG_BACKUPS)"
 
-# ---------- 4) ลง system packages ----------
+
 export DEBIAN_FRONTEND=noninteractive
 NEED_PKGS=()
 dpkg -s python3-venv >/dev/null 2>&1 || NEED_PKGS+=(python3-venv)
@@ -256,11 +252,10 @@ dpkg -s conntrack    >/dev/null 2>&1 || NEED_PKGS+=(conntrack)
 dpkg -s curl         >/dev/null 2>&1 || NEED_PKGS+=(curl)
 dpkg -s gnupg        >/dev/null 2>&1 || NEED_PKGS+=(gnupg)
 
-# ตีตราเองว่า apt-get update สำเร็จไปเมื่อไร — ห้ามใช้ mtime ของไฟล์ InRelease เพราะ apt ตั้ง
-# mtime ตาม Last-Modified ของมิเรอร์ (ของ noble คือวันปล่อยรุ่น ปี 2024) ไม่ใช่เวลาที่เราโหลดมา
+
 APT_STAMP="/var/lib/apt/lists/.securelog-apt-update-stamp"
 apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำเร็จไปไม่เกินกี่นาที (update-success-stamp
-                     # เป็นของ apt เอง มีติดมากับ unattended-upgrades — เผื่อเครื่องที่ถอดตัวนั้นทิ้ง)
+
     local f
     for f in "$APT_STAMP" /var/lib/apt/periodic/update-success-stamp; do
         [ -f "$f" ] && [ -n "$(find "$f" -mmin -"$1" -print -quit 2>/dev/null)" ] && return 0
@@ -269,13 +264,13 @@ apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำ
 }
 
 if [ "${#NEED_PKGS[@]}" -gt 0 ]; then
-    # Ubuntu ออก index ใหม่ทุกวัน เครื่องที่ clone มาจาก image เก่าจึงต้องโหลดใหม่ ~10 MB ทุกครั้ง
-    # แล้ว parse lists ทั้งกอง (~200 MB) อีก 13-15 วิ บนเครื่อง 1 core — ที่โหลดมาไม่ถึงชั่วโมงยังใช้ได้
+
+
     APT_LISTS_MAX_AGE_MIN="${APT_LISTS_MAX_AGE_MIN:-60}"
     if apt_lists_fresh "$APT_LISTS_MAX_AGE_MIN"; then
         log "apt package lists were refreshed less than $APT_LISTS_MAX_AGE_MIN minutes ago - apt-get update skipped"
-    # -q ไม่ใช่ -qq: -qq เงียบสนิท (output 0 ตัวอักษร) ตัวหมุนของ run_step เลยไม่มีบรรทัดให้โชว์
-    #   คนดูเห็นแต่ตัวหมุนนิ่ง ๆ นึกว่าค้าง · Retries/Timeout: มิเรอร์ล่ม = เด้งใน ~15 วิ
+
+
     elif run_step "apt-get update" apt-get update -q \
             -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::Languages=none; then
         : > "$APT_STAMP" 2>/dev/null || true
@@ -287,7 +282,7 @@ else
     log "python3-venv + conntrack + curl + gnupg already present"
 fi
 
-# ---------- 5) ลง Filebeat ----------
+
 ELASTIC_LIST="/etc/apt/sources.list.d/elastic-8.x.list"
 ELASTIC_KEYRING="/usr/share/keyrings/elastic.gpg"
 
@@ -311,8 +306,7 @@ else
                 > "$ELASTIC_LIST"
         fi
 
-        # อ่านเฉพาะ list ของ Elastic (sourceparts="-" = ปิด sources.list.d ที่เหลือ, List-Cleanup=0
-        # = ห้ามลบ lists ของ repo ที่ไม่ได้อ่านรอบนี้) ไม่งั้นมันไล่โหลด index ของ Ubuntu ใหม่ทั้งกอง
+
         run_step "apt-get update (Elastic repo only)" apt-get update -q \
             -o Dir::Etc::sourcelist="$ELASTIC_LIST" -o Dir::Etc::sourceparts="-" \
             -o APT::Get::List-Cleanup="0" -o Acquire::Retries=1 -o Acquire::http::Timeout=15
@@ -326,20 +320,20 @@ fi
 filebeat version 2>/dev/null | grep -q 'filebeat version 8.19.23 ' \
     || die "This package requires the Filebeat 8.19.23 layout; install that version first"
 
-# ---------- 6) สร้าง venv + ลง dependency ----------
+
 if [ ! -x "$INSTALL_DIR/venv/bin/python" ]; then
     run_step "Creating venv (separate from system python - does not affect other processes)" \
         python3 -m venv "$INSTALL_DIR/venv"
 else
     log "venv already exists"
 fi
-# --no-input: มีอะไรจะถามให้ตายไปเลย ไม่ใช่ค้างรอ input อยู่หลังตัวหมุนที่คนดูไม่เห็น
+
 run_step "Installing python dependencies (redis, psutil) into the venv" \
     "$INSTALL_DIR/venv/bin/pip" install -q --disable-pip-version-check --no-input \
     --timeout "${PIP_TIMEOUT:-15}" --retries "${PIP_RETRIES:-2}" \
     -r "$INSTALL_DIR/requirements.txt"
 
-# ---------- 7) generate /etc/filebeat/filebeat.yml จาก template ----------
+
 TEMPLATE="$INSTALL_DIR/filebeat.yml.template"
 [ -f "$TEMPLATE" ] || die "$TEMPLATE not found"
 
@@ -378,26 +372,26 @@ EOF
 systemctl daemon-reload
 log "filebeat config passed validation"
 
-# ครั้งแรกเท่านั้น: ลบ registry ให้ tail_files เริ่มอ่านจากท้ายไฟล์ (ไม่ลาก log เก่าทั้งไฟล์)
+
 if [ ! -f "$MARKER" ]; then
     systemctl stop filebeat 2>/dev/null || true
     rm -rf /var/lib/filebeat/registry
     log "Clearing the filebeat registry (first install only)"
 fi
 
-# ---------- 8) สิทธิ์ไฟล์ ----------
+
 chown -R root:root "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/cert/$KEY_FILE" "$INFO_FILE" "$INSTALL_DIR/agent_config.json"
 log "Setting file permissions (key/token = 600, owned by root)"
 
-# ---------- 9) UFW: log ที่ตัวตรวจจับต้องใช้ + ทางออกไปหา central ----------
+
 if [ "${SKIP_FIREWALL:-0}" = "1" ]; then
     warn "SKIP_FIREWALL=1 - not touching ufw (the firewall detector needs 'ufw logging low' to be on)"
 elif ! command -v ufw >/dev/null 2>&1; then
     warn "ufw is not installed - block IP commands have no effect on this machine"
     warn "Install it and turn it on: sudo apt-get install ufw && sudo ufw allow OpenSSH && sudo ufw enable"
 else
-    # ขาออกไปหา central — สั่งได้แม้ ufw ยัง inactive (rule ถูกเก็บไว้รอ) และสั่งซ้ำได้ ufw ข้ามให้เอง
+
     if ufw allow out to "$CENTRAL_HOST" port "$CENTRAL_REDIS_PORT" proto tcp \
             comment "SecureLog agent -> central Redis" >/dev/null 2>&1 \
        || ufw allow out to "$CENTRAL_HOST" port "$CENTRAL_REDIS_PORT" proto tcp >/dev/null 2>&1; then
@@ -407,7 +401,7 @@ else
         warn "If outgoing traffic is denied by default here, add it yourself or the agent cannot report in"
     fi
 
-    # ที่อยู่สำรองของ central ต้องเปิดขาออกไว้ด้วย ไม่งั้นวันที่ central ย้ายจริง agent ตามไปไม่ได้
+
     if [ "$CONFIG_BACKUPS" != "-" ]; then
         for _backup in $CONFIG_BACKUPS; do
             _bhost="${_backup%:*}"; _bport="${_backup##*:}"
@@ -433,7 +427,7 @@ else
     fi
 fi
 
-# ---------- 10) systemd ----------
+
 sed "s|__INSTALL_DIR__|$INSTALL_DIR|g" "$INSTALL_DIR/$SERVICE_NAME.service" \
     > "/etc/systemd/system/$SERVICE_NAME.service"
 systemctl daemon-reload
@@ -445,7 +439,7 @@ log "Enabled services: $SERVICE_NAME + filebeat (they also start on boot)"
 
 touch "$MARKER"
 
-# ---------- 11) ตรวจปลายทาง ----------
+
 echo ""
 log "Testing the mTLS connection to central Redis..."
 if "$INSTALL_DIR/venv/bin/python" - <<PYEOF
@@ -470,8 +464,7 @@ else
     warn "Could not connect to central Redis - check network/cert/password, then the logs: journalctl -u $SERVICE_NAME -f"
 fi
 
-# log file ที่มีจริงบนเครื่องนี้ อ่านได้ไหม (filebeat รันเป็น root ปกติไม่ติด แต่บาง distro ตั้ง ACL แปลก)
-# (path/glob ต้องตรงกับ filebeat.yml.template — glob ที่ไม่ match จะเหลือเป็นข้อความเฉย ๆ แล้วตก [ -e ] ไปเอง)
+
 for f in /var/log/auth.log /var/log/apache2/*access.log /var/log/nginx/*access.log /var/log/tomcat*/*access_log*.txt /var/log/ufw.log /var/log/iptables.log; do
     if [ -e "$f" ] && [ ! -r "$f" ]; then
         warn "$f exists but is not readable - filebeat cannot collect this log"

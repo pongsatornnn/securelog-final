@@ -3,10 +3,10 @@ from pydantic import BaseModel
 
 class UpdateBlacklistTtlRequest(BaseModel):
     ttl_seconds: int | None
-    # True = block IP อัตโนมัติ · False = แจ้งเตือนอย่างเดียว
-    # None = ไม่ได้สั่งเปลี่ยนโหมด (client เก่าที่ส่งมาแค่ ttl_seconds) — คงค่าเดิมใน DB
+
+
     auto_block: bool | None = None
-    # True = ส่งแจ้งเตือนเข้า LINE ด้วย (ใช้เฉพาะตอน auto_block = False) · None = คงค่าเดิม
+
     notify_line: bool | None = None
 
 

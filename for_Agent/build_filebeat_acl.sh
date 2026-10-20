@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Filebeat binary used by SecureLog Agent packages.
+
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

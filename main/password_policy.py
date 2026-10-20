@@ -1,15 +1,12 @@
-# นโยบายรหัสผ่าน — นิยามกฎไว้ที่เดียว ใช้ทั้งฝั่ง server (บังคับจริง) และฝั่งหน้าเว็บ (checklist สด)
-# หน้าเว็บดึงกฎชุดนี้ผ่าน GET /api/password-policy แล้วประเมินด้วยตรรกะเดียวกัน
-# (static/js/password_policy.js) จึงไม่มีทางที่ checklist บนจอกับที่ server บังคับจะไม่ตรงกัน
+
+
 
 import re
 
 MIN_LENGTH = 8
 MAX_LENGTH = 128
 
-# kind ที่รองรับ (ทั้ง python และ js ทำเหมือนกัน):
-#   length  ยาวอยู่ในช่วง min..max
-#   regex   ต้อง match
+
 RULES = [
     {
         "id": "length",
@@ -35,7 +32,7 @@ def _rule_passed(rule: dict, password: str) -> bool:
 
 
 def evaluate(password: str) -> list[dict]:
-    # คืนสถานะของทุกข้อ (ไว้ให้ฝั่งเรียกเอาไปแสดงหรือทำ log)
+
     return [
         {"id": r["id"], "label": r["label"], "passed": _rule_passed(r, password or "")}
         for r in RULES
@@ -47,7 +44,7 @@ def failed_rules(password: str) -> list[dict]:
 
 
 def policy_for_client() -> dict:
-    # ส่งให้หน้าเว็บไปประเมินเอง (label + วิธีตรวจ) — ไม่มีความลับอะไรในนี้
+
     return {"min_length": MIN_LENGTH, "max_length": MAX_LENGTH, "rules": RULES}
 
 

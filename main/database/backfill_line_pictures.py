@@ -1,4 +1,4 @@
-# Backfill รูปโปรไฟล์ LINE ของผู้รับแจ้งเตือนที่ลงทะเบียนไว้ก่อนมีคอลัมน์ picture_url
+
 
 import asyncio
 import sys
@@ -15,7 +15,7 @@ LOG_PREFIX = "BACKFILL-LINE-PIC"
 
 
 async def backfill(refresh_all: bool = False) -> None:
-    # อ่านค่าจาก DB เข้า cache ก่อน — สคริปต์นี้รันเป็น process แยก cache ยังว่างอยู่เสมอ
+
     await ensure_loaded()
 
     if not config.channel_access_token():
@@ -37,11 +37,11 @@ async def backfill(refresh_all: bool = False) -> None:
         updated = failed = 0
 
         for r in recipients:
-            # get_profile เป็น urllib แบบ blocking — จำนวนผู้รับหลักสิบ ไม่คุ้มที่จะทำ async
+
             profile = await asyncio.to_thread(line_client.get_profile, r.line_user_id)
 
             if profile is None:
-                # ปกติเกิดตอนเจ้าตัวบล็อก OA ไปแล้ว (LINE ตอบ 404) — ปล่อย NULL ไว้เหมือนเดิม
+
                 print(f"[{LOG_PREFIX}] ดึง profile ไม่สำเร็จ: id={r.id} {r.display_name or r.line_user_id}")
                 failed += 1
                 continue

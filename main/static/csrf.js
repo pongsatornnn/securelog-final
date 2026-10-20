@@ -1,4 +1,4 @@
-// เพิ่ม header X-CSRF-Token อัตโนมัติให้ทุก fetch ที่ "เปลี่ยนข้อมูล" (POST/PUT/PATCH/DELETE)
+
 (function () {
   function getCookie(name) {
     var parts = document.cookie ? document.cookie.split('; ') : [];

@@ -1,11 +1,11 @@
-// ย้ายมาจาก templates/signatures.html (บล็อก <script> เดิม)
+
 function signaturesApp() {
   return {
-    // แท็บที่เลือกอยู่ = detection_type — ค่าเริ่มต้นตั้งไม่ได้ตั้งแต่ต้นเพราะหมวดมาจากข้อมูล
-    // (ดู groupSignatures ที่ตกไปหมวดแรกให้เมื่อค่าปัจจุบันใช้ไม่ได้)
+
+
     tab: '',
 
-    // จำแท็บไว้ใน URL hash — รีเฟรชแล้วยังอยู่หมวดเดิม และส่งลิงก์ตรงไปหมวดที่ต้องการได้
+
     initTab() {
       const fromHash = decodeURIComponent(window.location.hash.replace('#', ''))
       if (fromHash) this.tab = fromHash     // ถูกหรือไม่ ค่อยเช็คตอนข้อมูลมาถึง
@@ -14,8 +14,7 @@ function signaturesApp() {
     selectTab(name) {
       this.tab = name
 
-      // replaceState ไม่ใช่เซ็ต location.hash ตรง ๆ — กันเบราว์เซอร์กระโดดสกรอลล์หา
-      // element ที่ id ตรงกัน และกันประวัติสะสมจนกด back ต้องย้อนทีละแท็บ
+
       history.replaceState(null, '', '#' + name)
     },
 
@@ -28,7 +27,7 @@ function signaturesApp() {
     isRestoring: false,
     formError: '',
 
-    // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
+
     loading: true,
     loadError: '',
 
@@ -70,13 +69,12 @@ function signaturesApp() {
           detection_type: t,
           items: groups[t],
           activeCount: groups[t].filter(s => s.is_active).length,
-          // แยกให้เห็นว่าปุ่มคืนค่าจะแตะกี่แถว และเหลือของแอดมินกี่แถวที่ไม่ถูกแตะ
+
           defaultCount: groups[t].filter(s => s.is_default).length,
           customCount: groups[t].filter(s => !s.is_default).length,
         }))
 
-      // แท็บที่ค้างอยู่อาจใช้ไม่ได้แล้ว: เพิ่งเข้าหน้า (ยังว่าง), มาจาก hash ที่สะกดผิด,
-      // หรือ signature หมวดนั้นถูกลบจนหมด -> ตกไปที่หมวดแรกที่มีจริง
+
       if (!this.groupedSignatures.some(g => g.detection_type === this.tab)) {
         this.tab = this.groupedSignatures.length ? this.groupedSignatures[0].detection_type : ''
       }
@@ -105,7 +103,7 @@ function signaturesApp() {
     openAddModal() {
       this.formError = ''
       this.editingId = null
-      // เปิดจากแท็บไหนก็ตั้งชนิดเป็นแท็บนั้นให้เลย (เดิมเด้งกลับไป sql_injection ทุกครั้ง)
+
       this.form = {
         detection_type: this.tab || 'sql_injection',
         pattern: '',
@@ -130,7 +128,7 @@ function signaturesApp() {
       this.editingId = null
     },
 
-    // ปุ่มเดียวใช้ทั้งเพิ่มและบันทึก — แยกที่ editingId (ดู modal ด้านบน)
+
     async submitForm() {
       if (!this.form.pattern.trim()) return
       this.isSubmitting = true
@@ -206,8 +204,7 @@ function signaturesApp() {
       }
     },
 
-    // ── คืนค่า default ────────────────────────────────────────────────
-    // ปุ่มบนหัวหน้ากับปุ่มในแท็บยิง endpoint เดียวกัน ต่างกันแค่ส่ง detection_type หรือไม่
+
     async restoreDefaults(detectionType) {
       this.isRestoring = true
 

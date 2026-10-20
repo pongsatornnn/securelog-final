@@ -1,7 +1,5 @@
-/* ย้ายมาจาก templates/login.html (บล็อก <style> เดิม) */
   :root {
-    /* สองหน้านี้เป็น standalone (ไม่ extends base.html) จึงไม่ได้โหลด app.css —
-       ประกาศ token ชุดเดียวกันไว้เองให้ auth.css ใช้ ค่าต้องตรงกับ app.css */
+
     --card-bg: #1d1e24;
     --bg-main: #141519;
     --bg-raised: #25262e;
@@ -18,7 +16,6 @@
     --radius-lg: 6px;
   }
 
-
   body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     background: var(--bg-main);
@@ -30,35 +27,30 @@
     padding: 1.5rem;
   }
 
-  .wrap { 
-    width: 100%; 
-    max-width: 380px; /* ปรับขนาดหน้าต่างให้สมดุลและดูหนักแน่นขึ้น */
+  .wrap {
+    width: 100%;
+    max-width: 380px;
   }
 
-/* === Brand โทนเดียวกับ Sidebar ด้านใน === */
-  .brand h1 { 
-    font-size: 30px; 
-    font-weight: 800; 
+  .brand h1 {
+    font-size: 30px;
+    font-weight: 800;
     color: var(--text-main);
-    letter-spacing: -0.02em; 
+    letter-spacing: -0.02em;
   }
-  .brand p  { 
-    font-size: 13.5px; 
+  .brand p  {
+    font-size: 13.5px;
     color: var(--text-muted);
-    margin-top: 6px; 
+    margin-top: 6px;
     font-weight: 500;
   }
 
-/* === Card Style ปรับปรุงมิติและขอบมนให้เข้ากับชุดตารางด้านใน === */
-  /* === Error Badge สไตล์ High Severity === */
-
-/* === Input Fields ปรับแต่งกรอบและ Focus State ให้สมูทขึ้น === */
-  .field label { 
-    display: block; 
-    font-size: 13.5px; 
-    font-weight: 600; 
+  .field label {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
     color: var(--text-muted);
-    margin-bottom: 6px; 
+    margin-bottom: 6px;
   }
   .field input {
     width: 100%;
@@ -71,23 +63,19 @@
     outline: none;
     transition: all .15s ease;
   }
-  .field input:focus { 
+  .field input:focus {
     border-color: var(--primary);
     box-shadow: 0 0 0 1px var(--primary);
   }
 
-/* === ปุ่มกดสี Slate 900 ล้อไปกับธีมหลัก === */
-  /* Animation ตัวหมุนโหลด */
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Animation เมื่อล็อกอินพลาด */
   @keyframes shake {
     0%,100% { transform: translateX(0); }
     25%,75%  { transform: translateX(-6px); }
     50%      { transform: translateX(6px); }
   }
 
-/* ปุ่ม View (เข้าโหมดดูอย่างเดียว) — ปุ่มรอง ไม่แย่งความเด่นจากปุ่มเข้าสู่ระบบ */
   .view-divider {
     display: flex;
     align-items: center;
@@ -117,4 +105,3 @@
     border-color: rgba(223, 229, 239, .25);
     border-top-color: var(--text-main);
   }
-

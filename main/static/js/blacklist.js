@@ -1,4 +1,4 @@
-// ย้ายมาจาก templates/blacklist.html (บล็อก <script> เดิม)
+
 function blacklistApp() {
   return {
     blacklist: [],
@@ -7,7 +7,7 @@ function blacklistApp() {
     bulkResult: null,
     movingId: null,        // id ของแถวที่กำลังย้ายไป Whitelist (กันกดรัว)
 
-    // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
+
     loading: true,
     loadError: '',
 
@@ -18,14 +18,12 @@ function blacklistApp() {
           event: 'manual_blacklist'
         }
       ],
-      // กรอกเวลาเองแล้วเลือกหน่วย (นาที/ชั่วโมง/วัน) หรือเลือก 'permanent' = ถาวร
-      // helper ทั้งชุดอยู่ที่ static/js/common.js — ดู macro duration_picker
+
+
       duration: newDuration('permanent')
     },
 
-    // ยุบผลลัพธ์ที่ API ส่งมาเป็น 5 หมวด (added/reblocked/invalid/blocked_by_whitelist/skipped)
-    // ให้เหลือลิสต์เดียว 1 บรรทัด = 1 IP พร้อมเหตุผล — ผู้ใช้จะได้ไม่ต้องไล่อ่านหลายกล่อง
-    // key ต้องมีชื่อหมวดนำหน้าด้วย เพราะ IP เดียวกันโผล่ได้ 2 หมวด (เช่น พิมพ์ซ้ำในชุดเดียวกัน)
+
     get bulkLines() {
       const r = this.bulkResult && this.bulkResult.results
       if (!r) return []
@@ -41,8 +39,7 @@ function blacklistApp() {
         })
       }
 
-      // IP ที่ถูกบล็อกอยู่แล้ว — ไม่ได้เพิ่มแถวใหม่ แต่ส่งคำสั่ง block ซ้ำให้ agent แล้ว
-      // ถือว่าสำเร็จ (ok) เพราะผลลัพธ์ที่แอดมินต้องการคือ IP นี้โดนบล็อกอยู่จริงทั้งสองฝั่ง
+
       for (const item of r.reblocked || []) {
         lines.push({
           key: 'reblocked:' + item.ip_address,
@@ -52,7 +49,7 @@ function blacklistApp() {
         })
       }
 
-      // หมวดที่ไม่ได้บันทึก — reason จาก API เป็นภาษาไทยอยู่แล้ว ใช้ตรง ๆ ได้
+
       for (const group of ['invalid', 'blocked_by_whitelist', 'skipped']) {
         for (const item of r[group] || []) {
           lines.push({
@@ -67,17 +64,13 @@ function blacklistApp() {
       return lines
     },
 
-    // ครั้งที่เท่าไรของรอบบล็อกนี้ — ตัวเลขเดียวกับที่ใช้คูณระยะเวลาตามนโยบาย escalation
-    // (แถวที่แอดมินเพิ่งปลดบล็อกเองจะเป็น 0 แต่แถวพวกนั้นไม่ active จึงไม่ขึ้นในตารางนี้)
+
     formatBlockCount(count) {
       if (!count) return 'ครั้งแรก'
       return count === 1 ? 'ครั้งแรก' : `ครั้งที่ ${count}`
     },
 
-    // ระบบบล็อกเอง -> แสดงแค่ 'system' · ชนิดการโจมตีไม่ต้องซ้ำตรงนี้ เพราะคอลัมน์
-    // Reason / Event ข้าง ๆ บอกอยู่แล้ว (ค่าใน DB ยังเก็บเป็น detector:<ชนิด> ไว้เหมือนเดิม
-    // เผื่อ query ย้อนหลัง — เอามาใส่ tooltip ให้ hover ดูได้)
-    // ว่าง = แถวที่มีอยู่ก่อนระบบเก็บข้อมูลนี้ (ไม่มีให้ backfill ย้อนหลัง)
+
     formatAddedBy(createdBy) {
       if (!createdBy) return 'ไม่ทราบ'
       if (createdBy.startsWith('detector:')) return 'system'
@@ -241,7 +234,7 @@ function blacklistApp() {
           this.resetBlacklistForm()
         }
 
-        // บอกระยะเวลาที่เลือกไว้ในข้อความด้วย — ตอนนี้กรอกเองได้ทุกค่า ไม่ใช่ตัวเลือกตายตัวแล้ว
+
         const blockLabel = formatDuration(durationSeconds(this.form.duration))
 
         if (added > 0 && reblocked > 0) {
@@ -294,8 +287,7 @@ function blacklistApp() {
       }
     },
 
-    // ปลดบล็อก + เพิ่มเข้า Whitelist ในคำขอเดียว — ถ้าทำมือทีละหน้าต้องกด Unblock
-    // ที่นี่ก่อนแล้วค่อยไปหน้า Whitelist ไม่งั้นจะติดเงื่อนไข "IP กำลังถูกบล็อกอยู่"
+
     async moveToWhitelist(item) {
       const ok = await this.$store.ui.confirm({
         title: 'ย้าย IP ไป Whitelist',

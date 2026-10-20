@@ -17,7 +17,7 @@ TZ = ZoneInfo("Asia/Bangkok")
 AGENT_RUNTIME_TTL_SECONDS = 15
 AGENT_COMMAND_CHANNEL_PREFIX = "agent_commands:"
 
-# รอข้อความรอบละกี่วินาทีก่อนวนกลับมาเช็คใหม่ — ไม่ใช่ timeout ที่เป็น error
+
 PUBSUB_POLL_SECONDS = 5
 
 
@@ -36,7 +36,7 @@ def agent_command_channel(agent_id: str) -> str:
 async def load_blacklist_ips() -> list[dict]:
     try:
         async with AsyncSessionLocal() as db:
-            # เฉพาะ IP ที่ยัง block อยู่จริง (ไม่รวมที่หมดอายุแล้ว)
+
             rows = await get_active_blacklist(db)
 
             blacklist = []
@@ -171,7 +171,7 @@ def save_agent_runtime(
             "last_seen": datetime.now(TZ).isoformat(),
             "last_seen_text": now_thai(),
             "last_seen_ts": now_ts,
-            # ที่อยู่ central ที่ agent ตัวนี้เกาะอยู่ — ใช้ยืนยันตอนย้าย central ว่าย้ายตามครบหรือยัง
+
             "central_host": central_host,
             "central_port": central_port,
         }
@@ -186,21 +186,21 @@ def save_agent_runtime(
             ip_blacklist = loop.run_until_complete(load_blacklist_ips())
             ip_whitelist = loop.run_until_complete(load_whitelist_ips())
 
-            # ส่ง hello แบบไม่แนบ blacklist เพื่อไม่ให้กระทบ behavior เดิม
+
             send_hello_to_agent(
                 r=r,
                 agent_id=agent_id,
                 ip_blacklist=[],
             )
 
-            # ส่ง sync แยกอีก command
+
             send_sync_blacklist_to_agent(
                 r=r,
                 agent_id=agent_id,
                 ip_blacklist=ip_blacklist,
             )
 
-            # sync whitelist ให้ agent ใช้เป็น never-block list อัตโนมัติ
+
             send_sync_whitelist_to_agent(
                 r=r,
                 agent_id=agent_id,
@@ -256,10 +256,7 @@ def listen_agent_metrics() -> None:
             print("[CENTRAL] Redis connected")
             print("[CENTRAL] Listening agent_metrics...")
 
-            # อ่านด้วย get_message ไม่ใช่ listen(): redis-py 8 เอา socket_connect_timeout
-            # มาเป็น socket_timeout ด้วย การ block รออ่านจึงเด้ง TimeoutError ทุก 5 วินาที
-            # ทั้งที่ "ช่วงที่ไม่มีข้อความ" เป็นเรื่องปกติของ pubsub — เดิมต้องรื้อ subscription
-            # ทิ้งแล้ว subscribe ใหม่ทุก 6 วินาที (มีช่วงสั้น ๆ ที่ไม่มีใคร subscribe = ข้อความหาย)
+
             while True:
                 try:
                     message = pubsub.get_message(timeout=PUBSUB_POLL_SECONDS)
@@ -282,11 +279,11 @@ def listen_agent_metrics() -> None:
                 cpu = data.get("cpu")
                 ram = data.get("ram")
 
-                # IP ที่ agent อ่านจาก interface ของตัวเอง ณ ตอนส่ง (ไม่ใช่ค่าที่ฝังในไฟล์)
+
                 host_ip = data.get("host_ip")
                 host_iface = data.get("host_iface")
 
-                # ที่อยู่ central ที่ agent ใช้อยู่ (agent รุ่นเก่าไม่ส่งมา = None)
+
                 central_host = data.get("central_host")
                 central_port = data.get("central_port")
 
@@ -338,7 +335,7 @@ def listen_agent_metrics() -> None:
             time.sleep(5)
 
         finally:
-            # ปิดเฉพาะ pubsub (คืน connection เข้า pool) — client กลางห้ามปิด
+
             try:
                 if pubsub:
                     pubsub.close()

@@ -25,8 +25,8 @@ def username_for(agent_id: str) -> str:
 
 
 def _line(username: str, agent_id: str, password: str) -> str:
-    # Filebeat needs INFO/SELECT/RPUSH; agent_core needs PING/SUBSCRIBE/PUBLISH.
-    # Publishing is restricted to metrics, and subscriptions to this agent's channel.
+
+
     return (
         f"user {username} on >{password} -@all +ping +info +select +rpush +subscribe "
         f"~raw_logs_queue resetchannels &global_commands &agent_commands:{agent_id} "
@@ -81,7 +81,7 @@ def ensure_agent_credentials(agent_id: str) -> tuple[str, str, bool]:
             if len(password_tokens) != 1:
                 raise RuntimeError(f"Cannot recover password for {username}; keep the current package")
             password = password_tokens[0]
-            # Refresh permissions when upgrading an existing account, preserving its password.
+
             replacement = _line(username, agent_id, password)
             if matching[0] != replacement:
                 lines[lines.index(matching[0])] = replacement

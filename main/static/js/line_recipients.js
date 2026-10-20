@@ -1,29 +1,27 @@
-// ย้ายมาจาก templates/line_recipients.html (บล็อก <script> เดิม)
+
 function lineRecipientsApp() {
   return {
     recipients: [],
     groups: [],
     busyId: null,
 
-    // LINE OA ที่ระบบใช้ส่งแจ้งเตือน — โหลดแยกจากรายชื่อผู้รับ เพราะเป็นคนละ endpoint
-    // และไม่ควรทำให้ทั้งหน้าพังถ้าฝั่งนี้พลาด (แถบหายไปเฉย ๆ รายชื่อยังใช้งานได้)
+
     oa: { oa_id: '', add_friend_url: null },
     oaLoaded: false,
 
-    // id ของคนที่รูปโหลดไม่ขึ้น (URL หมดอายุ / เครื่องนี้ออกเน็ตไม่ได้) — สลับไปใช้ไอคอนแทน
-    // ถ้าไม่จำไว้ <img> ที่พังจะขึ้นเป็นรูปแตกค้างอยู่ในการ์ด
+
     brokenAvatars: [],
 
     markAvatarBroken(id) {
       if (!this.brokenAvatars.includes(id)) this.brokenAvatars.push(id)
     },
 
-    // แยก "กำลังโหลด" กับ "โหลดไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" (ดู state-box ด้านบน)
+
     loading: true,
     loadError: '',
 
     statusOrder: ['pending', 'approved', 'rejected'],
-    // คำเดียวกันทั้งหัวข้อกลุ่มและป้ายบนการ์ด — ผู้ใช้จะได้ไม่ต้องแปลว่าสองคำนี้คือสถานะเดียวกัน
+
     statusLabels: {
       pending: 'รออนุมัติ',
       approved: 'อนุมัติแล้ว',
@@ -45,7 +43,7 @@ function lineRecipientsApp() {
         if (!res.ok) throw new Error(`เซิร์ฟเวอร์ตอบกลับ ${res.status}`)
         this.oa = await res.json()
       } catch (err) {
-        // ไม่ขึ้น error ให้ผู้ใช้ — แถบนี้เป็นข้อมูลประกอบ ไม่ใช่งานหลักของหน้า
+
         console.error('โหลด LINE OA ไม่สำเร็จ', err)
       } finally {
         this.oaLoaded = true
@@ -59,7 +57,7 @@ function lineRecipientsApp() {
         await navigator.clipboard.writeText(text)
         this.$store.ui.success('คัดลอกแล้ว')
       } catch (err) {
-        // clipboard API ใช้ไม่ได้ (เบราว์เซอร์เก่า/ไม่ใช่ secure context) — ถอยไปใช้วิธีเดิม
+
         const box = document.createElement('textarea')
         box.value = text
         box.style.position = 'fixed'
@@ -89,7 +87,7 @@ function lineRecipientsApp() {
         }
         this.recipients = await res.json()
         this.groupRecipients()
-        // กด Refresh = ให้โอกาสรูปที่เคยพังโหลดใหม่ (เจ้าตัวเปลี่ยนรูป/เน็ตกลับมาแล้ว)
+
         this.brokenAvatars = []
         this.loadError = ''
       } catch (err) {
@@ -103,7 +101,7 @@ function lineRecipientsApp() {
     async setStatus(r, action) {
       const name = r.display_name || r.line_user_id
 
-      // อนุมัติ = เริ่มส่ง alert การโจมตีเข้า LINE ของคนนี้ทันที ต้องถามก่อน
+
       if (action === 'approve') {
         const ok = await this.$store.ui.confirm({
           title: 'อนุมัติผู้รับแจ้งเตือน',
@@ -138,8 +136,8 @@ function lineRecipientsApp() {
       const name = r.display_name || r.line_user_id
 
       const ok = await this.$store.ui.confirm({
-        // ไม่ใช้ #id เป็นหัวข้อแล้ว เพราะตารางไม่ได้โชว์ id ให้เทียบ — ชื่อที่แสดงอยู่ใน
-        // detail ด้านล่างคือสิ่งที่ผู้ใช้เอาไปตรวจสอบได้จริงว่ากำลังลบคนถูกคน
+
+
         title: 'ลบผู้รับแจ้งเตือน',
         message: 'บัญชีนี้จะไม่ได้รับแจ้งเตือนการโจมตีทาง LINE อีก ',
         detail: name,

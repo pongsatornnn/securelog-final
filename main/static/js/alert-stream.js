@@ -1,4 +1,4 @@
-// SSE เส้นเดียวของ alert ที่ทุกหน้าใช้ร่วมกัน (โหลดจาก base.html)
+
 window.AlertStream = (function () {
   var BASE_RETRY_MS = 3000
   var MAX_RETRY_MS = 30000
@@ -13,7 +13,7 @@ window.AlertStream = (function () {
     var fns = listeners[type]
 
     for (var i = 0; i < fns.length; i++) {
-      // listener ตัวหนึ่งพังต้องไม่ทำให้ตัวที่เหลือไม่ได้รับ event
+
       try {
         fns[i](payload)
       } catch (err) {
@@ -61,12 +61,12 @@ window.AlertStream = (function () {
       clearTimeout(retryTimer)
       retryTimer = setTimeout(probeThenReconnect, retryMs)
 
-      // ถ้า server ล่ม/Redis ล่ม จะ error ทันทีทุกครั้งที่ต่อ — ถอยห่างขึ้นเรื่อย ๆ ไม่ยิงรัว
+
       retryMs = Math.min(retryMs * 2, MAX_RETRY_MS)
     }
   }
 
-  // EventSource ไม่ได้วิ่งผ่าน window.fetch จึงไม่โดน session guard (static/session.js)
+
   function probeThenReconnect() {
     fetch(window.APP_BASE + '/api/alerts_unread_count', { cache: 'no-store' })
       .then(function () {
@@ -90,10 +90,10 @@ window.AlertStream = (function () {
     setState('disconnected')
   }
 
-  // ─── วงจรชีวิตของ connection ───
+
   window.addEventListener('pagehide', stop)
 
-  // ถูกปลุกกลับจาก bfcache (กด back/forward) = หน้าเดิมถูกใช้ต่อทั้งที่เราปิดเส้นไปแล้ว
+
   window.addEventListener('pageshow', function (event) {
     if (event.persisted) connect()
   })

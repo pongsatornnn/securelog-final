@@ -1,16 +1,5 @@
-# ประเทศ "ผู้ถือ IP" — ประเทศขององค์กรที่ได้รับช่วง IP จากผู้ดูแล IP (RIPE / ARIN / APNIC / LACNIC / AFRINIC)
-#
-# ต่างจาก geoip.py (ประเทศที่ใช้งาน) — เช่น IP ที่ผู้ถืออยู่ยูเครนแต่ใช้งานในสหรัฐฯ geoip.py ตอบ US ไฟล์นี้ตอบ UA
-# หน้าเว็บยึดประเทศที่ใช้งานเป็นหลัก · ประเทศผู้ถือแสดงในหน้ารายละเอียด และใช้แทนเมื่อ GeoIP หาไม่เจอ
-#
-# ข้อมูลมาจากไฟล์สถิติการแจก IP (delegated-*-extended-latest) ที่ผู้ดูแล IP เผยแพร่เป็นสาธารณะ
-# โหลดล่วงหน้าด้วย update_geoip.sh แล้วย่อเป็น main/database/geoip/holder-country.txt.gz
-# — ไม่ส่ง IP ไปถามที่ไหนตอนใช้งาน · ไม่มีไฟล์ = คืน None (หน้าเว็บแค่ไม่แสดง)
-#
-# ข้อจำกัด: ได้ประเทศของคนที่ได้รับ IP จากผู้ดูแลโดยตรง — ถ้า ISP/cloud แบ่งเช่าต่อ จะได้ประเทศของ ISP
-#
-# ใช้เป็นสคริปต์สร้างไฟล์ได้ด้วย (python3 ล้วน ไม่พึ่ง venv):
-#   python3 geoip_holder.py build <ไฟล์ delegated ...> <ไฟล์ปลายทาง .txt.gz>
+
+
 
 import gzip
 import ipaddress
@@ -28,7 +17,7 @@ HOLDER_DB_PATH = Path(
 )
 NAMES_PATH = Path(__file__).resolve().parent / "database" / "country_names.json"
 
-# สถานะในไฟล์ของผู้ดูแล IP -> คำอธิบายบนหน้าเว็บ
+
 STATUS_TEXT = {
     "s": "ได้รับ IP ตรงจากผู้ดูแล IP",   # assigned — ผู้ใช้ปลายทางได้ไปเอง
     "a": "ได้รับผ่านผู้ให้บริการ (ISP/hosting)",  # allocated — ISP ได้ไปแบ่งต่อ
@@ -36,7 +25,7 @@ STATUS_TEXT = {
 
 CHECK_SECONDS = 60  # เช็คว่าไฟล์ถูกอัปเดตไหม ไม่ถี่กว่านี้
 
-# รหัสภูมิภาค (บล็อกเก่าที่ผู้ดูแล IP ไม่ได้ระบุประเทศ) — ไม่ใช่ประเทศจริง หน้าเว็บไม่ใส่ธง
+
 REGION_CODES = {"EU", "AP"}
 
 _names: dict | None = None
@@ -45,15 +34,13 @@ _table_mtime: float | None = None
 _next_check = 0.0
 
 
-# ───────────────────────── สร้างไฟล์ (เรียกจาก update_geoip.sh) ─────────────────────────
-
 def build(sources: list[str], dest: str) -> int:
     rows = []
     for src in sources:
         with open(src, encoding="utf-8", errors="replace") as f:
             for line in f:
                 p = line.strip().split("|")
-                # registry|cc|type|start|value|date|status[|opaque-id]
+
                 if len(p) < 7 or line.startswith("#") or p[1] == "*" or p[3] == "*":
                     continue
                 kind, cc, status = p[2], p[1].upper(), p[6]
@@ -71,7 +58,7 @@ def build(sources: list[str], dest: str) -> int:
                     s = int(start)
                     rows.append((4, s, s + value - 1, cc, st))
                 else:
-                    # IPv6 แจกเล็กสุด /48 — เก็บแค่ 64 บิตบนก็พอ (ประหยัดหน่วยความจำ)
+
                     s = int(start) >> 64
                     rows.append((6, s, s + (1 << (64 - value)) - 1 if value <= 64 else s, cc, st))
 
@@ -79,7 +66,7 @@ def build(sources: list[str], dest: str) -> int:
     merged = []
     for r in rows:
         last = merged[-1] if merged else None
-        # ช่วงติดกัน ประเทศ+สถานะเดียวกัน -> รวมเป็นแถวเดียว (ไฟล์เล็กลงมาก)
+
         if last and last[0] == r[0] and last[3] == r[3] and last[4] == r[4] and r[1] <= last[2] + 1:
             merged[-1] = (last[0], last[1], max(last[2], r[2]), last[3], last[4])
         else:
@@ -92,8 +79,6 @@ def build(sources: list[str], dest: str) -> int:
     os.replace(tmp, dest)
     return len(merged)
 
-
-# ───────────────────────── ค้นหา (ใช้ในแอป) ─────────────────────────
 
 def _load():
     v4s, v4e, v4m = array("L"), array("L"), array("H")
@@ -114,7 +99,7 @@ def _load():
 
 
 def _get_table():
-    # โหลดครั้งแรกที่ใช้ และโหลดใหม่เองเมื่อไฟล์ถูกอัปเดต (เช็คทุก CHECK_SECONDS) — ไม่ต้อง restart
+
     global _table, _table_mtime, _next_check
     now = time.monotonic()
     if _table is not None and now < _next_check:
@@ -143,7 +128,7 @@ def _country_name(code: str) -> str:
 
 
 def lookup_holder_country(ip: str | None) -> dict | None:
-    # คืน {"code": "UA", "name": "Ukraine", "status": "s", "status_text": "..."} · None = ไม่รู้
+
     if not ip:
         return None
     try:

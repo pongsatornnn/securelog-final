@@ -1,4 +1,4 @@
-# CLI ดู/แก้ TTL ของ blacklist (ระยะเวลา block ก่อนหมดอายุ ต่อ detection_type)
+
 
 import sys
 import asyncio
@@ -20,7 +20,7 @@ def fmt_ttl(ttl_seconds: int | None) -> str:
 
 
 async def cmd_show() -> None:
-    # seed default ของทุกชนิดที่รู้จักก่อน เพื่อให้เห็นครบ
+
     for dt in BASE_TTL_SECONDS:
         await get_ttl(dt)
 

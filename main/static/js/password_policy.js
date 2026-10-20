@@ -1,5 +1,5 @@
-// ตรวจรหัสผ่านด้วย "กฎชุดเดียวกับฝั่ง server" — ดึงกฎมาจาก /api/password-policy ตอนเปิดหน้า
-// (นิยามกฎอยู่ที่ main/password_policy.py ที่เดียว ที่นี่แค่ประเมินตามชนิดของกฎ)
+
+
 window.PasswordPolicy = {
   loaded: false,
   rules: [],
@@ -15,7 +15,7 @@ window.PasswordPolicy = {
       this.minLength = data.min_length || 8
       this.loaded = true
     } catch (e) {
-      // โหลดไม่ได้ = ไม่แสดง checklist แต่ฝั่ง server ยังบังคับอยู่เหมือนเดิม
+
       this.loaded = false
     }
     return this
@@ -32,7 +32,7 @@ window.PasswordPolicy = {
     }
   },
 
-  // คืนสถานะทุกข้อไว้ให้หน้าเว็บ render เป็น checklist
+
   check(password) {
     const pw = password || ''
     return this.rules.map(r => ({ id: r.id, label: r.label, passed: this.testRule(r, pw) }))

@@ -1,4 +1,4 @@
-// ย้ายมาจาก templates/login.html (บล็อก <script> เดิม)
+
 function loginApp() {
   return {
     username: '',     
@@ -45,7 +45,7 @@ function loginApp() {
       }
     },
 
-    // ปุ่ม View — เข้าบัญชีดูอย่างเดียวโดยไม่ต้องกรอกรหัส (ขึ้นเฉพาะตอน admin เปิดโหมด View ไว้)
+
     async viewLogin() {
       if (this.loading) return
 

@@ -1,4 +1,4 @@
-# Cache + DB layer สำหรับระดับความรุนแรง (severity) ของ alert ต่อ (detection_type, mode)
+
 
 from database.connection import AsyncSessionLocal
 from database.crud import get_alert_severity, upsert_alert_severity
@@ -14,7 +14,7 @@ LOG_PREFIX = "SEVERITY-CACHE"
 VALID_SEVERITIES = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 DEFAULT_FALLBACK_SEVERITY = "LOW"
 
-# ค่า default ของแต่ละ severity_key (ย้ายมาจาก alerts.SEVERITY_MAP เดิม — ค่าเท่าเดิมทุกตัว)
+
 DEFAULT_SEVERITY = {
     "ssh_brute_force": {
         "severity": "CRITICAL",
@@ -64,7 +64,7 @@ def severity_cache_key(severity_key: str) -> str:
 
 
 async def _load_one(severity_key: str) -> dict | None:
-    # คืน {'severity_key','severity'} ของ key นี้เป๊ะๆ (cache-first แล้ว DB)
+
     cached = cache_get_json(severity_cache_key(severity_key), log_prefix=LOG_PREFIX)
     if cached is not None:
         return cached
@@ -73,7 +73,7 @@ async def _load_one(severity_key: str) -> dict | None:
         row = await get_alert_severity(db, severity_key)
 
         if not row:
-            # snapshot (database/seed_data.json) ทับค่าในโค้ด — ต้องได้ค่าเดียวกับตอน startup seed
+
             default = {
                 **DEFAULT_SEVERITY.get(severity_key, {}),
                 **(snapshot_severity(severity_key) or {}),
@@ -96,7 +96,7 @@ async def _load_one(severity_key: str) -> dict | None:
 
 
 async def get_severity(detection_type: str, mode: str | None = None) -> str:
-    # Entry point หลัก — ตรงกับ alerts.get_severity เดิมทุกกรณี (แค่กลายเป็น async + DB-backed)
+
     if mode:
         specific = await _load_one(severity_key_for(detection_type, mode))
         if specific:
@@ -110,7 +110,7 @@ async def get_severity(detection_type: str, mode: str | None = None) -> str:
 
 
 async def update_severity(severity_key: str, severity: str) -> dict:
-    # แก้ severity (จาก CLI/API): เขียน DB แล้วเคลียร์ cache ทันที (มีผลรอบถัดไปเลย)
+
     async with AsyncSessionLocal() as db:
         row = await upsert_alert_severity(db, severity_key, severity=severity)
         result = {"severity_key": row.severity_key, "severity": row.severity}

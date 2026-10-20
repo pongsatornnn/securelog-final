@@ -1,4 +1,4 @@
-# เข้ารหัสค่า secret ก่อนเก็บลงฐานข้อมูล (encryption at rest) — ใช้กับตาราง app_settings
+
 
 import base64
 import os
@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 LOG_PREFIX = "SECRET-BOX"
 
-# ค่าที่ผ่านการเข้ารหัสแล้วขึ้นต้นด้วยคำนำหน้านี้เสมอ — ใช้แยกจากค่า plaintext เดิม
+
 ENC_PREFIX = "enc:v1:"
 
 DEFAULT_KEY_FILE = os.path.join(
@@ -17,7 +17,7 @@ DEFAULT_KEY_FILE = os.path.join(
     ".settings_key",
 )
 
-# อ่านไฟล์กุญแจครั้งเดียวแล้วถือไว้ใน process — get_setting() ถูกเรียกทุกครั้งที่ยิง LINE/Gemini
+
 _fernet: Fernet | None = None
 
 
@@ -26,7 +26,7 @@ def key_file_path() -> str:
 
 
 def _load_or_create_key() -> bytes:
-    # อ่านกุญแจจากไฟล์ ถ้ายังไม่มีก็สร้างให้ (สิทธิ์ 0600)
+
     path = key_file_path()
 
     if os.path.exists(path):
@@ -37,7 +37,7 @@ def _load_or_create_key() -> bytes:
 
     key = base64.urlsafe_b64encode(secrets.token_bytes(32))
 
-    # เขียนแบบตั้งสิทธิ์ตั้งแต่ตอนสร้างไฟล์ ไม่ใช่เขียนก่อนแล้วค่อย chmod
+
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(key)
@@ -58,14 +58,14 @@ def is_encrypted(value: str | None) -> bool:
 
 
 def encrypt(value: str) -> str:
-    # คืน ciphertext พร้อมคำนำหน้า · ค่าว่างไม่เข้ารหัส (ไม่มีอะไรให้ปิด และทำให้เช็ค 'ยังไม่ตั้ง' ง่าย)
+
     if not value:
         return ""
     return ENC_PREFIX + _box().encrypt(value.encode("utf-8")).decode("ascii")
 
 
 def decrypt(value: str | None) -> str:
-    # ถอดค่าที่เข้ารหัสไว้ · ค่าที่ยังเป็น plaintext (ของเก่าก่อนอัปเกรด) คืนไปตามเดิม
+
     if not value:
         return ""
 
