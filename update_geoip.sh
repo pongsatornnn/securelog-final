@@ -41,7 +41,7 @@ RIR_URLS=(
 
 update_holder() {
     if ! command -v python3 >/dev/null 2>&1; then
-        echo "ข้ามประเทศผู้ถือ IP: เครื่องนี้ไม่มี python3"
+        echo "Skipping IP holder country data: python3 is not installed"
         return 0
     fi
 
@@ -63,17 +63,17 @@ update_holder() {
         if python3 "$PROJECT_DIR/main/geoip_holder.py" build "${got[@]}" "$HOLDER_DEST" >/dev/null; then
             chmod 644 "$HOLDER_DEST"
             if [ "${#missing[@]}" -eq 0 ]; then
-                echo "อัปเดตประเทศผู้ถือ IP แล้ว (ครบ 5 แหล่ง): $HOLDER_DEST"
+                echo "Updated IP holder country data (all 5 sources): $HOLDER_DEST"
             else
-                echo "สร้างประเทศผู้ถือ IP จากเท่าที่โหลดได้ (ขาด: ${missing[*]}) — รันใหม่ภายหลังให้ครบ"
+                echo "Built IP holder country data from available sources (missing: ${missing[*]}); rerun later"
             fi
         else
-            echo "สร้างตารางประเทศผู้ถือ IP ไม่สำเร็จ — ใช้ไฟล์เดิมต่อ (ถ้ามี)"
+            echo "Could not build IP holder country data; keeping the existing file if available"
         fi
     elif [ "${#got[@]}" -gt 0 ]; then
-        echo "โหลดประเทศผู้ถือ IP ไม่ครบ (ขาด: ${missing[*]}) — ใช้ไฟล์เดิมต่อ"
+        echo "IP holder country download incomplete (missing: ${missing[*]}); keeping the existing file"
     else
-        echo "โหลดประเทศผู้ถือ IP ไม่ได้ — ใช้ไฟล์เดิมต่อ (ถ้ามี)"
+        echo "Could not download IP holder country data; keeping the existing file if available"
     fi
 }
 
@@ -88,15 +88,15 @@ for month in "$(date -u +%Y-%m)" "$(date -u -d "$(date -u +%Y-%m-15) -1 month" +
         gunzip -c "$TMP.gz" > "$TMP"
         # ไฟล์ mmdb ต้องมี marker นี้ท้ายไฟล์ — กันได้หน้า error HTML มาแทน
         if ! grep -aq 'MaxMind.com' "$TMP"; then
-            echo "ไฟล์ที่โหลดมาไม่ใช่ mmdb: $url" >&2
+            echo "Downloaded file is not an MMDB database: $url" >&2
             exit 1
         fi
         chmod 644 "$TMP"
         mv -f "$TMP" "$DEST"
-        echo "อัปเดตฐานข้อมูลประเทศของ IP แล้ว: $DEST ($month)"
+        echo "Updated IP country database: $DEST ($month)"
         exit 0
     fi
 done
 
-echo "โหลดไฟล์ GeoIP ไม่สำเร็จ — เช็คว่าเครื่องออกเน็ตไป download.db-ip.com ได้" >&2
+echo "GeoIP download failed; check access to download.db-ip.com" >&2
 exit 1

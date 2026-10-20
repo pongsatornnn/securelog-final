@@ -11,9 +11,14 @@ RELEASE_TAG=filebeat-acl-v8.19.23-1
 RELEASE_ASSET=filebeat-acl-8.19.23-linux-amd64
 RELEASE_SHA256=2f66b0bbfa1cdf6192ec04695f30f55850f8da2386dea44f2f94f596d486987f
 
-if [ -x "$OUTPUT" ] && "$OUTPUT" version 2>/dev/null | grep -q 'filebeat version 8.19.23 '; then
-    echo "Filebeat ACL binary is ready: $OUTPUT"
-    exit 0
+if [ -x "$OUTPUT" ]; then
+    OUTPUT_SHA256="$(sha256sum "$OUTPUT" | awk '{print $1}')"
+    if { [ "$OUTPUT_SHA256" = "$RELEASE_SHA256" ] ||
+         { [ -f "$OUTPUT.sha256" ] && [ "$(cat "$OUTPUT.sha256")" = "$OUTPUT_SHA256" ]; }; } &&
+       "$OUTPUT" version 2>/dev/null | grep -q 'filebeat version 8.19.23 '; then
+        echo "Filebeat ACL binary is ready: $OUTPUT"
+        exit 0
+    fi
 fi
 
 [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ] || {
@@ -28,10 +33,15 @@ for command_name in curl git python3 sha256sum tar; do
 done
 
 BUILD_DIR="$(mktemp -d "${FILEBEAT_BUILD_TMPDIR:-${TMPDIR:-/tmp}}/securelog-filebeat.XXXXXXXX")"
-trap 'rm -rf "$BUILD_DIR"' EXIT
+cleanup() {
+    chmod -R u+w "$BUILD_DIR" 2>/dev/null || true
+    rm -rf "$BUILD_DIR" || true
+}
+trap cleanup EXIT
 
 if [ "${FILEBEAT_BUILD_FROM_SOURCE:-0}" != 1 ]; then
     echo "Downloading prebuilt Filebeat ACL binary from GitHub Release"
+    export FILEBEAT_RELEASE_REPO="${FILEBEAT_RELEASE_REPO:-pongsatornnn/security-Project}"
     if python3 "$PROJECT_DIR/for_Agent/download_filebeat_acl.py" \
         "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_SHA256" "$BUILD_DIR/filebeat-acl" "$PROJECT_DIR"; then
         chmod 755 "$BUILD_DIR/filebeat-acl"
@@ -41,12 +51,11 @@ if [ "${FILEBEAT_BUILD_FROM_SOURCE:-0}" != 1 ]; then
         }
         mkdir -p "$(dirname "$OUTPUT")"
         install -m 755 "$BUILD_DIR/filebeat-acl" "$OUTPUT"
+        rm -f "$OUTPUT.sha256"
         echo "Filebeat ACL binary is ready: $OUTPUT"
         exit 0
     fi
-    echo "Cannot download the pinned Release asset. Give this private repo a GitHub credential" >&2
-    echo "(GH_TOKEN/GITHUB_TOKEN), or set FILEBEAT_BUILD_FROM_SOURCE=1 to build with Go." >&2
-    exit 1
+    echo "Release download unavailable; building the pinned Filebeat source instead" >&2
 fi
 
 if command -v go >/dev/null 2>&1 && [ "$(go version | awk '{print $3}')" = "go$GO_VERSION" ]; then
@@ -75,7 +84,7 @@ python3 "$PROJECT_DIR/for_Agent/build_filebeat_acl.py" "$BUILD_DIR/beats"
 echo "Building Filebeat (this may take several minutes)"
 (
     cd "$BUILD_DIR/beats"
-    GOCACHE="$BUILD_DIR/go-cache" GOPATH="$BUILD_DIR/go-path" \
+    GOCACHE="$BUILD_DIR/go-cache" GOPATH="$BUILD_DIR/go-path" GOFLAGS=-modcacherw \
         GOMAXPROCS=1 "$GO" build -p 1 -o "$BUILD_DIR/filebeat-acl" ./filebeat
 )
 "$BUILD_DIR/filebeat-acl" version | grep -q 'filebeat version 8.19.23 ' || {
@@ -85,4 +94,5 @@ echo "Building Filebeat (this may take several minutes)"
 
 mkdir -p "$(dirname "$OUTPUT")"
 install -m 755 "$BUILD_DIR/filebeat-acl" "$OUTPUT"
+sha256sum "$OUTPUT" | awk '{print $1}' > "$OUTPUT.sha256"
 echo "Filebeat ACL binary is ready: $OUTPUT"

@@ -17,9 +17,9 @@
 
 `setup-server.sh` ดาวน์โหลด binary ที่รองรับ Redis ACL จาก GitHub Release ของ repo
 และตรวจ SHA-256 ก่อนวางที่ `for_Agent/build/filebeat-acl-8.19.23-amd64`
-repo เป็น private จึงต้องมี GitHub credential ที่อ่าน repo ได้ หรือส่ง `GH_TOKEN`/
-`GITHUB_TOKEN` ให้สคริปต์ ถ้าดาวน์โหลดไม่ได้ สคริปต์จะหยุดพร้อมข้อความแก้ไข
-หากต้องการ build เอง ให้ใช้ `sudo FILEBEAT_BUILD_FROM_SOURCE=1 ./setup-server.sh`
+repo เป็น private จึงควรมี GitHub credential ที่อ่าน repo ได้ หรือส่ง `GH_TOKEN`/
+`GITHUB_TOKEN` ให้สคริปต์ ถ้าดาวน์โหลดไม่ได้ สคริปต์จะ build จาก source อัตโนมัติ
+หากต้องการ build เองตั้งแต่ต้น ให้ใช้ `sudo FILEBEAT_BUILD_FROM_SOURCE=1 ./setup-server.sh`
 เพื่อดาวน์โหลด Go 1.26.8 และ source Elastic Beats v8.19.23 รอบถัดไปใช้ binary เดิม
 ตั้ง `AGENT_CENTRAL_HOST`/`AGENT_CENTRAL_REDIS_PORT` ใน `.env` ให้ตรงปลายทาง
 
