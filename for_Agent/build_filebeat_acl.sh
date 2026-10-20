@@ -34,6 +34,7 @@ if [ "${FILEBEAT_BUILD_FROM_SOURCE:-0}" != 1 ]; then
     echo "Downloading prebuilt Filebeat ACL binary from GitHub Release"
     if python3 "$PROJECT_DIR/for_Agent/download_filebeat_acl.py" \
         "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_SHA256" "$BUILD_DIR/filebeat-acl" "$PROJECT_DIR"; then
+        chmod 755 "$BUILD_DIR/filebeat-acl"
         "$BUILD_DIR/filebeat-acl" version | grep -q 'filebeat version 8.19.23 ' || {
             echo "Downloaded Filebeat has the wrong version" >&2
             exit 1
