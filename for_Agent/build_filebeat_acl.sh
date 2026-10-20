@@ -7,6 +7,9 @@ OUTPUT="${FILEBEAT_ACL_BINARY:-$PROJECT_DIR/for_Agent/build/filebeat-acl-8.19.23
 GO_VERSION=1.26.8
 GO_SHA256=d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b
 BEATS_COMMIT=b90e15b68b4d5e79188b519937f55db9fd6524d2
+RELEASE_TAG=filebeat-acl-v8.19.23-1
+RELEASE_ASSET=filebeat-acl-8.19.23-linux-amd64
+RELEASE_SHA256=2f66b0bbfa1cdf6192ec04695f30f55850f8da2386dea44f2f94f596d486987f
 
 if [ -x "$OUTPUT" ] && "$OUTPUT" version 2>/dev/null | grep -q 'filebeat version 8.19.23 '; then
     echo "Filebeat ACL binary is ready: $OUTPUT"
@@ -26,6 +29,24 @@ done
 
 BUILD_DIR="$(mktemp -d "${FILEBEAT_BUILD_TMPDIR:-${TMPDIR:-/tmp}}/securelog-filebeat.XXXXXXXX")"
 trap 'rm -rf "$BUILD_DIR"' EXIT
+
+if [ "${FILEBEAT_BUILD_FROM_SOURCE:-0}" != 1 ]; then
+    echo "Downloading prebuilt Filebeat ACL binary from GitHub Release"
+    if python3 "$PROJECT_DIR/for_Agent/download_filebeat_acl.py" \
+        "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_SHA256" "$BUILD_DIR/filebeat-acl" "$PROJECT_DIR"; then
+        "$BUILD_DIR/filebeat-acl" version | grep -q 'filebeat version 8.19.23 ' || {
+            echo "Downloaded Filebeat has the wrong version" >&2
+            exit 1
+        }
+        mkdir -p "$(dirname "$OUTPUT")"
+        install -m 755 "$BUILD_DIR/filebeat-acl" "$OUTPUT"
+        echo "Filebeat ACL binary is ready: $OUTPUT"
+        exit 0
+    fi
+    echo "Cannot download the pinned Release asset. Give this private repo a GitHub credential" >&2
+    echo "(GH_TOKEN/GITHUB_TOKEN), or set FILEBEAT_BUILD_FROM_SOURCE=1 to build with Go." >&2
+    exit 1
+fi
 
 if command -v go >/dev/null 2>&1 && [ "$(go version | awk '{print $3}')" = "go$GO_VERSION" ]; then
     GO="$(command -v go)"
