@@ -15,10 +15,12 @@
 
 ## เตรียม Central ก่อนสร้างแพ็กเกจ
 
-วาง binary ที่ build จาก Elastic Beats v8.19.23 ด้วย
-`for_Agent/build_filebeat_acl.py` ไว้ที่
-`for_Agent/build/filebeat-acl-8.19.23-amd64` บน Central (ใช้ Go 1.26.8)
-และตั้ง `AGENT_CENTRAL_HOST`/`AGENT_CENTRAL_REDIS_PORT` ใน `.env` ให้ตรงปลายทาง
+`setup-server.sh` สร้าง binary จาก Elastic Beats v8.19.23 ให้อัตโนมัติเมื่อยังไม่มี
+โดยดาวน์โหลด Go 1.26.8 และ source, patch Redis AUTH แล้ววางผลลัพธ์ที่
+`for_Agent/build/filebeat-acl-8.19.23-amd64` บน Central ต้องมีอินเทอร์เน็ต
+และพื้นที่ว่างสำหรับ build; รอบถัดไปใช้ binary เดิม หากต้องการสร้างแยก ให้รัน
+`sudo bash for_Agent/build_filebeat_acl.sh` จากโฟลเดอร์โปรเจกต์
+ตั้ง `AGENT_CENTRAL_HOST`/`AGENT_CENTRAL_REDIS_PORT` ใน `.env` ให้ตรงปลายทาง
 
 เมื่อสร้าง Agent บน dashboard ระบบสร้าง Redis ACL user ตาม ID เช่น
 `Agent_001` → `agent_001` พร้อมรหัสสุ่มเฉพาะเครื่อง จากนั้นแนบ `site.conf`

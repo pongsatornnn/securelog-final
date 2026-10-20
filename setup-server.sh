@@ -1035,7 +1035,7 @@ apt_lists_fresh() {  # apt_lists_fresh MINUTES — เพิ่ง update สำ
 # แปลว่าเครื่องที่ clone มาจาก image เมื่อวานก็ยังต้องโหลดใหม่ ~10 MB แล้วเอา lists ทั้งกอง (~200 MB)
 # มา parse ใหม่อีก 13-15 วิ บนเครื่อง 1 core — ทั้งที่ของที่จะลงมีครบอยู่แล้ว จึงถามก่อนว่าขาดอะไรไหม
 # ค่อยออกเน็ต (FORCE_APT=1 = ทำแบบเดิมทุกรอบ: update แล้ว install ทั้งชุด เผื่ออยากได้รุ่นใหม่กว่า)
-APT_PKGS=(python3-venv python3-pip postgresql redis-server tar)
+APT_PKGS=(python3-venv python3-pip postgresql redis-server tar git curl)
 APT_TARGET=()
 for p in "${APT_PKGS[@]}"; do
     dpkg -s "$p" >/dev/null 2>&1 || APT_TARGET+=("$p")
@@ -1059,6 +1059,12 @@ else
     fi
     run_step "Installing ${APT_TARGET[*]}" apt-get install -y -qq "${APT_TARGET[@]}"
 fi
+
+# Agent ZIPs require a Filebeat binary that sends Redis AUTH with both the
+# username and password. Build it once on this Central; subsequent runs reuse it.
+log "Preparing Filebeat for Agent packages"
+run_step "Building Filebeat 8.19.23 with Redis ACL support" \
+    bash "$PROJECT_DIR/for_Agent/build_filebeat_acl.sh"
 
 # ปิด default redis (:6379) — เรารัน instance ของเราเองผ่าน centralredis (mTLS พอร์ตที่เลือกไว้ ตั้งต้น 6380)
 systemctl disable --now redis-server >/dev/null 2>&1 || true
