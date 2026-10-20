@@ -1,4 +1,4 @@
-# Detector: Web attack จาก normalized web access log — 2 แบบใน worker เดียว
+
 
 import re
 import time
@@ -22,7 +22,7 @@ NORMALIZED_WEB_QUEUE = "normalized_web_logs_queue"
 
 LOG_PREFIX = "WEB-DETECT"
 
-# detection_type -> rule_key ใน detection_rules
+
 RULE_KEY_BY_TYPE = {
     "sql_injection": "web_sql_injection",
     "xss": "web_xss",
@@ -31,13 +31,13 @@ RULE_KEY_BY_TYPE = {
     "http_flood": "web_http_flood",
 }
 
-# เก็บ history สูงสุดต่อ key เพื่อไม่ให้ memory โตไม่จำกัด
+
 MAX_EVENTS_PER_KEY = 1000
 
-# detector เก็บ regex ที่ compile แล้วใน memory และ reload จาก DB/cache ตาม interval นี้
+
 SIGNATURE_REFRESH_SECONDS = 30
 
-# ลำดับ = ความสำคัญ (รุนแรงกว่าอยู่ก่อน) เวลา request เดียว match หลายชนิด
+
 ATTACK_PRIORITY = [
     "sql_injection",
     "command_injection",
@@ -54,15 +54,12 @@ ATTACK_LABEL = {
 }
 
 
-# ============================================================
-
-# detection_type -> compiled regex (รวมทุก pattern ที่ active) หรือ None ถ้าไม่มี pattern
 _compiled_signatures: dict[str, re.Pattern | None] = {}
 _last_signature_reload: float = 0.0
 
 
 def compile_patterns(patterns: list[str]) -> re.Pattern | None:
-    # compile pattern ทั้งหมดของชนิดหนึ่งรวมเป็น regex เดียว (IGNORECASE)
+
     valid: list[str] = []
 
     for pattern in patterns:
@@ -79,7 +76,7 @@ def compile_patterns(patterns: list[str]) -> re.Pattern | None:
 
 
 def reload_signatures(loop: asyncio.AbstractEventLoop, force: bool = False) -> None:
-    # โหลด pattern จาก DB/cache มา compile เก็บใน memory
+
     global _last_signature_reload
 
     now_ts = time.time()
@@ -97,7 +94,6 @@ def reload_signatures(loop: asyncio.AbstractEventLoop, force: bool = False) -> N
     _last_signature_reload = now_ts
 
 
-# ============================================================
 events_by_key: dict[str, deque] = defaultdict(deque)
 
 
@@ -106,10 +102,8 @@ def clear_web_count(key: str) -> None:
     print(f"[{LOG_PREFIX}] cleared web attack count for [{key}]")
 
 
-# ============================================================
-
 def decode_url(value: str) -> list[str]:
-    # decode URL-encoding สองชั้น เพื่อดัก payload ที่ encode มา (เช่น %2e%2e%2f, %253c)
+
     try:
         once = unquote_plus(value)
         twice = unquote_plus(once)
@@ -118,15 +112,56 @@ def decode_url(value: str) -> list[str]:
         return []
 
 
-# request line ใน raw log — ใช้แทน path เมื่อ normalize แยก path ไม่ได้ (เช่น payload มีช่องว่างดิบ)
 RAW_REQUEST_RE = re.compile(r'"[A-Z]+ (.*?)(?: HTTP/[\d.]+)?"')
+PHPMYADMIN_TABLE_SELECT_RE = re.compile(
+    r"SELECT\s+\*\s+FROM\s+`(?P<table>[A-Za-z_][A-Za-z0-9_$]*)`\s*",
+    re.IGNORECASE,
+)
+
+
+def mask_phpmyadmin_table_select(path: str) -> str:
+    endpoint, separator, query = path.partition("?")
+    if not separator or endpoint.lower() != "/phpmyadmin/index.php":
+        return path
+
+    fields = []
+    for index, segment in enumerate(query.split("&")):
+        key, equals, value = segment.partition("=")
+        if equals:
+            fields.append((unquote_plus(key), unquote_plus(value), index, key, value))
+
+    def single_value(name: str) -> str | None:
+        values = [value for key, value, *_ in fields if key == name]
+        return values[0] if len(values) == 1 else None
+
+    if single_value("route") != "/table/change":
+        return path
+
+    sql_query = single_value("sql_query")
+    sql_signature = single_value("sql_signature")
+    where_signature = single_value("where_clause_signature")
+    table = single_value("table")
+    if not all((sql_query, sql_signature, where_signature, table)):
+        return path
+    if not all(re.fullmatch(r"[0-9a-f]{64}", value, re.IGNORECASE)
+               for value in (sql_signature, where_signature)):
+        return path
+
+    # Mask only this simple table query; every other parameter remains searchable.
+    match = PHPMYADMIN_TABLE_SELECT_RE.fullmatch(unquote_plus(sql_query))
+    if not match or match.group("table") != table:
+        return path
+
+    sql_fields = [field for field in fields if field[0] == "sql_query"]
+    _, _, index, raw_key, _ = sql_fields[0]
+    segments = query.split("&")
+    segments[index] = f"{raw_key}="
+    return f"{endpoint}?{'&'.join(segments)}"
 
 
 def build_haystack(log: dict) -> list[str]:
-    # จุดที่ payload ซ่อนได้: path ดิบ + path decode + user_agent
-    # ไม่ตรวจ raw log ทั้งบรรทัด — Referer คือ URL ของหน้าก่อนหน้า ทำให้ไฟล์ css/รูปที่โหลดตาม
-    # หน้านั้นโดนนับซ้ำ และวันที่/ขนาด/สถานะในบรรทัดก็ไปชน signature ได้
-    # คืนเป็นรายการแยกช่อง ตรวจทีละช่อง — ถ้าต่อกันเป็นสตริงเดียว regex ที่มี \s จะจับข้ามช่องได้
+
+
     path = str(log.get("path") or "")
     user_agent = str(log.get("user_agent") or "")
 
@@ -134,13 +169,14 @@ def build_haystack(log: dict) -> list[str]:
         found = RAW_REQUEST_RE.search(str(log.get("raw_message") or ""))
         path = found.group(1) if found else ""
 
+    path = mask_phpmyadmin_table_select(path)
     parts = [path, *decode_url(path), user_agent, *decode_url(user_agent)]
 
     return list(dict.fromkeys(p for p in parts if p))
 
 
 def detect_attack_types(haystack: list[str]) -> list[tuple[str, str]]:
-    # คืน list ของ (detection_type, signature ที่ match) เรียงตามความสำคัญ
+
     matches: list[tuple[str, str]] = []
 
     for detection_type in ATTACK_PRIORITY:
@@ -156,8 +192,6 @@ def detect_attack_types(haystack: list[str]) -> list[tuple[str, str]]:
 
     return matches
 
-
-# ============================================================
 
 def print_counted_web_log(
     detection_type: str,
@@ -209,15 +243,13 @@ def print_web_alert(
     print("=" * 90 + "\n")
 
 
-# ============================================================
-
 def process_http_flood(
     log: dict,
     source_ip: str | None,
     now_ts: float,
     loop: asyncio.AbstractEventLoop,
 ) -> None:
-    # App-level DoS: นับจำนวน request "ทั้งหมด" ต่อ source_ip ใน sliding window
+
     if not source_ip:
         return
 
@@ -274,19 +306,17 @@ def process_http_flood(
         clear_web_count(key)
 
 
-# ============================================================
-
 def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     if log.get("category") != "web":
         return
 
-    # refresh pattern จาก DB เป็นระยะ (โหลดจริงเฉพาะเมื่อครบ interval)
+
     reload_signatures(loop)
 
     source_ip = log.get("source_ip")
     now_ts = parse_agent_time_to_epoch(log)
 
-    # App-level DoS: นับทุก request ต่อ IP — ต้องรันก่อน signature return
+
     process_http_flood(log, source_ip, now_ts, loop)
 
     haystack = build_haystack(log)
@@ -295,7 +325,7 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     if not matches:
         return
 
-    # request เดียวอาจ match หลายชนิด เอาตัวแรก (สำคัญสุด) เป็น detection_type หลัก
+
     detection_type, signature = matches[0]
     all_types = [m[0] for m in matches]
 
@@ -307,7 +337,7 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     window_seconds = rule["window_seconds"]
     threshold = rule["threshold"]
 
-    # web signature นับตาม IP เป็นหลัก
+
     key = f"{detection_type}:{source_ip or 'unknown'}"
 
     event = {
@@ -357,10 +387,8 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
         clear_web_count(key)
 
 
-# ============================================================
-
 def prepare_web_detector(loop: asyncio.AbstractEventLoop) -> None:
-    # seed rule ลง DB + โหลด signature ครั้งแรกให้พร้อมก่อนรับ log
+
     seed_rules(loop, RULE_KEY_BY_TYPE.values(), LOG_PREFIX)
     reload_signatures(loop, force=True)
     total = sum(1 for p in _compiled_signatures.values() if p is not None)
