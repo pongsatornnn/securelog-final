@@ -17,13 +17,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# ---------------------------------------------------------------------------
 
 CONFIG_FILE_NAME = "agent_config.json"
 
 
 def _read_kv_file(path: Path) -> dict:
-    # อ่านไฟล์ KEY=VALUE (agent_info.txt) — ไฟล์ไม่มี/บรรทัดเสีย ข้ามเงียบ ๆ
+
     info = {}
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -49,7 +48,7 @@ def _load_config() -> dict:
 
 
 def _find_cert(filename: str) -> str:
-    # หาไฟล์ cert: cert/ ก่อน (โครงหลัง setup.sh) แล้วค่อยข้างไฟล์นี้ (โครงจาก zip ดิบ)
+
     for candidate in (BASE_DIR / "cert" / filename, BASE_DIR / filename):
         if candidate.exists():
             return str(candidate)
@@ -71,52 +70,53 @@ AGENT_CERT_FILE = _find_cert(_INFO.get("CERT_FILE", f"{AGENT_ID}.crt"))
 AGENT_KEY_FILE = _find_cert(_INFO.get("KEY_FILE", f"{AGENT_ID}.key"))
 CA_CERT_FILE = _find_cert(_INFO.get("CA_FILE", "ca.crt"))
 
-# interface ที่ใช้เป็นแหล่งของ IP เครื่องนี้ — เลือกตอนรัน setup.sh (setup.sh เขียนลง
+
 HOST_IFACE = str(_CONFIG.get("host_iface") or "")
 
 METRICS_INTERVAL_SECONDS = 4
 RECONNECT_DELAY_SECONDS = 5
 
-# ต่อ endpoint ปัจจุบันไม่ติดกี่ครั้งติดกันถึงจะเริ่มไล่ลองที่อยู่สำรอง (5 วิ/ครั้ง)
+
 FAILOVER_AFTER_FAILURES = 2
 
-# timeout ตอนทดสอบว่าที่อยู่ใหม่ของ central ใช้ได้จริงไหม (วินาที)
+
 PROBE_TIMEOUT_SECONDS = 5
 
-# ตัวเฝ้าสาย: ตรวจทุกกี่วินาที และเงียบจาก central นานแค่ไหนถึงถือว่าสายตาย
-# (กรณี central หายไปเฉย ๆ TCP ฝั่งเราจะค้างอยู่แบบไม่มี error — ต้องมีคนคอยสะกิด)
+
 LINK_CHECK_SECONDS = 10
 LINK_SILENCE_SECONDS = 30
 
-# เก็บที่อยู่ central ได้มากสุดกี่ที่ (รวมตัวที่ใช้อยู่) — ที่อยู่จากคำสั่ง central_move ที่เก่าที่สุด
-# จะถูกทิ้งก่อนเมื่อเกิน เพื่อไม่ให้รายการยาวขึ้นเรื่อย ๆ ทุกครั้งที่ประกาศย้าย
+
 MAX_ENDPOINTS = 5
 
-# คำสั่ง central_move ที่ออกเกินเวลานี้ถือว่าหมดอายุ (กัน replay ข้อความเก่า)
+
 MOVE_MAX_AGE_SECONDS = 900
 
-# ไฟล์ config ของ Filebeat ที่ต้องแก้ปลายทางตามเมื่อ central ย้าย
+
 FILEBEAT_CONFIG_FILE = "/etc/filebeat/filebeat.yml"
 
-# อ่าน IP ใหม่ทุกกี่วินาที — ไม่อ่านทุกรอบ metrics (ทุก 1 วิ) เพราะ IP เครื่องแทบไม่เปลี่ยน
+
 HOST_IP_REFRESH_SECONDS = 30
 
 MANAGED_DIR = str(BASE_DIR / "state")
 MANAGED_BLACKLIST_FILE = f"{MANAGED_DIR}/central_blacklist.json"
 MANAGED_WHITELIST_FILE = f"{MANAGED_DIR}/central_whitelist.json"
 
-# nonce ของคำสั่ง central_move ที่รับไปแล้ว — กันข้อความเดิมถูกส่งซ้ำ
+
 SEEN_NONCE_FILE = f"{MANAGED_DIR}/seen_move_nonces.json"
 SEEN_NONCE_LIMIT = 200
 UFW_COMMENT = "central_blacklist"
 
-# ---------------------------------------------------------------------------
-# ที่อยู่ของ central: ตัวที่ใช้อยู่ + ตัวสำรอง
-#
-# central เปลี่ยน IP หรือย้ายเครื่องได้โดย agent ไม่ต้องลงใหม่ — ที่อยู่ใหม่เข้ามา 2 ทาง
-#   1) คำสั่ง central_move ที่เซ็นด้วย secret token ของ agent ตัวนี้ (ส่งก่อนย้ายจริง)
-#   2) ที่อยู่สำรองที่ใส่ไว้ตั้งแต่ตอนติดตั้ง (central_candidates ใน agent_config.json)
-# ทุกที่อยู่ต้องผ่าน mTLS ด้วย CA เดิมก่อนถึงจะถูกใช้จริง (probe_endpoint)
+
+def ufw_block_comment(event) -> str:
+    reason = str(event or "").strip()
+    if not reason or len(reason) > 64 or not all(c.isascii() and (c.isalnum() or c in "_-") for c in reason):
+        reason = "unspecified"
+    return f"{UFW_COMMENT}: {reason}"
+
+
+def is_our_ufw_comment(comment: str) -> bool:
+    return comment == UFW_COMMENT or comment.startswith(f"{UFW_COMMENT}: ")
 
 
 def _norm_endpoint(host, port=None) -> tuple[str, int] | None:
@@ -137,7 +137,7 @@ def _norm_endpoint(host, port=None) -> tuple[str, int] | None:
 
 
 def _endpoints_from_config(config: dict) -> tuple[list[tuple[str, int]], dict]:
-    # คืน (รายการที่อยู่, ที่มาของแต่ละที่อยู่) — ที่มา "setup" คือมาจากชุดติดตั้ง ไม่ทิ้งเวลารายการล้น
+
     result = []
     sources = {}
 
@@ -154,7 +154,7 @@ def _endpoints_from_config(config: dict) -> tuple[list[tuple[str, int]], dict]:
         if isinstance(item, dict):
             push(item.get("host"), item.get("port"), item.get("source") or "setup")
         elif isinstance(item, str):
-            # รูปแบบสั้น "host" หรือ "host:port"
+
             host, _, port = item.rpartition(":")
             push(host or item, port if host else None)
 
@@ -167,7 +167,7 @@ _link_lock = threading.RLock()
 _link = {
     "endpoints": _ENDPOINTS or [(CENTRAL_HOST, CENTRAL_PORT)],
     "sources": _ENDPOINT_SOURCES,
-    # generation — ขยับทุกครั้งที่เปลี่ยนที่อยู่ ใช้บอก thread ที่ค้างอยู่ให้ต่อใหม่
+
     "gen": 0,
 }
 
@@ -191,10 +191,8 @@ def endpoint_text(endpoint: tuple[str, int]) -> str:
     return f"{endpoint[0]}:{endpoint[1]}"
 
 
-# ---------------------------------------------------------------------------
-
 def save_config_updates(updates: dict) -> bool:
-    # เขียนทับเฉพาะคีย์ที่ส่งมา คีย์อื่นใน agent_config.json คงไว้ (เขียนแบบ atomic)
+
     path = BASE_DIR / CONFIG_FILE_NAME
 
     try:
@@ -240,8 +238,8 @@ def persist_endpoints() -> None:
 
 
 def _prune_endpoints() -> None:
-    # เรียกใต้ _link_lock เท่านั้น — ตัดที่อยู่ที่มาจากคำสั่งย้าย (เก่าสุดก่อน) จนเหลือไม่เกินที่กำหนด
-    # ที่อยู่จากคำสั่งย้ายเรียงใหม่สุดไว้หน้า ตัวเก่าสุดจึงเป็นตัวท้ายสุดของกลุ่ม
+
+
     while len(_link["endpoints"]) > MAX_ENDPOINTS:
         victim = next(
             (e for e in reversed(_link["endpoints"][1:]) if _link["sources"].get(e) == "announce"),
@@ -256,14 +254,12 @@ def _prune_endpoints() -> None:
         print(f"[LINK] รายการที่อยู่เต็ม ทิ้งที่อยู่เก่าจากคำสั่งย้าย: {endpoint_text(victim)}")
 
 
-# รายการ IP/subnet ที่ agent จะ "ไม่มีวัน block" ไม่ว่า central จะสั่งมาหรือไม่
-# (ที่อยู่ของ central ทุกตัวที่รู้จักถูกเติมให้อัตโนมัติใน rebuild_never_block_nets)
 NEVER_BLOCK_CIDRS = [
     "127.0.0.0/8",
-    # "192.168.56.1",  # <- ใส่ IP เครื่อง admin/gateway ที่ใช้ SSH เข้ามาที่นี่ด้วย
+
 ]
 
-# address พิเศษของทราฟฟิก broadcast (0.0.0.0 = เครื่องที่ยังไม่ได้ IP เช่นตอนขอ DHCP,
+
 ALWAYS_NEVER_BLOCK_CIDRS = [
     "0.0.0.0/32",
     "255.255.255.255/32",
@@ -273,7 +269,7 @@ _NEVER_BLOCK_NETS = []
 
 
 def rebuild_never_block_nets() -> None:
-    # เรียกใหม่ทุกครั้งที่รายการที่อยู่ central เปลี่ยน — กัน agent เผลอ block central ตัวเอง
+
     nets = []
 
     central_hosts = [host for host, _ in known_endpoints()]
@@ -282,7 +278,7 @@ def rebuild_never_block_nets() -> None:
         try:
             nets.append(ipaddress.ip_network(entry, strict=False))
         except ValueError:
-            # central_host ที่เป็นชื่อโดเมนตกมาทางนี้ — ไม่ใช่ IP ก็ข้ามไป ไม่ต้องเตือน
+
             if entry not in central_hosts:
                 print(f"[CONFIG] NEVER_BLOCK_CIDRS entry ผิดรูป ข้าม: {entry}")
 
@@ -293,11 +289,8 @@ def rebuild_never_block_nets() -> None:
 rebuild_never_block_nets()
 
 
-# ---------------------------------------------------------------------------
-
-
 def list_interface_ips() -> dict[str, str]:
-    # {ชื่อ interface: IPv4} ของทุก interface ที่มี IPv4 (ข้าม loopback)
+
     result = {}
 
     for name, addrs in psutil.net_if_addrs().items():
@@ -313,7 +306,7 @@ def list_interface_ips() -> dict[str, str]:
 
 
 def detect_outbound_ip() -> str | None:
-    # IP ของ interface ที่ใช้ออกไปหา central จริง — ใช้เป็น fallback ตอนไม่ได้ระบุ interface ไว้
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     try:
@@ -326,9 +319,9 @@ def detect_outbound_ip() -> str | None:
 
 
 def get_host_ip() -> str | None:
-    # IP ปัจจุบันของเครื่องนี้ตาม interface ที่เลือกไว้ — None ถ้าหาไม่ได้
+
     if HOST_IFACE:
-        # ระบุ interface ไว้แล้วต้องใช้ตัวนั้นเท่านั้น — สายหลุด/ยังไม่ได้ IP แล้วเงียบ ๆ ไป
+
         return list_interface_ips().get(HOST_IFACE)
 
     return detect_outbound_ip()
@@ -338,7 +331,7 @@ _host_ip_cache = {"ip": None, "at": 0.0}
 
 
 def get_host_ip_cached() -> str | None:
-    # เหมือน get_host_ip() แต่ไม่อ่านซ้ำถี่กว่า HOST_IP_REFRESH_SECONDS
+
     now = time.time()
 
     if now - _host_ip_cache["at"] >= HOST_IP_REFRESH_SECONDS:
@@ -348,8 +341,6 @@ def get_host_ip_cached() -> str | None:
     return _host_ip_cache["ip"]
 
 
-# redis-py 6 ขึ้นไปตั้ง retry อัตโนมัติ 3 ครั้งพร้อม backoff — connect timeout 5 วิกลายเป็นเกือบนาที
-# กว่าจะรู้ว่าต่อไม่ได้ ที่นี่มีลูป reconnect ของตัวเองอยู่แล้ว จึงปิด retry ให้ล้มเร็วตามที่ตั้งไว้จริง
 try:
     from redis.retry import Retry
     from redis.backoff import NoBackoff
@@ -382,8 +373,8 @@ def create_redis(host: str | None = None, port: int | None = None, timeout: int 
 
 
 def tcp_reachable(host: str, port: int) -> bool:
-    # เคาะ TCP เปล่า ๆ ก่อนด้วย timeout ของเราเอง — ที่อยู่ที่ยังไม่มีเครื่องอยู่จริงจะได้รู้ผลใน
-    # ไม่กี่วินาที ไม่ต้องรอ redis-py ลองใหม่หลายรอบ (ตอนนั้น thread คำสั่งจะค้างไปด้วย)
+
+
     try:
         with socket.create_connection((host, port), timeout=PROBE_TIMEOUT_SECONDS):
             return True
@@ -392,8 +383,6 @@ def tcp_reachable(host: str, port: int) -> bool:
         return False
 
 
-# ล็อกอินไม่ผ่าน = เครื่องอยู่ที่เดิมและ TLS ผ่าน แต่รหัส/สิทธิ์ไม่ตรง (เช่นเพิ่งเปลี่ยนรหัส
-# Redis ของ Client Server จากหน้า System Settings) — คนละเรื่องกับ "ที่อยู่ central เปลี่ยน"
 AUTH_ERRORS = tuple(
     e for e in (
         getattr(redis.exceptions, "AuthenticationError", None),
@@ -404,9 +393,8 @@ AUTH_ERRORS = tuple(
 
 
 def endpoint_state(host: str, port: int) -> str:
-    # "ok" = ใช้ได้จริง (TLS ผ่าน + ล็อกอินผ่าน + ping ตอบ — ปลอมไม่ได้ถ้าไม่มี key ของ CA)
-    # "auth" = ไปถึงเครื่องและ TLS ผ่าน แต่ล็อกอินไม่ผ่าน
-    # "down" = ไปไม่ถึง (เครื่องดับ / ถูกกั้น / cert ไม่ครอบที่อยู่นี้)
+
+
     if not tcp_reachable(host, port):
         return "down"
 
@@ -437,7 +425,7 @@ def probe_endpoint(host: str, port: int) -> bool:
 
 
 def allow_outbound_in_ufw(host: str, port: int) -> None:
-    # เปิดขาออกไปหา central ตัวใหม่ใน ufw — ถ้าเครื่องนี้ไม่มี ufw ก็ข้ามไปเงียบ ๆ
+
     if not shutil.which("ufw"):
         return
 
@@ -457,7 +445,7 @@ def allow_outbound_in_ufw(host: str, port: int) -> None:
 
 
 def update_filebeat_endpoint(host: str, port: int) -> bool:
-    # ชี้ output.redis ของ Filebeat ไปที่ central ตัวใหม่ แล้ว restart ให้ทันที
+
     path = FILEBEAT_CONFIG_FILE
 
     if not os.path.exists(path):
@@ -480,7 +468,7 @@ def update_filebeat_endpoint(host: str, port: int) -> bool:
         if not stripped or stripped.startswith("#"):
             continue
 
-        # ออกจากบล็อก output.redis เมื่อเจอคีย์ที่ระดับบนสุดอีกอัน
+
         if not line[:1].isspace():
             in_output = stripped.startswith("output.redis")
             continue
@@ -525,7 +513,7 @@ def update_filebeat_endpoint(host: str, port: int) -> bool:
 
 
 def add_endpoint(host: str, port: int, source: str = "announce") -> bool:
-    # เพิ่ม/เลื่อนลำดับที่อยู่สำรอง (ยังไม่สลับไปใช้) — คืน True ถ้าเป็นที่อยู่ใหม่จริง ๆ
+
     endpoint = _norm_endpoint(host, port)
 
     if not endpoint:
@@ -534,15 +522,14 @@ def add_endpoint(host: str, port: int, source: str = "announce") -> bool:
     with _link_lock:
         known = endpoint in _link["endpoints"]
 
-        # รู้จักอยู่แล้วและไม่ต้องเลื่อนลำดับอะไร
+
         if known and (source != "announce" or _link["endpoints"][0] == endpoint):
             return False
 
         if known:
             _link["endpoints"].remove(endpoint)
 
-        # ที่อยู่ที่ central เพิ่งประกาศ = ที่ที่ central อยากให้ไปอยู่ ต่อไม่ติดเมื่อไหร่ให้ลองอันนี้ก่อน
-        # (ไม่งั้น agent จะไปเกาะที่อยู่เก่าอันไหนก็ได้ที่บังเอิญยังตอบอยู่ แล้วคนสั่งย้ายจะงง)
+
         if source == "announce":
             _link["endpoints"].insert(1, endpoint)
         else:
@@ -564,7 +551,7 @@ def add_endpoint(host: str, port: int, source: str = "announce") -> bool:
 
 
 def switch_endpoint(host: str, port: int) -> bool:
-    # ย้ายไปใช้ที่อยู่นี้เป็นตัวหลัก — ที่อยู่เดิมยังถูกเก็บไว้เป็นตัวสำรอง (เผื่อย้ายกลับ)
+
     endpoint = _norm_endpoint(host, port)
 
     if not endpoint:
@@ -591,7 +578,6 @@ def switch_endpoint(host: str, port: int) -> bool:
     return True
 
 
-# connection ที่เปิดอยู่ตอนนี้ (thread ละอัน) — ตัวเฝ้าสายต้องปิดมันเพื่อปลุก thread ที่ค้างอยู่
 _clients = {}
 _clients_lock = threading.Lock()
 _last_contact = {"at": time.time()}
@@ -612,7 +598,7 @@ def unregister_client(label: str) -> None:
 
 
 def drop_all_connections() -> None:
-    # ปิด socket ใต้ client ทุกตัว — thread ที่ค้างรออ่านอยู่จะเด้ง exception แล้ววนไปต่อใหม่เอง
+
     with _clients_lock:
         clients = list(_clients.values())
 
@@ -623,15 +609,13 @@ def drop_all_connections() -> None:
             pass
 
 
-# ให้มีแค่ thread เดียวที่ไล่หาที่อยู่ใหม่ได้ในเวลาหนึ่ง — ทุก thread เจอสายตายพร้อมกัน
-# ถ้าปล่อยให้ไล่หาพร้อมกันจะเสียเวลาซ้ำซ้อนและอาจย้ายทับกันเอง
 _failover_lock = threading.Lock()
 
 
 def failover_to_backup(from_generation: int | None = None) -> bool:
-    # ไล่ลองที่อยู่สำรองทีละอัน อันไหน ping ผ่านก่อนก็ย้ายไปใช้อันนั้น
+
     with _failover_lock:
-        # ระหว่างรอคิว อาจมี thread อื่นย้ายให้เรียบร้อยแล้ว — ไม่ต้องไล่ซ้ำ
+
         if from_generation is not None and link_generation() != from_generation:
             return True
 
@@ -651,8 +635,8 @@ def failover_to_backup(from_generation: int | None = None) -> bool:
 
 
 def watch_link():
-    # central ที่หายไปดื้อ ๆ (เครื่องดับ/ถูกไฟร์วอลล์กั้น) ไม่ทำให้ TCP ฝั่งเราพัง — thread จะค้าง
-    # รออ่านไปเรื่อย ๆ ตัวนี้คอยดูว่าเงียบนานเกินไปไหม แล้วสะกิดให้ไปต่อ
+
+
     while True:
         time.sleep(LINK_CHECK_SECONDS)
 
@@ -668,7 +652,7 @@ def watch_link():
         state = endpoint_state(host, port)
 
         if state == "auth":
-            # central อยู่ที่เดิม แค่ล็อกอินไม่ผ่าน — ไล่หาที่อยู่สำรองไปก็ไม่ช่วย (รหัสชุดเดียวกัน)
+
             print(
                 f"[LINK] {host}:{port} ยังอยู่ที่เดิม แต่ล็อกอิน Redis ไม่ผ่าน — ไม่ใช่การย้ายที่อยู่ "
                 "ต้องออกชุดติดตั้งใหม่จากหน้า Agents (Regenerate Download Link) มาลงที่เครื่องนี้"
@@ -676,19 +660,17 @@ def watch_link():
         elif state == "down":
             failover_to_backup(generation)
 
-        # ต่อได้หรือย้ายแล้วก็ตาม ปิด connection เดิมทิ้งเสมอ ให้ทุก thread เริ่มสายใหม่
+
         drop_all_connections()
         note_link_ok()
 
-
-# ---------------------------------------------------------------------------
 
 def ensure_managed_dir():
     Path(MANAGED_DIR).mkdir(parents=True, exist_ok=True)
 
 
 def _read_ip_file(path: str, label: str) -> set[str]:
-    # อ่านไฟล์ JSON list ของ IP เป็น set — ไฟล์ไม่มี/เสีย คืน set ว่าง ไม่ crash
+
     try:
         ensure_managed_dir()
 
@@ -719,7 +701,6 @@ def _write_ip_file(path: str, ips: set[str], label: str):
         print(f"[{label}] บันทึกไฟล์ {path} ไม่ได้: {e}")
 
 
-# whitelist ที่ sync มาถูกเช็คบ่อยมาก (ทุกครั้งที่จะ block) จึง cache ใน memory
 _synced_whitelist_cache: set[str] | None = None
 
 
@@ -741,8 +722,6 @@ def save_synced_whitelist(ips: set[str]):
     _write_ip_file(MANAGED_WHITELIST_FILE, _synced_whitelist_cache, "WHITELIST")
 
 
-# central ส่ง whitelist มาเป็นช่วง subnet ได้ (เช่น 192.168.1.0/24) ไม่ใช่แค่ IP เดี่ยว
-# แปลงเป็น ip_network เก็บไว้ครั้งเดียว — is_never_block ถูกเรียกทุกครั้งที่จะ block
 _synced_whitelist_nets_cache = None
 
 
@@ -756,7 +735,7 @@ def load_synced_whitelist_nets():
             try:
                 nets.append(ipaddress.ip_network(entry, strict=False))
             except ValueError:
-                # ค่าที่แปลงไม่ได้ข้ามไป ไม่ทิ้งทั้งรายการ — เหลือ entry อื่นใช้ได้ตามปกติ
+
                 print(f"[WHITELIST] รายการที่ central ส่งมาผิดรูป ข้าม: {entry}")
 
         _synced_whitelist_nets_cache = nets
@@ -765,7 +744,7 @@ def load_synced_whitelist_nets():
 
 
 def load_managed_ips() -> set[str]:
-    # อ่าน IP ที่ระบบ sync ของ Central เคยจัดการไว้เท่านั้น
+
     return _read_ip_file(MANAGED_BLACKLIST_FILE, "SYNC STATE")
 
 
@@ -791,28 +770,24 @@ def remove_managed_ip(ip: str):
     save_managed_ips(managed_ips)
 
 
-# ---------------------------------------------------------------------------
-
 def is_never_block(ip: str) -> bool:
-    # เช็คว่า ip ห้าม block ไหม จาก 3 แหล่ง:
+
     if not ip:
         return False
 
     ip = str(ip).strip()
 
-    # ตรงตัวก่อน — เคสที่เจอบ่อยสุดและเทียบ set เร็วกว่าไล่ทีละวง
+
     if ip in load_synced_whitelist():
         return True
 
-    # รับได้ทั้ง IP เดี่ยวและช่วง subnet — central สั่งมาเป็นวงได้ตั้งแต่ whitelist รองรับ CIDR
-    # (ip_network ของ IP เดี่ยวคือ /32 ผลลัพธ์เคสเดิมจึงไม่เปลี่ยน)
+
     try:
         target = ipaddress.ip_network(ip, strict=False)
     except ValueError:
         return False
 
-    # ใช้ overlaps ไม่ใช่ "อยู่ใน" — วงที่ทับ never-block แม้เพียงบางส่วนก็ห้าม block ทั้งวง
-    # ไม่งั้นคำสั่งอย่าง 127.0.0.0/8 จะเล็ดลอดเข้ามาลงกฎตัด loopback ของเครื่องตัวเอง
+
     for net in list(load_synced_whitelist_nets()) + list(_NEVER_BLOCK_NETS):
         if target.version == net.version and target.overlaps(net):
             return True
@@ -840,10 +815,8 @@ def normalize_ip_list(items) -> set[str]:
     return {ip for ip in (extract_ip(item) for item in items) if ip}
 
 
-# ---------------------------------------------------------------------------
-
 def drop_conntrack(ip):
-    # ล้าง connection ที่เปิดค้างอยู่ของ IP นี้ทิ้ง (ทั้งขาที่ IP เป็นต้นทางและปลายทาง)
+
     for direction in ("-s", "-d"):
         try:
             subprocess.run(
@@ -860,10 +833,8 @@ def drop_conntrack(ip):
 
 
 def ufw_deny_rule_owner(ip: str) -> str:
-    # กฎปฏิเสธของ IP นี้ใน ufw เป็นของใคร: "none" ไม่มี · "ours" ระบบสร้าง · "foreign" มีอยู่ก่อน
-    #
-    # ดูจาก comment ที่ติดมากับกฎเป็นหลัก เพราะมันอยู่กับตัวกฎเอง — ต่อให้ไฟล์ state หาย
-    # ก็ยังรู้ว่าอันไหนของระบบ (ผู้เรียกเช็ค managed state ควบไปอีกชั้นอยู่แล้ว)
+
+
     if not ip:
         return "none"
 
@@ -876,27 +847,30 @@ def ufw_deny_rule_owner(ip: str) -> str:
         )
     except FileNotFoundError:
         print("[FIREWALL] ไม่พบคำสั่ง ufw — ตรวจกฎเดิมไม่ได้")
-        return "none"
+        return "unknown"
 
     if result.returncode != 0:
-        print(f"[FIREWALL] อ่านสถานะ ufw ไม่ได้ (exit {result.returncode}) — ถือว่ายังไม่มีกฎ")
-        return "none"
+        print(f"[FIREWALL] อ่านสถานะ ufw ไม่ได้ (exit {result.returncode})")
+        return "unknown"
 
+    found_ours = False
     for line in result.stdout.splitlines():
-        if "DENY" not in line and "REJECT" not in line:
+        if not any(action in line for action in ("ALLOW", "DENY", "REJECT")):
             continue
 
-        # รูปแบบบรรทัด: "<ปลายทาง>  DENY IN  <ต้นทาง>  # <comment>"
-        # ต้นทางคือคอลัมน์สุดท้ายของส่วนหน้า # — ตัด comment ออกก่อนค่อยดู
+
         head, _, comment = line.partition("#")
         fields = head.split()
 
-        if not fields or fields[-1] != ip:
+        source = fields[-2] if len(fields) >= 2 and fields[-1] == "(v6)" else fields[-1] if fields else None
+        if source != ip:
             continue
 
-        return "ours" if comment.strip() == UFW_COMMENT else "foreign"
+        if not any(action in head for action in ("DENY", "REJECT")) or not is_our_ufw_comment(comment.strip()):
+            return "foreign"
+        found_ours = True
 
-    return "none"
+    return "ours" if found_ours else "none"
 
 
 def _ufw_block(ip, prefix: str, comment: str | None = None) -> bool:
@@ -908,14 +882,21 @@ def _ufw_block(ip, prefix: str, comment: str | None = None) -> bool:
         print(f"[{prefix}] {ip} อยู่ใน never-block list -> ข้าม ไม่ block (safety)")
         return False
 
-    # เครื่องบล็อก IP นี้ด้วยกฎของตัวเองอยู่ก่อนแล้ว — ปล่อยไว้อย่างนั้น ไม่รับมาเป็นของระบบ
-    # (ถ้ารับมา เวลา central สั่ง unblock ทีหลังจะกลายเป็นไปลบกฎของผู้ดูแลทิ้ง)
-    if ip not in load_managed_ips() and ufw_deny_rule_owner(ip) == "foreign":
+
+    owner = ufw_deny_rule_owner(ip)
+    if owner == "unknown":
+        print(f"[{prefix}] ตรวจเจ้าของกฎไม่ได้ -> ไม่เพิ่มกฎ")
+        return False
+    if owner == "foreign":
         print(
             f"[{prefix}] {ip} ถูกบล็อกด้วยกฎที่มีอยู่ก่อนแล้วบนเครื่องนี้ "
             f"-> ไม่แตะ และไม่รับมาเป็นของระบบ (กฎเดิมยังทำงานอยู่)"
         )
         return False
+
+    if owner == "ours":
+        print(f"[{prefix}] {ip} มีกฎของระบบอยู่แล้ว -> ไม่เพิ่มซ้ำ")
+        return True
 
     cmd = ["sudo", "ufw", "insert", "1", "deny", "from", ip, "to", "any"]
 
@@ -926,7 +907,7 @@ def _ufw_block(ip, prefix: str, comment: str | None = None) -> bool:
         subprocess.run(cmd, check=True)
         print(f"[{prefix}] {' '.join(cmd[1:])}")
 
-        # ตัด connection เดิมที่ยัง established อยู่ทิ้งด้วย ไม่งั้น keep-alive ยังเข้าได้
+
         drop_conntrack(ip)
         return True
 
@@ -940,24 +921,17 @@ def _ufw_unblock(ip, prefix: str) -> bool:
         print(f"[{prefix}] ไม่พบ IP")
         return False
 
-    # ลบเฉพาะกฎที่ระบบเป็นคนสร้าง — `ufw delete` ลบกฎแรกที่ match ไม่สนว่าใครตั้ง
-    # ถ้าไม่กันตรงนี้ กฎที่ผู้ดูแลตั้งไว้เองจะหายไปตอน IP นั้นถูก unblock/ย้ายเข้า whitelist
-    if ip not in load_managed_ips():
-        owner = ufw_deny_rule_owner(ip)
 
-        if owner == "foreign":
-            print(
-                f"[{prefix}] {ip} ถูกบล็อกด้วยกฎที่ระบบไม่ได้สร้าง -> ไม่ลบให้ "
-                f"(ถ้าต้องการปลดจริง ให้ผู้ดูแลลบกฎนั้นเองบนเครื่อง)"
-            )
-            return False
-
-        if owner == "none":
-            print(f"[{prefix}] {ip} ไม่มีกฎบล็อกอยู่แล้ว -> ไม่ต้องทำอะไร")
-            return False
-
-        # owner == "ours" แต่หลุดจาก state (ไฟล์หาย/ถูกลบ) — กฎมี comment ของระบบ ลบได้
-        print(f"[{prefix}] {ip} ไม่อยู่ใน state แต่กฎมีป้ายของระบบ -> ลบให้")
+    owner = ufw_deny_rule_owner(ip)
+    if owner == "unknown":
+        print(f"[{prefix}] ตรวจเจ้าของกฎไม่ได้ -> ไม่ลบ")
+        return False
+    if owner == "foreign":
+        print(f"[{prefix}] {ip} มีกฎของผู้ดูแลเครื่อง -> ไม่ลบ")
+        return False
+    if owner == "none":
+        print(f"[{prefix}] {ip} ไม่มีกฎของระบบ -> ไม่ลบ")
+        return False
 
     try:
         subprocess.run(
@@ -973,17 +947,17 @@ def _ufw_unblock(ip, prefix: str) -> bool:
         return False
 
 
-def block_ip(ip) -> bool:
-    # ติด comment เหมือนทาง sync — ป้ายนี้คือหลักฐานว่ากฎนี้ระบบเป็นคนสร้าง
-    return _ufw_block(ip, "BLOCK", comment=UFW_COMMENT)
+def block_ip(ip, event=None) -> bool:
+
+    return _ufw_block(ip, "BLOCK", comment=ufw_block_comment(event))
 
 
 def unblock_ip(ip) -> bool:
     return _ufw_unblock(ip, "UNBLOCK")
 
 
-def sync_block_ip(ip: str) -> bool:
-    return _ufw_block(ip, "SYNC BLOCK", comment=UFW_COMMENT)
+def sync_block_ip(ip: str, event=None) -> bool:
+    return _ufw_block(ip, "SYNC BLOCK", comment=ufw_block_comment(event))
 
 
 def sync_unblock_ip(ip: str) -> bool:
@@ -991,8 +965,13 @@ def sync_unblock_ip(ip: str) -> bool:
 
 
 def sync_blacklist_desired_state(central_items):
-    # sync แบบไม่กระทบของเดิม
+
     central_desired_ips = normalize_ip_list(central_items)
+    events_by_ip = {
+        ip: item.get("event")
+        for item in central_items if isinstance(item, dict)
+        if (ip := extract_ip(item))
+    } if isinstance(central_items, list) else {}
     managed_ips = load_managed_ips()
 
     to_block = central_desired_ips - managed_ips
@@ -1008,7 +987,7 @@ def sync_blacklist_desired_state(central_items):
     updated_managed_ips = set(managed_ips)
 
     for ip in sorted(to_block):
-        if sync_block_ip(ip):
+        if sync_block_ip(ip, events_by_ip.get(ip)):
             updated_managed_ips.add(ip)
 
     for ip in sorted(to_unblock):
@@ -1019,8 +998,6 @@ def sync_blacklist_desired_state(central_items):
 
     print(f"[SYNC] เสร็จแล้ว Managed blacklist เหลือ {len(updated_managed_ips)} IP")
 
-
-# ---------------------------------------------------------------------------
 
 def parse_command_message(message) -> dict | None:
     try:
@@ -1048,7 +1025,7 @@ def parse_command_message(message) -> dict | None:
 
 
 def handle_hello_command(data: dict):
-    # hello จาก Central ตอน agent กลับมา online
+
     text = data.get("message", "hello")
     ip_blacklist = data.get("ip_blacklist", [])
 
@@ -1064,23 +1041,23 @@ def handle_hello_command(data: dict):
         ip = extract_ip(item)
 
         if ip:
-            block_ip(ip)
+            block_ip(ip, item.get("event") if isinstance(item, dict) else None)
 
 
 def handle_block_ip_command(data: dict):
-    # block ตามคำสั่งเดี่ยว + บันทึก managed state ให้รอบ sync ถัดไปรู้ว่ามาจาก Central
+
     ip = extract_ip(data.get("ip") or data.get("ip_address"))
 
     if not ip:
         print("[BLOCK] ไม่พบ IP จาก command")
         return
 
-    if block_ip(ip):
+    if block_ip(ip, data.get("event")):
         add_managed_ip(ip)
 
 
 def handle_unblock_ip_command(data: dict):
-    # unblock ตามคำสั่งเดี่ยว + ลบออกจาก managed state
+
     ip = extract_ip(data.get("ip") or data.get("ip_address"))
 
     if not ip:
@@ -1098,15 +1075,15 @@ def handle_sync_blacklist_command(data: dict):
 
 
 def handle_sync_whitelist_command(data: dict):
-    # รับ whitelist ปัจจุบันจาก Central มาเก็บไว้ (desired state)
+
     ips = normalize_ip_list(data.get("ips", []))
     save_synced_whitelist(ips)
     print(f"[WHITELIST] ได้รับ whitelist จาก Central {len(ips)} รายการ -> อัปเดต never-block แล้ว")
 
 
 def move_signing_key() -> bytes:
-    # กุญแจที่ใช้เซ็นคำสั่ง central_move = sha256 ของ secret token ของ agent ตัวนี้
-    # ฝั่ง central มีค่านี้อยู่แล้วในคอลัมน์ secret_token_hash (ไม่ต้องเก็บ token ตัวจริง)
+
+
     return hashlib.sha256(SECRET_TOKEN.encode()).hexdigest().encode()
 
 
@@ -1140,8 +1117,8 @@ def remember_nonce(nonce: str) -> None:
 
 
 def verify_move_command(data: dict) -> bool:
-    # คำสั่งย้าย central ต้องผ่านครบ 4 ด่านถึงจะเชื่อ:
-    #   1) จ่าหน้าถึง agent ตัวนี้   2) ลายเซ็นตรง   3) ยังไม่หมดอายุ   4) ไม่ใช่ข้อความซ้ำ
+
+
     if not SECRET_TOKEN:
         print("[MOVE] ปฏิเสธ: agent ตัวนี้ไม่มี secret token")
         return False
@@ -1182,8 +1159,8 @@ def verify_move_command(data: dict) -> bool:
 
 
 def handle_central_move_command(data: dict):
-    # central แจ้งที่อยู่ใหม่ล่วงหน้าก่อนย้ายจริง — เก็บไว้เป็นตัวสำรองเสมอ
-    # แล้วถ้าที่อยู่ใหม่ใช้ได้แล้วตอนนี้ ก็ย้ายไปเลยโดยไม่ต้องรอ central เดิมล่ม
+
+
     if not verify_move_command(data):
         return
 
@@ -1234,11 +1211,9 @@ def handle_command(data: dict):
         print(f"[UNKNOWN COMMAND] {data}")
 
 
-# ---------------------------------------------------------------------------
-
 def run_with_reconnect(label: str, worker):
-    # เปิด Redis connection แล้วส่งให้ worker ทำงานยาว ๆ
-    # worker คืนค่าเมื่อที่อยู่ central เปลี่ยน (generation ขยับ) รอบถัดไปจะต่อที่อยู่ใหม่ให้เอง
+
+
     failures = 0
 
     while True:
@@ -1270,8 +1245,7 @@ def run_with_reconnect(label: str, worker):
             else:
                 print(f"[{label}] หลุด: {e} รอ {RECONNECT_DELAY_SECONDS} วินาที...")
 
-            # ต่อที่อยู่เดิมไม่ติดหลายครั้งติดกัน = central อาจย้ายไปแล้ว ลองที่อยู่สำรอง
-            # (ยกเว้นตอนล็อกอินไม่ผ่าน — ที่อยู่ไม่ได้เปลี่ยน ย้ายไปที่สำรองก็ล็อกอินไม่ผ่านเหมือนกัน)
+
             if not auth_problem and failures >= FAILOVER_AFTER_FAILURES and link_generation() == generation:
                 if failover_to_backup(generation):
                     failures = 0
@@ -1298,7 +1272,7 @@ def listen_commands():
             pubsub.subscribe("global_commands", private_channel)
             print(f"[LISTEN] subscribe global_commands และ {private_channel}")
 
-            # ใช้ get_message แทน listen() เพื่อให้วนกลับมาเช็คได้ว่าที่อยู่ central เปลี่ยนหรือยัง
+
             while link_generation() == generation:
                 message = pubsub.get_message(timeout=1.0)
 
@@ -1335,10 +1309,10 @@ def send_metrics():
             payload = {
                 "agent_id": AGENT_ID,
                 "secret_token": SECRET_TOKEN,
-                # central เอาไปเทียบกับ IP ที่ผูกไว้กับ agent_id นี้ ไม่ตรง = ปฏิเสธทั้ง message
+
                 "host_ip": host_ip,
                 "host_iface": HOST_IFACE or None,
-                # ที่อยู่ central ที่ agent ตัวนี้ใช้อยู่จริง — หน้า Agents เอาไว้ยืนยันว่าย้ายครบแล้ว
+
                 "central_host": endpoint[0],
                 "central_port": endpoint[1],
                 "cpu": psutil.cpu_percent(interval=1),
@@ -1392,7 +1366,7 @@ def _check_config_or_exit():
             print(f"[CONFIG ERROR] {p}")
         sys.exit(1)
 
-    # หา IP ไม่ได้ = ยังรันต่อได้ (เดี๋ยว interface อาจได้ IP ทีหลัง) แต่ต้องบอกให้ชัดว่าทำไม
+
     host_ip = get_host_ip()
 
     if host_ip:
