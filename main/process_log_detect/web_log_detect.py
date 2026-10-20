@@ -113,27 +113,12 @@ def decode_url(value: str) -> list[str]:
 
 
 RAW_REQUEST_RE = re.compile(r'"[A-Z]+ (.*?)(?: HTTP/[\d.]+)?"')
-_SQL_IDENT = r"(?:`[A-Za-z_][A-Za-z0-9_$]*`|[A-Za-z_][A-Za-z0-9_$]*)"
-_SQL_VALUE = r"(?:'(?:''|\\.|[^'\\])*'|-?\d+(?:\.\d+)?|NULL)"
-_SQL_TABLE = r"`(?P<table>[A-Za-z_][A-Za-z0-9_$]*)`"
-_SQL_CONDITION = rf"{_SQL_IDENT}\s*(?:=|!=|<>|<=|>=|<|>|LIKE)\s*{_SQL_VALUE}"
-_SQL_WHERE = rf"WHERE\s+{_SQL_CONDITION}(?:\s+AND\s+{_SQL_CONDITION})*"
-_SQL_COLUMNS = rf"{_SQL_IDENT}(?:\s*,\s*{_SQL_IDENT})*"
-_SQL_VALUES = rf"{_SQL_VALUE}(?:\s*,\s*{_SQL_VALUE})*"
-PHPMYADMIN_ROUTINE_SQL = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
-    rf"SELECT\s+(?:\*|{_SQL_COLUMNS})\s+FROM\s+{_SQL_TABLE}"
-    rf"(?:\s+{_SQL_WHERE})?"
-    rf"(?:\s+ORDER\s+BY\s+{_SQL_IDENT}(?:\s+(?:ASC|DESC))?"
-    rf"(?:\s*,\s*{_SQL_IDENT}(?:\s+(?:ASC|DESC))?)*)?"
-    rf"(?:\s+LIMIT\s+\d+(?:\s*,\s*\d+)?)?\s*",
-    rf"UPDATE\s+{_SQL_TABLE}\s+SET\s+{_SQL_IDENT}\s*=\s*{_SQL_VALUE}"
-    rf"(?:\s*,\s*{_SQL_IDENT}\s*=\s*{_SQL_VALUE})*\s+{_SQL_WHERE}\s*",
-    rf"INSERT\s+INTO\s+{_SQL_TABLE}\s*\({_SQL_COLUMNS}\)\s*VALUES\s*\({_SQL_VALUES}\)\s*",
-    rf"DELETE\s+FROM\s+{_SQL_TABLE}\s+{_SQL_WHERE}\s*",
-))
+PHPMYADMIN_SQL_ROUTE_RE = re.compile(
+    r"/(?:table|database|sql|server)(?:/[A-Za-z0-9_-]+)*", re.IGNORECASE,
+)
 
 
-def mask_phpmyadmin_routine_sql(path: str) -> str:
+def mask_phpmyadmin_sql_parameters(path: str) -> str:
     endpoint, separator, query = path.partition("?")
     if not separator or endpoint.lower() != "/phpmyadmin/index.php":
         return path
@@ -148,36 +133,32 @@ def mask_phpmyadmin_routine_sql(path: str) -> str:
         values = [value for key, value, *_ in fields if key == name]
         return values[0] if len(values) == 1 else None
 
-    if single_value("route") != "/table/change":
+    route = single_value("route")
+    token = single_value("token")
+    if not route or not PHPMYADMIN_SQL_ROUTE_RE.fullmatch(route):
+        return path
+    if not token or not re.fullmatch(r"[0-9a-f]{32,64}", token, re.IGNORECASE):
         return path
 
-    sql_query = single_value("sql_query")
-    sql_signature = single_value("sql_signature")
-    where_signature = single_value("where_clause_signature")
-    table = single_value("table")
-    if not all((sql_query, sql_signature, where_signature, table)):
-        return path
-    if not all(re.fullmatch(r"[0-9a-f]{64}", value, re.IGNORECASE)
-               for value in (sql_signature, where_signature)):
-        return path
-
-    # Only simple single-table statements are masked; every other parameter stays searchable.
-    decoded_sql = unquote_plus(sql_query)
-    if len(decoded_sql) > 2048 or not any(
-        match and match.group("table") == table
-        for pattern in PHPMYADMIN_ROUTINE_SQL
-        if (match := pattern.fullmatch(decoded_sql))
-    ):
-        return path
-
-    sql_fields = [field for field in fields if field[0] == "sql_query"]
-    _, _, index, raw_key, _ = sql_fields[0]
     segments = query.split("&")
-    segments[index] = f"{raw_key}="
+    # SQL written by phpMyAdmin is expected input, while other fields keep their full detection.
+    for name, signature_name in (
+        ("sql_query", "sql_signature"),
+        ("where_clause", "where_clause_signature"),
+    ):
+        value = single_value(name)
+        signature = single_value(signature_name)
+        if not value or not signature or not re.fullmatch(r"[0-9a-f]{64}", signature, re.IGNORECASE):
+            continue
+        if name == "where_clause" and not single_value("table"):
+            continue
+        field = next(field for field in fields if field[0] == name)
+        _, _, index, raw_key, _ = field
+        segments[index] = f"{raw_key}="
     return f"{endpoint}?{'&'.join(segments)}"
 
 
-def build_haystack(log: dict, mask_routine_sql: bool = False) -> list[str]:
+def build_haystack(log: dict, mask_phpmyadmin_sql: bool = False) -> list[str]:
 
 
     path = str(log.get("path") or "")
@@ -187,8 +168,8 @@ def build_haystack(log: dict, mask_routine_sql: bool = False) -> list[str]:
         found = RAW_REQUEST_RE.search(str(log.get("raw_message") or ""))
         path = found.group(1) if found else ""
 
-    if mask_routine_sql:
-        path = mask_phpmyadmin_routine_sql(path)
+    if mask_phpmyadmin_sql:
+        path = mask_phpmyadmin_sql_parameters(path)
     parts = [path, *decode_url(path), user_agent, *decode_url(user_agent)]
 
     return list(dict.fromkeys(p for p in parts if p))
@@ -342,7 +323,7 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     process_http_flood(log, source_ip, now_ts, loop)
 
     haystack = build_haystack(log)
-    matches = detect_attack_types(haystack, build_haystack(log, mask_routine_sql=True))
+    matches = detect_attack_types(haystack, build_haystack(log, mask_phpmyadmin_sql=True))
 
     if not matches:
         return
