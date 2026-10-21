@@ -120,8 +120,9 @@ def decode_url(value: str) -> list[str]:
 
 # request line ใน raw log — ใช้แทน path เมื่อ normalize แยก path ไม่ได้ (เช่น payload มีช่องว่างดิบ)
 RAW_REQUEST_RE = re.compile(r'"[A-Z]+ (.*?)(?: HTTP/[\d.]+)?"')
-PHPMYADMIN_SQL_ROUTE_RE = re.compile(
-    r"/(?:table|database|sql|server)(?:/[A-Za-z0-9_-]+)*", re.IGNORECASE,
+PHPMYADMIN_ROUTE_RE = re.compile(
+    r"/(?:table|database|sql|server|config|view|navigation|recent-table|import|export)"
+    r"(?:/[A-Za-z][A-Za-z0-9_-]*)*", re.IGNORECASE,
 )
 
 
@@ -142,7 +143,7 @@ def mask_phpmyadmin_parameters(path: str, *, for_command: bool = False) -> str:
 
     route = single_value("route")
     token = single_value("token")
-    if not route or not PHPMYADMIN_SQL_ROUTE_RE.fullmatch(route):
+    if not route or not PHPMYADMIN_ROUTE_RE.fullmatch(route):
         return path
     # Some phpMyAdmin links (notably column sorting) include a SQL signature but
     # omit the CSRF token from the URL. If a token is present, it must be valid.
@@ -150,6 +151,11 @@ def mask_phpmyadmin_parameters(path: str, *, for_command: bool = False) -> str:
         return path
 
     segments = query.split("&")
+    # Router paths such as /config/set and /view/create are application
+    # identifiers, not shell commands. An unusual route remains fully scanned.
+    route_field = next(field for field in fields if field[0] == "route")
+    _, _, route_index, route_raw_key, _ = route_field
+    segments[route_index] = f"{route_raw_key}="
     # phpMyAdmin's row Edit/Copy link has no SQL signature. Accept only its
     # narrow, generated primary-key lookup shape; arbitrary clauses still scan.
     table = single_value("table")
@@ -189,13 +195,13 @@ def mask_phpmyadmin_parameters(path: str, *, for_command: bool = False) -> str:
             segments[index] = f"{raw_key}="
     # Navigation identifiers are not SQL expressions. Keep unusual values
     # visible to the signatures.
+    for name in ("db", "table", "checkprivsdb"):
+        value = single_value(name)
+        if value and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", value):
+            field = next(field for field in fields if field[0] == name)
+            _, _, index, raw_key, _ = field
+            segments[index] = f"{raw_key}="
     if not for_command:
-        for name in ("db", "checkprivsdb"):
-            value = single_value(name)
-            if value and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", value):
-                field = next(field for field in fields if field[0] == name)
-                _, _, index, raw_key, _ = field
-                segments[index] = f"{raw_key}="
         sort_by = single_value("sort_by")
         if route == "/server/databases" and sort_by and re.fullmatch(r"[A-Z][A-Z0-9_]*", sort_by):
             field = next(field for field in fields if field[0] == "sort_by")
