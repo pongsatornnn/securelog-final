@@ -105,7 +105,8 @@ MANAGED_WHITELIST_FILE = f"{MANAGED_DIR}/central_whitelist.json"
 
 SEEN_NONCE_FILE = f"{MANAGED_DIR}/seen_move_nonces.json"
 SEEN_NONCE_LIMIT = 200
-UFW_COMMENT = "central_blacklist"
+UFW_COMMENT = "Securelog"
+LEGACY_UFW_COMMENT = "central_blacklist"
 ATTACK_COMMENT_LABELS = {
     "ssh_brute_force": "SSH Brute Force",
     "sudo_failed": "Sudo Authentication Failure",
@@ -131,11 +132,16 @@ def ufw_block_comment(event) -> str:
     if not reason or len(reason) > 64 or not all(c.isascii() and (c.isalnum() or c in "_-") for c in reason):
         reason = "unspecified"
     label = ATTACK_COMMENT_LABELS.get(reason, reason.replace("_", " ").replace("-", " ").title())
-    return f"{UFW_COMMENT}: {label}"
+    return f"{UFW_COMMENT}:{label}"
 
 
 def is_our_ufw_comment(comment: str) -> bool:
-    return comment == UFW_COMMENT or comment.startswith(f"{UFW_COMMENT}: ")
+    # กฎที่ Agent รุ่นเก่าสร้างไว้ยังเป็นของระบบ และต้องปลดบล็อกได้ตามเดิม
+    return (
+        (comment.startswith(f"{UFW_COMMENT}:") and bool(comment[len(UFW_COMMENT) + 1:].strip()))
+        or comment == LEGACY_UFW_COMMENT
+        or comment.startswith(f"{LEGACY_UFW_COMMENT}: ")
+    )
 
 
 def _norm_endpoint(host, port=None) -> tuple[str, int] | None:

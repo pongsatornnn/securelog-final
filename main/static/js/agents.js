@@ -17,7 +17,7 @@ function agentsApp() {
       regenAgentId: '',
       regenDownloadUrl: '',
       regenError: '',
-      copiedRegenDownloadLink: false,
+      regenLoading: false,
       copiedRegenDownloadCommand: false,
       editForm: {
         host_ip: '',
@@ -136,11 +136,12 @@ function agentsApp() {
       },
 
       closeRegenModal() {
+        if (this.regenLoading) return
         this.showRegenModal = false
         this.regenDownloadUrl = ''
         this.regenAgentId = ''
         this.regenError = ''
-        this.copiedRegenDownloadLink = false
+        this.regenLoading = false
         this.copiedRegenDownloadCommand = false
         this.stopLinkCountdown()
       },
@@ -235,10 +236,6 @@ function agentsApp() {
         return this.copyTextToClipboard(this.buildLinuxDownloadCommand(url), 'copiedDownloadCommand')
       },
 
-      copyRegenDownloadLink(url) {
-        return this.copyToClipboard(url, 'copiedRegenDownloadLink')
-      },
-
       copyRegenDownloadCommand(url) {
         return this.copyTextToClipboard(this.buildLinuxDownloadCommand(url), 'copiedRegenDownloadCommand')
       },
@@ -278,6 +275,9 @@ function agentsApp() {
 
           if (!res.ok) {
             throw new Error(data.detail || 'สร้าง Client Server Package ไม่สำเร็จ')
+          }
+          if (!data.download_url) {
+            throw new Error('เซิร์ฟเวอร์สร้าง package แล้ว แต่ไม่ได้ส่งลิงก์ดาวน์โหลดกลับมา')
           }
 
           this.createdAgentId = data.agent_id || ''
@@ -363,8 +363,8 @@ function agentsApp() {
 
         this.regenError = ''
         this.regenDownloadUrl = ''
+        this.regenLoading = true
         this.regenAgentId = agent.agent_id
-        this.copiedRegenDownloadLink = false
         this.copiedRegenDownloadCommand = false
         this.showDetailModal = false
         this.showRegenModal = true
@@ -376,13 +376,16 @@ function agentsApp() {
 
           const data = await res.json()
           if (!res.ok) throw new Error(data.detail || 'สร้าง Download Link ใหม่ไม่สำเร็จ')
+          if (!data.download_url) throw new Error('เซิร์ฟเวอร์สร้าง package แล้ว แต่ไม่ได้ส่งลิงก์ดาวน์โหลดกลับมา')
 
           this.regenAgentId = data.agent_id || agent.agent_id
           this.regenDownloadUrl = data.download_url
           this.startLinkCountdown()
           await this.loadAgents()
         } catch (err) {
-          this.regenError = err.message
+          this.regenError = err.message || 'สร้าง Download Link ใหม่ไม่สำเร็จ'
+        } finally {
+          this.regenLoading = false
         }
       },
 

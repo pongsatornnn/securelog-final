@@ -281,7 +281,7 @@
     </div>
   </div>
 
-  <div class="modal-backdrop" x-show="showModal" style="display: none;" @click.self="showModal = false">
+  <div class="modal-backdrop" x-show="showModal" style="display: none;" @click.self="closeDetail()">
     <div class="modal">
       
       <div class="modal-header">
@@ -294,7 +294,7 @@
           </template>
         </div>
 
-        <button class="btn-close" @click="showModal = false" aria-label="ปิด">×</button>
+        <button class="btn-close" @click="closeDetail()" aria-label="ปิด">×</button>
       </div>
 
       <div class="state-box" x-show="detailLoading">

@@ -219,6 +219,18 @@ class DetectionRule(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
+class AgentDisabledRule(Base):
+    # มีแถวเมื่อ Agent ปิด rule นี้; ไม่มีแถว = ใช้ตามสถานะ global ของ rule
+    __tablename__ = "agent_disabled_rules"
+
+    agent_id = Column(
+        String(100), ForeignKey("agents.agent_id", ondelete="CASCADE"), primary_key=True
+    )
+    rule_key = Column(
+        String(50), ForeignKey("detection_rules.rule_key", ondelete="CASCADE"), primary_key=True
+    )
+
+
 class AlertSeverity(Base):
 
 

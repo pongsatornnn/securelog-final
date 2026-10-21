@@ -78,11 +78,20 @@ async def build_alert_detail(alert, agent=None) -> dict:
 
     detail = await build_alert_summary(alert, agent)
 
-    raw_logs = [
-        item.get("raw_message")
-        for item in (alert.related_logs or [])
+    related_logs = [
+        (index, item) for index, item in enumerate(alert.related_logs or [])
         if isinstance(item, dict) and item.get("raw_message")
     ]
+    # ts คือเวลาเหตุการณ์ที่ detector บันทึกไว้; ถ้าเวลาเท่ากันให้รายการที่มาทีหลังขึ้นก่อน
+    # log เก่าที่ไม่มี ts อยู่ท้ายรายการ
+    related_logs.sort(
+        key=lambda pair: (
+            pair[1]["ts"] if isinstance(pair[1].get("ts"), (int, float)) else float("-inf"),
+            pair[0],
+        ),
+        reverse=True,
+    )
+    raw_logs = [item["raw_message"] for _, item in related_logs]
 
     detail.update({
         "window_sec": alert.window_seconds,

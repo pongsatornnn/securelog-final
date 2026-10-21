@@ -171,7 +171,9 @@ def seed_rules(loop: asyncio.AbstractEventLoop, rule_keys, log_prefix: str) -> N
             print(f"[{log_prefix}] seed rule {rule_key} ไม่สำเร็จ: {e}")
 
 
-DETECTOR_GATE_TABLE = "detection_rules"   # ตารางที่ detector ทุกตัวต้องใช้ (get_rule เรียกทุกครั้ง)
+# ตารางถูกสร้างโดยเว็บตอน start — detector อาจมาถึงก่อน (ดู wait_for_table ใน database/connection)
+# ถ้าไม่รอ: seed rule/โหลด signature จะล้มเงียบ ๆ แล้ววิ่งต่อแบบ "ไม่มี signature เลย" จนครบรอบ refresh
+DETECTOR_GATE_TABLE = "agent_disabled_rules"  # create_all สร้างพร้อม detection_rules ก่อน detector ใช้งาน
 
 
 def run_detector_loop(

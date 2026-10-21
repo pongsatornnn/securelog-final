@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-
-
+#
+# SecureLog Client — uninstall the service, filebeat, and client files
+#
+# Usage:
+#   sudo ./uninstall.sh                       # choose whether to keep firewall rules
+#   sudo ./uninstall.sh --yes                 # keep rules, skip prompts
+#   sudo ./uninstall.sh --yes --remove-rules  # remove SecureLog-owned rules
+#   sudo ./uninstall.sh --yes --keep-rules    # explicitly keep rules
+#   sudo KEEP_FILEBEAT=1 ./uninstall.sh       # keep filebeat installed
+#
+# ทำงานเฉพาะฝั่ง agent ไม่ยุ่งกับ central
 set -euo pipefail
 
 SERVICE_NAME="securelog-agent"          # ชื่อเป๊ะ ห้าม glob (central มี securelog-agent-monitor)
 UNIT_PATH="/etc/systemd/system/$SERVICE_NAME.service"
-FW_TAG="SecureLog agent"                # ป้ายใน comment ของ ufw ที่บอกว่า rule นี้ของ agent
 
-
+# re-exec จาก /tmp ก่อน เพราะสคริปต์อยู่ในโฟลเดอร์ที่ตัวเองจะลบ
 if [ "${_SL_RELOCATED:-0}" != "1" ]; then
     _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     _tmp="$(mktemp /tmp/securelog-uninstall.XXXXXX.sh)"
@@ -22,23 +30,64 @@ log()  { echo -e "\e[32m[UNINSTALL]\e[0m $*"; }
 warn() { echo -e "\e[33m[WARN]\e[0m      $*"; }
 die()  { echo -e "\e[31m[ERROR]\e[0m     $*" >&2; exit 1; }
 
+remove_securelog_rules() {
+    if ! command -v ufw >/dev/null 2>&1; then
+        log "ufw not installed - no firewall rules to remove"
+        return 0
+    fi
+    local ufw_status line number i
+    local -a managed_numbers=()
+    ufw_status="$(ufw status numbered 2>&1)" || die "could not inspect ufw rules; no files or rules were removed: $ufw_status"
+    if [[ "$ufw_status" == *"Status: inactive"* ]]; then
+        die "ufw is inactive, so numbered rules cannot be inspected safely; use --keep-rules or inspect ufw before retrying"
+    fi
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*\[[[:space:]]*([0-9]+)\] ]] || continue
+        number="${BASH_REMATCH[1]}"
+        if [[ "$line" =~ [[:space:]](DENY|REJECT)[[:space:]]+IN[[:space:]] ]] \
+           && [[ "$line" =~ \#[[:space:]]*(Securelog:|central_blacklist([:[:space:]]|$)) ]]; then
+            managed_numbers+=("$number")
+        elif [[ "$line" =~ [[:space:]]ALLOW[[:space:]]+OUT[[:space:]] ]] \
+             && [[ "$line" =~ \#[[:space:]]*SecureLog[[:space:]]agent([[:space:]]|$) ]]; then
+            managed_numbers+=("$number")
+        fi
+    done <<< "$ufw_status"
 
+    if [ "${#managed_numbers[@]}" -eq 0 ]; then
+        log "No SecureLog-tagged ufw rules found"
+    else
+        # Use rule numbers rather than a spec that could match an unrelated rule.
+        # Deleting highest numbers first keeps the remaining numbers stable.
+        for ((i=${#managed_numbers[@]}-1; i>=0; i--)); do
+            number="${managed_numbers[i]}"
+            ufw --force delete "$number" >/dev/null 2>&1 \
+                || die "could not remove SecureLog ufw rule #$number; uninstall stopped"
+            log "Removed SecureLog ufw rule #$number"
+        done
+    fi
+    log "Other firewall rules and ufw logging were left unchanged"
+}
+
+# ---------- อ่าน flag ----------
 ASSUME_YES="${FORCE:-0}"
 KEEP_FILEBEAT="${KEEP_FILEBEAT:-0}"
+RULE_ACTION=""
 for arg in "$@"; do
     case "$arg" in
         -y|--yes)        ASSUME_YES=1 ;;
         --keep-filebeat) KEEP_FILEBEAT=1 ;;
+        --keep-rules)    [ "$RULE_ACTION" != "remove" ] || die "choose only one of --keep-rules or --remove-rules"; RULE_ACTION="keep" ;;
+        --remove-rules)  [ "$RULE_ACTION" != "keep" ] || die "choose only one of --keep-rules or --remove-rules"; RULE_ACTION="remove" ;;
         -h|--help)
-            sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '3,11p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
-        *) die "unknown option: $arg (use --yes / --keep-filebeat)" ;;
+        *) die "unknown option: $arg (use --help for options)" ;;
     esac
 done
 
 [ "$(id -u)" -eq 0 ] || die "Must be run as root: sudo ./uninstall.sh"
 
-
+# ---------- ด่านกันลบผิดโฟลเดอร์ ----------
 case "$AGENT_DIR" in
     ""|/|/opt|/home|/root|/etc|/usr|/var|/srv|/tmp)
         die "refusing to operate on '$AGENT_DIR' - this does not look like an agent folder" ;;
@@ -49,7 +98,29 @@ if [ -f "$AGENT_DIR/agent_core.py" ] \
     IS_AGENT_DIR=1
 fi
 
+# Decide before stopping the Client. A non-interactive uninstall keeps rules
+# unless --remove-rules was explicitly requested.
+if [ -z "$RULE_ACTION" ]; then
+    if [ "$ASSUME_YES" = "1" ]; then
+        RULE_ACTION="keep"
+    else
+        [ -t 0 ] || die "no tty - choose --yes --keep-rules or --yes --remove-rules"
+        echo ""
+        echo "Firewall rules after uninstall:"
+        echo "  1) Keep rules (default)"
+        echo "  2) Remove SecureLog rules"
+        while true; do
+            read -rp "Select [1/2]: " choice || die "aborted - nothing was removed"
+            case "$choice" in
+                ""|1) RULE_ACTION="keep"; break ;;
+                2) RULE_ACTION="remove"; break ;;
+                *) warn "Enter 1 or 2" ;;
+            esac
+        done
+    fi
+fi
 
+# ---------- สรุปสิ่งที่จะทำ + ขอยืนยัน ----------
 echo ""
 warn "This will REMOVE the SecureLog agent from this machine:"
 echo "     - stop + disable + delete the '$SERVICE_NAME' service"
@@ -58,7 +129,11 @@ if [ "$KEEP_FILEBEAT" = "1" ]; then
 else
     echo "     - stop + remove filebeat entirely (package, /etc/filebeat, registry, the Elastic apt repo this system added)"
 fi
-echo "     - remove the ufw outbound rule this system added (rules you made yourself are left alone)"
+if [ "$RULE_ACTION" = "remove" ]; then
+    echo "     - remove SecureLog-tagged ufw block and outbound rules only"
+else
+    echo "     - keep all firewall rules"
+fi
 if [ "$IS_AGENT_DIR" = "1" ]; then
     echo "     - delete the agent folder and everything in it:  $AGENT_DIR"
 else
@@ -81,9 +156,18 @@ fi
 
 echo ""
 
+# Stop the Client first so it cannot recreate a rule during cleanup.
+systemctl stop "$SERVICE_NAME.service" 2>/dev/null || true
 
+# ---------- 1) firewall selection takes effect before files are removed ----------
+if [ "$RULE_ACTION" = "remove" ]; then
+    remove_securelog_rules
+else
+    log "Kept all firewall rules"
+fi
+
+# ---------- 2) securelog-agent service ----------
 if systemctl list-unit-files --plain --no-legend "$SERVICE_NAME.service" 2>/dev/null | grep -q .; then
-    systemctl stop    "$SERVICE_NAME.service" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME.service" >/dev/null 2>&1 || true
     log "Stopped and disabled $SERVICE_NAME"
 else
@@ -96,7 +180,7 @@ fi
 systemctl daemon-reload
 systemctl reset-failed "$SERVICE_NAME.service" 2>/dev/null || true
 
-
+# ---------- 3) filebeat ----------
 if [ "$KEEP_FILEBEAT" = "1" ]; then
     systemctl stop filebeat 2>/dev/null || true
     systemctl disable filebeat >/dev/null 2>&1 || true
@@ -122,30 +206,7 @@ else
     log "Removed filebeat config, registry and logs"
 fi
 
-
-if command -v ufw >/dev/null 2>&1; then
-    mapfile -t OUR_RULES < <(ufw show added 2>/dev/null | grep -F "comment '$FW_TAG" || true)
-    if [ "${#OUR_RULES[@]}" -eq 0 ]; then
-        log "No ufw rule tagged '$FW_TAG' - nothing to remove"
-    else
-        for line in "${OUR_RULES[@]}"; do
-            spec="${line#ufw }"
-            spec="${spec% comment *}"
-
-            if ufw --force delete $spec >/dev/null 2>&1; then
-                log "Removed ufw rule: $spec"
-            else
-                warn "Could not remove ufw rule automatically: $spec"
-                warn "  Remove it yourself: sudo ufw delete $spec"
-            fi
-        done
-    fi
-    warn "ufw logging is left as it is (it is a machine-wide setting; turn it off yourself if you want: sudo ufw logging off)"
-else
-    log "ufw not installed - no firewall rule to remove"
-fi
-
-
+# ---------- 4) ลบโฟลเดอร์ agent ----------
 if [ "$IS_AGENT_DIR" = "1" ]; then
     rm -rf "$AGENT_DIR"
     if [ -d "$AGENT_DIR" ]; then
@@ -159,4 +220,4 @@ fi
 
 echo ""
 log "SecureLog agent removed from this machine."
-echo "     Remember to remove this agent on the dashboard's Agents page too (its IP binding stays on central)."
+echo "     Remember to remove this Client on the dashboard's Clients page too (its IP binding stays on central)."

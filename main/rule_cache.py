@@ -1,7 +1,7 @@
 
 
 from database.connection import AsyncSessionLocal
-from database.crud import get_detection_rule, upsert_detection_rule
+from database.crud import get_agent_disabled_rules, get_detection_rule, upsert_detection_rule
 from database.defaults import snapshot_rule
 from redis_client import cache_get_json, cache_set_json, cache_delete
 
@@ -9,6 +9,7 @@ from redis_client import cache_get_json, cache_set_json, cache_delete
 RULE_CACHE_TTL_SECONDS = 300
 
 CACHE_KEY_PREFIX = "detection_rule:"
+AGENT_CACHE_KEY_PREFIX = "agent_disabled_rules:"
 
 LOG_PREFIX = "RULE-CACHE"
 
@@ -129,14 +130,29 @@ async def load_rule_from_db(rule_key: str) -> dict:
     return data
 
 
-async def get_rule(rule_key: str) -> dict:
-
+async def get_rule(rule_key: str, agent_id: str | None = None) -> dict:
+    # Entry point หลักที่ detector เรียกใช้ก่อนประเมิน threshold ทุกครั้ง
     cached = cache_get_json(rule_cache_key(rule_key), log_prefix=LOG_PREFIX)
 
-    if cached:
-        return cached
+    rule = cached if cached else await load_rule_from_db(rule_key)
+    if not agent_id or not rule["is_active"]:
+        return rule
 
-    return await load_rule_from_db(rule_key)
+    cache_key = f"{AGENT_CACHE_KEY_PREFIX}{agent_id}"
+    setting = cache_get_json(cache_key, log_prefix=LOG_PREFIX)
+    if setting is None:
+        async with AsyncSessionLocal() as db:
+            disabled = await get_agent_disabled_rules(db, agent_id)
+        setting = {"disabled": disabled}
+        cache_set_json(cache_key, setting, RULE_CACHE_TTL_SECONDS, log_prefix=LOG_PREFIX)
+
+    if rule_key in setting["disabled"]:
+        return {**rule, "is_active": False}
+    return rule
+
+
+def clear_agent_rule_cache(agent_id: str) -> None:
+    cache_delete(f"{AGENT_CACHE_KEY_PREFIX}{agent_id}", log_prefix=LOG_PREFIX)
 
 
 async def update_rule(

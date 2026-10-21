@@ -166,15 +166,15 @@ def process_firewall_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
 
 
     for detection_type in DETECTION_TYPES:
-        rule = loop.run_until_complete(get_rule(RULE_KEY_BY_TYPE[detection_type]))
+        rule = loop.run_until_complete(get_rule(RULE_KEY_BY_TYPE[detection_type], log.get("agent_id")))
+        key = f"{detection_type}:{log.get('agent_id') or 'unknown_agent'}:{source_ip}"
 
         if not rule["is_active"]:
+            clear_fw_count(key)
             continue
 
         window_seconds = rule["window_seconds"]
         threshold = rule["threshold"]
-
-        key = f"{detection_type}:{source_ip}"
 
         events_by_key[key].append(event)
         prune_old_events(events_by_key[key], now_ts, window_seconds, MAX_EVENTS_PER_KEY)

@@ -1,6 +1,6 @@
-
-
-const RULE_TABS = ['rules', 'policy']
+// ย้ายมาจาก templates/rules.html (บล็อก <script> เดิม)
+// แท็บที่มีในหน้านี้ — ใช้เป็นทั้งค่าใน state และชื่อใน URL hash
+const RULE_TABS = ['rules', 'policy', 'agent-rules']
 
 
 const LEGACY_TAB_ALIASES = { ttl: 'policy', severity: 'policy' }
@@ -25,6 +25,14 @@ function rulesApp() {
 
     rules: [],
     groupedRules: [],
+    agentRules: [],
+    ruleAgents: [],
+    disabledByAgent: {},
+    selectedAgentId: '',
+    agentRuleDisabled: [],
+    loadingAgentRules: true,
+    agentRulesError: '',
+    savingAgentRules: false,
     showEditModal: false,
     editing: null,
     isSubmitting: false,
@@ -430,6 +438,83 @@ function rulesApp() {
 
     ruleLabel(ruleKey) {
       return this.ruleLabels[ruleKey] || ruleKey
+    },
+
+    async loadAgentRules() {
+      this.loadingAgentRules = true
+      try {
+        const res = await fetch(window.APP_BASE + '/api/agent_rule_settings')
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.detail || `เซิร์ฟเวอร์ตอบกลับ ${res.status}`)
+
+        this.ruleAgents = data.agents
+        this.agentRules = data.rules
+        this.disabledByAgent = data.disabled_by_agent
+        if (!this.ruleAgents.some(agent => agent.agent_id === this.selectedAgentId)) {
+          this.selectedAgentId = this.ruleAgents[0]?.agent_id || ''
+        }
+        this.selectRuleAgent()
+        this.agentRulesError = ''
+      } catch (err) {
+        this.agentRulesError = err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้'
+        console.error('โหลด Rule ราย Client ไม่สำเร็จ', err)
+      } finally {
+        this.loadingAgentRules = false
+      }
+    },
+
+    selectRuleAgent() {
+      this.agentRuleDisabled = [...(this.disabledByAgent[this.selectedAgentId] || [])]
+    },
+
+    agentRuleEnabled(ruleKey) {
+      return !this.agentRuleDisabled.includes(ruleKey)
+    },
+
+    toggleAgentRule(ruleKey, enabled) {
+      const disabled = new Set(this.agentRuleDisabled)
+      if (enabled) disabled.delete(ruleKey)
+      else disabled.add(ruleKey)
+      this.agentRuleDisabled = [...disabled]
+    },
+
+    agentRulesChanged() {
+      const saved = this.disabledByAgent[this.selectedAgentId] || []
+      return [...saved].sort().join(',') !== [...this.agentRuleDisabled].sort().join(',')
+    },
+
+    get groupedAgentRules() {
+      const categories = ['auth', 'web', 'firewall']
+      return categories.map(category => ({
+        category,
+        items: this.agentRules.filter(rule => rule.category === category),
+      })).filter(group => group.items.length)
+    },
+
+    discardAgentRuleChanges() {
+      this.selectRuleAgent()
+    },
+
+    async saveAgentRules() {
+      if (!this.selectedAgentId || this.savingAgentRules || !this.agentRulesChanged()) return
+      this.savingAgentRules = true
+      try {
+        const res = await fetch(window.APP_BASE + `/api/agent_rule_settings/${encodeURIComponent(this.selectedAgentId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ disabled_rules: this.agentRuleDisabled }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.detail || `เซิร์ฟเวอร์ตอบกลับ ${res.status}`)
+        this.disabledByAgent[this.selectedAgentId] = data.disabled_rules
+        this.agentRuleDisabled = [...data.disabled_rules]
+        this.$store.ui.success(`บันทึก Rule ของ ${this.selectedAgentId} แล้ว`)
+      } catch (err) {
+        this.$store.ui.error(err.message || 'บันทึก Rule ราย Client ไม่สำเร็จ')
+        console.error('บันทึก Rule ราย Client ไม่สำเร็จ', err)
+      } finally {
+        this.savingAgentRules = false
+      }
     },
 
     formatWindow(seconds) {

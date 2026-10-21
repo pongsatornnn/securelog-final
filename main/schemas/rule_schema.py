@@ -10,3 +10,7 @@ class UpdateRuleRequest(BaseModel):
 class RestoreDefaultRulesRequest(BaseModel):
 
     rule_key: str | None = None
+
+
+class UpdateAgentRulesRequest(BaseModel):
+    disabled_rules: list[str]

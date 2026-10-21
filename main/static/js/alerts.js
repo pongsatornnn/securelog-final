@@ -389,7 +389,20 @@ function alertsApp() {
       }
     },
 
+    closeDetail() {
+      this.showModal = false
 
+      // ลิงก์จาก Dashboard ใช้ ?focus= เปิดรายละเอียดตอนเข้าหน้าเว็บ
+      // เมื่อตรวจดูแล้วปิดกล่อง ให้ลบค่านี้เพื่อไม่ให้ F5 เปิดซ้ำ
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('focus')) {
+        url.searchParams.delete('focus')
+        window.history.replaceState(window.history.state, '', url)
+      }
+    },
+
+    // alert ใหม่จากสตรีมกลาง — การต่อ/ต่อใหม่/ถอยเวลา retry เป็นหน้าที่ของ alert-stream.js
+    // หน้านี้แค่เอาไปแสดงในตาราง (popup กับ badge ที่เมนู alert-notify.js จัดการแยก)
     onAlert(alert) {
 
 

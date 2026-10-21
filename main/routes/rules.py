@@ -4,16 +4,80 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.connection import get_db
-from database.crud import get_all_detection_rules, get_detection_rule
+from database.crud import (
+    get_agent_by_agent_id,
+    get_agents,
+    get_all_agent_disabled_rules,
+    get_all_detection_rules,
+    get_detection_rule,
+    set_agent_disabled_rules,
+)
 
 from dependencies import require_admin
-from rule_cache import update_rule, is_default_rule, restore_default_rule, restore_default_rules
+from rule_cache import (
+    clear_agent_rule_cache,
+    update_rule,
+    is_default_rule,
+    restore_default_rule,
+    restore_default_rules,
+)
 from shared import iso_utc
 
-from schemas.rule_schema import UpdateRuleRequest, RestoreDefaultRulesRequest
+from schemas.rule_schema import UpdateRuleRequest, RestoreDefaultRulesRequest, UpdateAgentRulesRequest
 
 
 router = APIRouter()
+
+
+@router.get("/api/agent_rule_settings")
+async def api_get_agent_rule_settings(
+    user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    agents = await get_agents(db)
+    rules = [rule for rule in await get_all_detection_rules(db) if rule.category != "login"]
+    disabled = await get_all_agent_disabled_rules(db)
+
+    disabled_by_agent = {agent.agent_id: [] for agent in agents}
+    for agent_id, rule_key in disabled:
+        if agent_id in disabled_by_agent:
+            disabled_by_agent[agent_id].append(rule_key)
+
+    return {
+        "agents": [
+            {"agent_id": agent.agent_id, "hostname": agent.hostname or agent.agent_id}
+            for agent in agents
+        ],
+        "rules": [
+            {"rule_key": rule.rule_key, "category": rule.category, "is_active": bool(rule.is_active)}
+            for rule in rules
+        ],
+        "disabled_by_agent": disabled_by_agent,
+    }
+
+
+@router.put("/api/agent_rule_settings/{agent_id}")
+async def api_update_agent_rule_settings(
+    agent_id: str,
+    payload: UpdateAgentRulesRequest,
+    user=Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    agent = await get_agent_by_agent_id(db, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="ไม่พบ Client")
+
+    allowed = {
+        rule.rule_key for rule in await get_all_detection_rules(db)
+        if rule.category != "login"
+    }
+    disabled = set(payload.disabled_rules)
+    if not disabled <= allowed:
+        raise HTTPException(status_code=400, detail="มี Rule ที่ใช้กับ Client ไม่ได้")
+
+    await set_agent_disabled_rules(db, agent_id, disabled)
+    clear_agent_rule_cache(agent_id)
+    return {"status": "ok", "agent_id": agent_id, "disabled_rules": sorted(disabled)}
 
 
 @router.get("/api/rules")

@@ -233,7 +233,9 @@ def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_con
 
 
 def _write_agent_zip(zip_path: str, agent_id: str, cert_info: dict, info_path: str, site_conf: str):
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+    # Filebeat binary is ~178 MiB; the default compression level takes over a minute
+    # for each client. Level 1 keeps the archive reasonably small and cuts that wait.
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zipf:
         if not os.path.isfile(FILEBEAT_ACL_BINARY):
             raise FileNotFoundError(f"Redis ACL Filebeat binary missing: {FILEBEAT_ACL_BINARY}")
         with open(FILEBEAT_ACL_BINARY, "rb") as binary:

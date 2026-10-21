@@ -256,15 +256,15 @@ def process_http_flood(
     if not source_ip:
         return
 
-    rule = loop.run_until_complete(get_rule(RULE_KEY_BY_TYPE["http_flood"]))
+    rule = loop.run_until_complete(get_rule(RULE_KEY_BY_TYPE["http_flood"], log.get("agent_id")))
+    key = f"http_flood:{log.get('agent_id') or 'unknown_agent'}:{source_ip}"
 
     if not rule["is_active"]:
+        clear_web_count(key)
         return
 
     window_seconds = rule["window_seconds"]
     threshold = rule["threshold"]
-
-    key = f"http_flood:{source_ip}"
 
     event = {
         "ts": now_ts,
@@ -328,20 +328,32 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     if not matches:
         return
 
+    # ถ้า rule แรกถูกปิดเฉพาะ Agent นี้ ให้ตรวจชนิดถัดไปที่ match ด้วย
+    selected = None
+    active_types = []
+    for matched_type, matched_signature in matches:
+        matched_rule = loop.run_until_complete(
+            get_rule(RULE_KEY_BY_TYPE[matched_type], log.get("agent_id"))
+        )
+        matched_key = f"{matched_type}:{log.get('agent_id') or 'unknown_agent'}:{source_ip or 'unknown'}"
+        if not matched_rule["is_active"]:
+            clear_web_count(matched_key)
+            continue
+        active_types.append(matched_type)
+        if selected is None:
+            selected = (matched_type, matched_signature, matched_rule)
 
-    detection_type, signature = matches[0]
-    all_types = [m[0] for m in matches]
-
-    rule = loop.run_until_complete(get_rule(RULE_KEY_BY_TYPE[detection_type]))
-
-    if not rule["is_active"]:
+    if selected is None:
         return
+
+    detection_type, signature, rule = selected
+    all_types = active_types
 
     window_seconds = rule["window_seconds"]
     threshold = rule["threshold"]
 
-
-    key = f"{detection_type}:{source_ip or 'unknown'}"
+    # web signature นับตาม IP เป็นหลัก
+    key = f"{detection_type}:{log.get('agent_id') or 'unknown_agent'}:{source_ip or 'unknown'}"
 
     event = {
         "ts": now_ts,

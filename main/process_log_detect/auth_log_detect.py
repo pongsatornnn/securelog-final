@@ -22,7 +22,8 @@ LOG_PREFIX = "AUTH-DETECT"
 MAX_EVENTS_PER_KEY = 200
 
 
-failed_attempts_by_ip: dict[str, deque] = defaultdict(deque)
+# SSH failed by agent + source IP
+failed_attempts_by_agent_ip: dict[str, deque] = defaultdict(deque)
 
 
 sudo_failed_by_user: dict[str, deque] = defaultdict(deque)
@@ -106,9 +107,9 @@ def get_sudo_attempts(log: dict) -> int:
     return attempts
 
 
-def clear_ssh_count(ip: str) -> None:
-    failed_attempts_by_ip[ip].clear()
-    print(f"[{LOG_PREFIX}] cleared SSH brute force count for IP [{ip}]")
+def clear_ssh_count(key: str) -> None:
+    failed_attempts_by_agent_ip[key].clear()
+    print(f"[{LOG_PREFIX}] cleared SSH brute force count for [{key}]")
 
 
 def clear_sudo_count(key: str) -> None:
@@ -209,7 +210,11 @@ def process_ssh_failed_password(log: dict, loop: asyncio.AbstractEventLoop) -> N
 
     now_ts = parse_agent_time_to_epoch(log)
 
-    ssh_rule = loop.run_until_complete(get_rule("ssh_brute_force"))
+    ssh_rule = loop.run_until_complete(get_rule("ssh_brute_force", log.get("agent_id")))
+    key = f"{log.get('agent_id') or 'unknown_agent'}:{ip}"
+    if not ssh_rule["is_active"]:
+        clear_ssh_count(key)
+        return
     ssh_window = ssh_rule["window_seconds"]
     ssh_threshold = ssh_rule["threshold"]
 
@@ -225,18 +230,18 @@ def process_ssh_failed_password(log: dict, loop: asyncio.AbstractEventLoop) -> N
         "raw_message": log.get("raw_message"),
     }
 
-    failed_attempts_by_ip[ip].append(event)
-    prune_old_events(failed_attempts_by_ip[ip], now_ts, ssh_window, MAX_EVENTS_PER_KEY)
+    failed_attempts_by_agent_ip[key].append(event)
+    prune_old_events(failed_attempts_by_agent_ip[key], now_ts, ssh_window, MAX_EVENTS_PER_KEY)
 
-
-    total_count = len(failed_attempts_by_ip[ip])
+    # แสดง log ที่นำมานับทุกครั้ง
+    total_count = len(failed_attempts_by_agent_ip[key])
     print_counted_ssh_log(ip, total_count, log)
 
-    ssh_events = get_events_in_window(failed_attempts_by_ip[ip], now_ts, ssh_window)
+    ssh_events = get_events_in_window(failed_attempts_by_agent_ip[key], now_ts, ssh_window)
     ssh_count = len(ssh_events)
 
-
-    if ssh_rule["is_active"] and ssh_count >= ssh_threshold:
+    # ครบ threshold แล้วยิง alert + clear count ทันที (กันยิงซ้ำทุก log ที่ตามมา)
+    if ssh_count >= ssh_threshold:
         print_ssh_bruteforce_alert(
             ip=ip,
             count=ssh_count,
@@ -256,7 +261,7 @@ def process_ssh_failed_password(log: dict, loop: asyncio.AbstractEventLoop) -> N
             threshold=ssh_threshold,
             related_logs=ssh_events,
         ))
-        clear_ssh_count(ip)
+        clear_ssh_count(key)
 
 
 def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
@@ -272,7 +277,10 @@ def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     now_ts = parse_agent_time_to_epoch(log)
     attempts = get_sudo_attempts(log)
 
-    sudo_rule = loop.run_until_complete(get_rule("sudo_failed"))
+    sudo_rule = loop.run_until_complete(get_rule("sudo_failed", log.get("agent_id")))
+    if not sudo_rule["is_active"]:
+        clear_sudo_count(key)
+        return
     sudo_window = sudo_rule["window_seconds"]
     sudo_threshold = sudo_rule["threshold"]
 
@@ -298,7 +306,7 @@ def process_sudo_failed(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     sudo_events = get_events_in_window(sudo_failed_by_user[key], now_ts, sudo_window)
     sudo_count = len(sudo_events)
 
-    if sudo_rule["is_active"] and sudo_count >= sudo_threshold:
+    if sudo_count >= sudo_threshold:
         print_sudo_alert(
             key=key,
             count=sudo_count,

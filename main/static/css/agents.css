@@ -505,6 +505,10 @@
   font-size: 15px;
 }
 
+.download-modal .success-result-box > .button-row {
+  margin-top: 10px;
+}
+
 .guide-modal {
   --modal-width: 640px;
 }

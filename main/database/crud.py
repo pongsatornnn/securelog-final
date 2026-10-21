@@ -697,6 +697,24 @@ async def get_all_detection_rules(db: AsyncSession):
     return result.scalars().all()
 
 
+async def get_agent_disabled_rules(db: AsyncSession, agent_id: str) -> list[str]:
+    result = await db.execute(
+        select(AgentDisabledRule.rule_key).where(AgentDisabledRule.agent_id == agent_id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_all_agent_disabled_rules(db: AsyncSession):
+    result = await db.execute(select(AgentDisabledRule.agent_id, AgentDisabledRule.rule_key))
+    return result.all()
+
+
+async def set_agent_disabled_rules(db: AsyncSession, agent_id: str, rule_keys: set[str]) -> None:
+    await db.execute(delete(AgentDisabledRule).where(AgentDisabledRule.agent_id == agent_id))
+    db.add_all(AgentDisabledRule(agent_id=agent_id, rule_key=key) for key in sorted(rule_keys))
+    await db.commit()
+
+
 async def upsert_detection_rule(
     db: AsyncSession,
     rule_key: str,

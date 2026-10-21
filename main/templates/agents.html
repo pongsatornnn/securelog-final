@@ -182,10 +182,15 @@
     <div class="modal">
       <div class="modal-header">
         <div class="modal-title">เพิ่ม Client ใหม่</div>
-        <button class="btn-close" @click="closeCreateModal()" aria-label="ปิด">×</button>
+        <button class="btn-close" @click="closeCreateModal()" :disabled="creating" aria-label="ปิด">×</button>
       </div>
 
-      <div class="form-grid">
+      <div class="state-box" x-show="creating" role="status">
+        <div class="state-spinner" aria-hidden="true"></div>
+        <div class="state-title">กำลังสร้าง Client Package และลิงก์ดาวน์โหลด...</div>
+      </div>
+
+      <div class="form-grid" x-show="!creating">
 
         <div class="form-group">
           <label class="form-label">Hostname <span class="required-mark">*</span></label>
@@ -205,11 +210,10 @@
         </div>
       </div>
 
-      <div class="modal-actions">
-        <button class="btn-secondary" @click="closeCreateModal()" :disabled="creating">ยกเลิก</button>
-        <button class="btn-primary" @click="createAgent()" :disabled="creating">
-          <span x-show="!creating">สร้าง Client Package</span>
-          <span x-show="creating">กำลังสร้าง...</span>
+      <div class="modal-actions" x-show="!creating">
+        <button class="btn-secondary" @click="closeCreateModal()">ยกเลิก</button>
+        <button class="btn-primary" @click="createAgent()">
+          สร้าง Client Package
         </button>
       </div>
 
@@ -312,18 +316,24 @@
   <div class="modal-backdrop" x-show="showRegenModal" style="display: none;" @click.self="closeRegenModal()">
     <div class="modal download-modal">
       <div class="modal-header">
-        <div class="modal-title">Download Link ใหม่</div>
-        <button class="btn-close" @click="closeRegenModal()" aria-label="ปิด">×</button>
+        <div class="modal-title">Client Package ใหม่</div>
+        <button class="btn-close" @click="closeRegenModal()" :disabled="regenLoading" aria-label="ปิด">×</button>
+      </div>
+
+      <div class="state-box" x-show="regenLoading" role="status">
+        <div class="state-spinner" aria-hidden="true"></div>
+        <div class="state-title">กำลังสร้าง Client Package และลิงก์ดาวน์โหลด...</div>
       </div>
 
       <div class="success-result-box" x-show="regenDownloadUrl">
+        <div class="state-title">สร้าง Package ใหม่สำหรับ <span x-text="regenAgentId"></span> สำเร็จ</div>
         <div class="button-row">
-          <button class="btn-copy-link" @click="copyRegenDownloadCommand(regenDownloadUrl)">
+          <button class="btn-copy-link" type="button" @click="copyRegenDownloadCommand(regenDownloadUrl)">
             <span x-show="!copiedRegenDownloadCommand">Copy Linux Command</span>
             <span x-show="copiedRegenDownloadCommand">Copied!</span>
           </button>
 
-          <a class="btn-primary" :class="{'link-disabled': linkExpired()}" :href="regenDownloadUrl" @click="linkExpired() && $event.preventDefault()">
+          <a class="btn-primary" :class="{'link-disabled': linkExpired()}" :href="buildFullDownloadUrl(regenDownloadUrl)" @click="linkExpired() && $event.preventDefault()">
             ดาวน์โหลด Client Package ใหม่ (.zip)
           </a>
         </div>
