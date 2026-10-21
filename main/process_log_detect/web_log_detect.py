@@ -1,10 +1,10 @@
-
+# Detector: Web attack จาก normalized web access log — 2 แบบใน worker เดียว
 
 import re
 import time
 import asyncio
 from collections import defaultdict, deque
-from urllib.parse import unquote_plus
+from urllib.parse import quote_plus, unquote_plus
 
 from rule_cache import get_rule
 from signature_cache import get_signatures
@@ -22,7 +22,7 @@ NORMALIZED_WEB_QUEUE = "normalized_web_logs_queue"
 
 LOG_PREFIX = "WEB-DETECT"
 
-
+# detection_type -> rule_key ใน detection_rules
 RULE_KEY_BY_TYPE = {
     "sql_injection": "web_sql_injection",
     "xss": "web_xss",
@@ -31,13 +31,13 @@ RULE_KEY_BY_TYPE = {
     "http_flood": "web_http_flood",
 }
 
-
+# เก็บ history สูงสุดต่อ key เพื่อไม่ให้ memory โตไม่จำกัด
 MAX_EVENTS_PER_KEY = 1000
 
-
+# detector เก็บ regex ที่ compile แล้วใน memory และ reload จาก DB/cache ตาม interval นี้
 SIGNATURE_REFRESH_SECONDS = 30
 
-
+# ลำดับ = ความสำคัญ (รุนแรงกว่าอยู่ก่อน) เวลา request เดียว match หลายชนิด
 ATTACK_PRIORITY = [
     "sql_injection",
     "command_injection",
@@ -54,12 +54,15 @@ ATTACK_LABEL = {
 }
 
 
+# ============================================================
+
+# detection_type -> compiled regex (รวมทุก pattern ที่ active) หรือ None ถ้าไม่มี pattern
 _compiled_signatures: dict[str, re.Pattern | None] = {}
 _last_signature_reload: float = 0.0
 
 
 def compile_patterns(patterns: list[str]) -> re.Pattern | None:
-
+    # compile pattern ทั้งหมดของชนิดหนึ่งรวมเป็น regex เดียว (IGNORECASE)
     valid: list[str] = []
 
     for pattern in patterns:
@@ -76,7 +79,7 @@ def compile_patterns(patterns: list[str]) -> re.Pattern | None:
 
 
 def reload_signatures(loop: asyncio.AbstractEventLoop, force: bool = False) -> None:
-
+    # โหลด pattern จาก DB/cache มา compile เก็บใน memory
     global _last_signature_reload
 
     now_ts = time.time()
@@ -94,6 +97,7 @@ def reload_signatures(loop: asyncio.AbstractEventLoop, force: bool = False) -> N
     _last_signature_reload = now_ts
 
 
+# ============================================================
 events_by_key: dict[str, deque] = defaultdict(deque)
 
 
@@ -102,8 +106,10 @@ def clear_web_count(key: str) -> None:
     print(f"[{LOG_PREFIX}] cleared web attack count for [{key}]")
 
 
-def decode_url(value: str) -> list[str]:
+# ============================================================
 
+def decode_url(value: str) -> list[str]:
+    # decode URL-encoding สองชั้น เพื่อดัก payload ที่ encode มา (เช่น %2e%2e%2f, %253c)
     try:
         once = unquote_plus(value)
         twice = unquote_plus(once)
@@ -112,13 +118,14 @@ def decode_url(value: str) -> list[str]:
         return []
 
 
+# request line ใน raw log — ใช้แทน path เมื่อ normalize แยก path ไม่ได้ (เช่น payload มีช่องว่างดิบ)
 RAW_REQUEST_RE = re.compile(r'"[A-Z]+ (.*?)(?: HTTP/[\d.]+)?"')
 PHPMYADMIN_SQL_ROUTE_RE = re.compile(
     r"/(?:table|database|sql|server)(?:/[A-Za-z0-9_-]+)*", re.IGNORECASE,
 )
 
 
-def mask_phpmyadmin_sql_parameters(path: str) -> str:
+def mask_phpmyadmin_parameters(path: str, *, for_command: bool = False) -> str:
     endpoint, separator, query = path.partition("?")
     if not separator or endpoint.lower() != "/phpmyadmin/index.php":
         return path
@@ -137,11 +144,78 @@ def mask_phpmyadmin_sql_parameters(path: str) -> str:
     token = single_value("token")
     if not route or not PHPMYADMIN_SQL_ROUTE_RE.fullmatch(route):
         return path
-    if not token or not re.fullmatch(r"[0-9a-f]{32,64}", token, re.IGNORECASE):
+    # Some phpMyAdmin links (notably column sorting) include a SQL signature but
+    # omit the CSRF token from the URL. If a token is present, it must be valid.
+    if token is not None and not re.fullmatch(r"[0-9a-f]{32,64}", token, re.IGNORECASE):
         return path
 
     segments = query.split("&")
-    # SQL written by phpMyAdmin is expected input, while other fields keep their full detection.
+    # phpMyAdmin's row Edit/Copy link has no SQL signature. Accept only its
+    # narrow, generated primary-key lookup shape; arbitrary clauses still scan.
+    table = single_value("table")
+    where_clause = single_value("where_clause")
+    row_link = (
+        route == "/table/change"
+        and table is not None
+        and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", table) is not None
+        and single_value("clause_is_unique") == "1"
+        and single_value("default_action") in ("update", "insert")
+        and where_clause is not None
+        and re.fullmatch(
+            rf"`{re.escape(table)}`\.`[A-Za-z_][A-Za-z0-9_$]*`\s*=\s*[0-9]+",
+            where_clause,
+        ) is not None
+    )
+    if row_link:
+        for name in ("where_clause", "sql_query"):
+            value = single_value(name)
+            if value is None:
+                continue
+            if name == "sql_query":
+                # Row links retain the current Browse sort, also without a
+                # signature. Match only this generated SELECT for the table.
+                simple_browse = rf"SELECT\s+\*\s+FROM\s+`{re.escape(table)}`"
+                sorted_browse = (
+                    rf"{simple_browse}\s+ORDER\s+BY\s+"
+                    rf"`{re.escape(table)}`\.`[A-Za-z_][A-Za-z0-9_$]*`\s+(?:ASC|DESC)"
+                )
+                if not (
+                    re.fullmatch(simple_browse, value, re.IGNORECASE)
+                    or re.fullmatch(sorted_browse, value, re.IGNORECASE)
+                ):
+                    continue
+            field = next(field for field in fields if field[0] == name)
+            _, _, index, raw_key, _ = field
+            segments[index] = f"{raw_key}="
+    # Navigation identifiers are not SQL expressions. Keep unusual values
+    # visible to the signatures.
+    if not for_command:
+        for name in ("db", "checkprivsdb"):
+            value = single_value(name)
+            if value and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_$]*", value):
+                field = next(field for field in fields if field[0] == name)
+                _, _, index, raw_key, _ = field
+                segments[index] = f"{raw_key}="
+        sort_by = single_value("sort_by")
+        if route == "/server/databases" and sort_by and re.fullmatch(r"[A-Z][A-Z0-9_]*", sort_by):
+            field = next(field for field in fields if field[0] == "sort_by")
+            _, _, index, raw_key, _ = field
+            segments[index] = f"{raw_key}="
+    else:
+        # phpMyAdmin's own navigation link contains "&goto", which overlaps
+        # a generic shell signature. Only suppress a simple internal route.
+        goto = single_value("goto")
+        if goto and re.fullmatch(
+            r"index\.php\?route=/(?:table|database|sql|server)(?:/[A-Za-z0-9_-]+)*"
+            r"(?:&(?:db|table)=[A-Za-z_][A-Za-z0-9_$]*)*",
+            goto, re.IGNORECASE,
+        ):
+            field = next(field for field in fields if field[0] == "goto")
+            _, _, index, _, _ = field
+            segments[index] = ""
+
+    # SQL written by phpMyAdmin is expected input. Other parameters remain
+    # searchable, and only fields with the matching signature shape are changed.
     for name, signature_name in (
         ("sql_query", "sql_signature"),
         ("where_clause", "where_clause_signature"),
@@ -154,13 +228,28 @@ def mask_phpmyadmin_sql_parameters(path: str) -> str:
             continue
         field = next(field for field in fields if field[0] == name)
         _, _, index, raw_key, _ = field
-        segments[index] = f"{raw_key}="
-    return f"{endpoint}?{'&'.join(segments)}"
+        if for_command:
+            # SQL identifier quotes look like shell command substitution to the
+            # generic backtick signature. Preserve the rest of the SQL value so
+            # other command signatures still inspect it.
+            decoded = unquote_plus(value)
+            decoded = re.sub(r"`([A-Za-z_][A-Za-z0-9_$]*)`", r"\1", decoded)
+            segments[index] = f"{raw_key}={quote_plus(decoded)}"
+        else:
+            segments[index] = f"{raw_key}="
+    sanitized_query = "&".join(segment for segment in segments if segment)
+    return f"{endpoint}?{sanitized_query}" if sanitized_query else endpoint
 
 
-def build_haystack(log: dict, mask_phpmyadmin_sql: bool = False) -> list[str]:
-
-
+def build_haystack(
+    log: dict, mask_phpmyadmin_sql: bool = False,
+    mask_phpmyadmin_command: bool = False,
+    split_query_parameters: bool = False,
+) -> list[str]:
+    # จุดที่ payload ซ่อนได้: path ดิบ + path decode + user_agent
+    # ไม่ตรวจ raw log ทั้งบรรทัด — Referer คือ URL ของหน้าก่อนหน้า ทำให้ไฟล์ css/รูปที่โหลดตาม
+    # หน้านั้นโดนนับซ้ำ และวันที่/ขนาด/สถานะในบรรทัดก็ไปชน signature ได้
+    # คืนเป็นรายการแยกช่อง ตรวจทีละช่อง — ถ้าต่อกันเป็นสตริงเดียว regex ที่มี \s จะจับข้ามช่องได้
     path = str(log.get("path") or "")
     user_agent = str(log.get("user_agent") or "")
 
@@ -169,16 +258,30 @@ def build_haystack(log: dict, mask_phpmyadmin_sql: bool = False) -> list[str]:
         path = found.group(1) if found else ""
 
     if mask_phpmyadmin_sql:
-        path = mask_phpmyadmin_sql_parameters(path)
-    parts = [path, *decode_url(path), user_agent, *decode_url(user_agent)]
+        path = mask_phpmyadmin_parameters(path)
+    elif mask_phpmyadmin_command:
+        path = mask_phpmyadmin_parameters(path, for_command=True)
+    if split_query_parameters and "?" in path:
+        # XSS signatures must not match across unrelated query parameters.
+        # Split before decoding so an encoded '&' within one value stays visible.
+        endpoint, query = path.split("?", 1)
+        path_parts = [endpoint, *query.split("&")]
+    else:
+        path_parts = [path]
+    parts = [
+        *(part for value in path_parts for part in (value, *decode_url(value))),
+        user_agent, *decode_url(user_agent),
+    ]
 
     return list(dict.fromkeys(p for p in parts if p))
 
 
 def detect_attack_types(
     haystack: list[str], sql_haystack: list[str] | None = None,
+    command_haystack: list[str] | None = None,
+    xss_haystack: list[str] | None = None,
 ) -> list[tuple[str, str]]:
-
+    # คืน list ของ (detection_type, signature ที่ match) เรียงตามความสำคัญ
     matches: list[tuple[str, str]] = []
 
     for detection_type in ATTACK_PRIORITY:
@@ -186,7 +289,13 @@ def detect_attack_types(
         if pattern is None:
             continue
 
-        parts = sql_haystack if detection_type == "sql_injection" and sql_haystack is not None else haystack
+        parts = haystack
+        if detection_type == "sql_injection" and sql_haystack is not None:
+            parts = sql_haystack
+        elif detection_type == "command_injection" and command_haystack is not None:
+            parts = command_haystack
+        elif detection_type == "xss" and xss_haystack is not None:
+            parts = xss_haystack
         for part in parts:
             found = pattern.search(part)
             if found:
@@ -195,6 +304,8 @@ def detect_attack_types(
 
     return matches
 
+
+# ============================================================
 
 def print_counted_web_log(
     detection_type: str,
@@ -246,13 +357,15 @@ def print_web_alert(
     print("=" * 90 + "\n")
 
 
+# ============================================================
+
 def process_http_flood(
     log: dict,
     source_ip: str | None,
     now_ts: float,
     loop: asyncio.AbstractEventLoop,
 ) -> None:
-
+    # App-level DoS: นับจำนวน request "ทั้งหมด" ต่อ source_ip ใน sliding window
     if not source_ip:
         return
 
@@ -309,21 +422,28 @@ def process_http_flood(
         clear_web_count(key)
 
 
+# ============================================================
+
 def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
     if log.get("category") != "web":
         return
 
-
+    # refresh pattern จาก DB เป็นระยะ (โหลดจริงเฉพาะเมื่อครบ interval)
     reload_signatures(loop)
 
     source_ip = log.get("source_ip")
     now_ts = parse_agent_time_to_epoch(log)
 
-
+    # App-level DoS: นับทุก request ต่อ IP — ต้องรันก่อน signature return
     process_http_flood(log, source_ip, now_ts, loop)
 
     haystack = build_haystack(log)
-    matches = detect_attack_types(haystack, build_haystack(log, mask_phpmyadmin_sql=True))
+    matches = detect_attack_types(
+        haystack,
+        build_haystack(log, mask_phpmyadmin_sql=True),
+        build_haystack(log, mask_phpmyadmin_command=True),
+        build_haystack(log, split_query_parameters=True),
+    )
 
     if not matches:
         return
@@ -402,8 +522,10 @@ def process_web_log(log: dict, loop: asyncio.AbstractEventLoop) -> None:
         clear_web_count(key)
 
 
-def prepare_web_detector(loop: asyncio.AbstractEventLoop) -> None:
+# ============================================================
 
+def prepare_web_detector(loop: asyncio.AbstractEventLoop) -> None:
+    # seed rule ลง DB + โหลด signature ครั้งแรกให้พร้อมก่อนรับ log
     seed_rules(loop, RULE_KEY_BY_TYPE.values(), LOG_PREFIX)
     reload_signatures(loop, force=True)
     total = sum(1 for p in _compiled_signatures.values() if p is not None)
