@@ -41,7 +41,7 @@ trap cleanup EXIT
 
 if [ "${FILEBEAT_BUILD_FROM_SOURCE:-0}" != 1 ]; then
     echo "Downloading prebuilt Filebeat ACL binary from GitHub Release"
-    export FILEBEAT_RELEASE_REPO="${FILEBEAT_RELEASE_REPO:-pongsatornnn/security-Project}"
+    export FILEBEAT_RELEASE_REPO="${FILEBEAT_RELEASE_REPO:-pongsatornnn/securelog-final}"
     if python3 "$PROJECT_DIR/for_Agent/download_filebeat_acl.py" \
         "$RELEASE_TAG" "$RELEASE_ASSET" "$RELEASE_SHA256" "$BUILD_DIR/filebeat-acl" "$PROJECT_DIR"; then
         chmod 755 "$BUILD_DIR/filebeat-acl"
