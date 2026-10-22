@@ -206,7 +206,11 @@ def create_agent_zip(agent_id: str, secret_token: str, cert_info: dict, site_con
 
     created_at = now_thai().strftime("%Y-%m-%d %H:%M:%S")
 
-    with open(info_path, "w", encoding="utf-8") as f:
+    # Keep the token private even when the process umask allows group/world reads.
+    # fchmod also fixes an existing file when regenerating a package.
+    info_fd = os.open(info_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(info_fd, "w", encoding="utf-8") as f:
+        os.fchmod(f.fileno(), 0o600)
         f.write(f"AGENT_ID={agent_id}\n")
         f.write(f"SECRET_TOKEN={secret_token}\n")
         f.write(f"CERT_FILE={agent_id}.crt\n")
