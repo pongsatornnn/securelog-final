@@ -39,13 +39,17 @@ if [ -n "$FORWARDED_ALLOW_IPS" ]; then
 fi
 
 
+WEB_PORT="${WEB_PORT:-$(env_get WEB_PORT "$ENV_FILE")}"
+WEB_PORT="${WEB_PORT:-8000}"
+WEBHOOK_PORT="${WEBHOOK_PORT:-$(env_get WEBHOOK_PORT "$ENV_FILE")}"
+WEBHOOK_PORT="${WEBHOOK_PORT:-8080}"
 WEB_DEFAULT="${BIND_HOST:-}"
 [ -n "$WEB_DEFAULT" ] || WEB_DEFAULT="$(installed_bind_host securelog-web.service)"
 [ -n "$WEB_DEFAULT" ] || WEB_DEFAULT="$(env_get REDIS_HOST "$ENV_FILE")"
 [ -n "$WEB_DEFAULT" ] || WEB_DEFAULT="$(detect_primary_ip)"
 
 pick_bind_host WEB_BIND_HOST \
-    "dashboard (HTTPS :8000) - which IP to listen on" "$WEB_DEFAULT" 1 \
+    "dashboard (HTTPS :$WEB_PORT) - which IP to listen on" "$WEB_DEFAULT" 1 \
     "One IP = other networks on this host cannot reach it; it must also be in the cert SAN"
 
 
@@ -53,7 +57,7 @@ HOOK_DEFAULT="$(installed_bind_host securelog-line-webhook.service)"
 [ -n "$HOOK_DEFAULT" ] || HOOK_DEFAULT="0.0.0.0"
 
 pick_bind_host WEBHOOK_BIND_HOST \
-    "LINE webhook (HTTP :8080) - which IP to listen on" "$HOOK_DEFAULT" 1 \
+    "LINE webhook (HTTP :$WEBHOOK_PORT) - which IP to listen on" "$HOOK_DEFAULT" 1 \
     "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 keeps it off the network"
 
 for _v in WEB_BIND_HOST WEBHOOK_BIND_HOST; do
@@ -76,6 +80,7 @@ fi
 REDIS_DIR="$PROJECT_DIR/redis"
 
 
+# setup-server.sh writes the selected service ports to .env.
 REDIS_PORT="${REDIS_PORT:-$(env_get REDIS_PORT "$ENV_FILE")}"
 REDIS_PORT="${REDIS_PORT:-6380}"
 
@@ -86,6 +91,18 @@ valid_port "$REDIS_PORT" || {
     echo "   Fix the value in .env, or re-run: sudo $PROJECT_DIR/setup-server.sh" >&2
     exit 1
 }
+for _v in WEB_PORT WEBHOOK_PORT; do
+    valid_port "${!_v}" || { echo "!! $_v='${!_v}' is not a usable port (must be 1024-65535)" >&2; exit 1; }
+done
+if [ "$REDIS_PORT" = "$WEB_PORT" ] || [ "$REDIS_PORT" = "$WEBHOOK_PORT" ] || [ "$WEB_PORT" = "$WEBHOOK_PORT" ]; then
+    echo "!! REDIS_PORT, WEB_PORT and WEBHOOK_PORT must be different" >&2
+    exit 1
+fi
+
+if [ -f "$ENV_FILE" ]; then
+    [ "$(env_get WEB_PORT "$ENV_FILE")" = "$WEB_PORT" ] || env_set WEB_PORT "$WEB_PORT" "$ENV_FILE"
+    [ "$(env_get WEBHOOK_PORT "$ENV_FILE")" = "$WEBHOOK_PORT" ] || env_set WEBHOOK_PORT "$WEBHOOK_PORT" "$ENV_FILE"
+fi
 
 
 detect_pg_unit() {
@@ -139,7 +156,7 @@ EOF
 
 
 gen securelog-web "Web Dashboard (HTTPS)" \
-    "$UVICORN main:app --host $WEB_BIND_HOST --port 8000 --ssl-certfile $DASH_CERT --ssl-keyfile $DASH_KEY --timeout-graceful-shutdown 5 --no-server-header$PROXY_FLAGS" \
+    "$UVICORN main:app --host $WEB_BIND_HOST --port $WEB_PORT --ssl-certfile $DASH_CERT --ssl-keyfile $DASH_KEY --timeout-graceful-shutdown 5 --no-server-header$PROXY_FLAGS" \
 '
 TimeoutStopSec=20
 '
@@ -150,7 +167,7 @@ gen securelog-firewall-detector  "Firewall Detector (Port scan / deny rate)" "$P
 gen securelog-agent-monitor      "Agent Monitor (metrics + state sync)"    "$PY -m process_agent.process_agent"
 gen securelog-blacklist-sweeper  "Blacklist Expiry Sweeper"                "$PY blacklist_expiry.py"
 gen securelog-line-notifier      "LINE Alert Notifier"                     "$PY -m LINE_API.alert_subscriber"
-gen securelog-line-webhook       "LINE Webhook Receiver"                   "$UVICORN LINE_API.webhook_app:app --host $WEBHOOK_BIND_HOST --port 8080 --no-server-header"
+gen securelog-line-webhook       "LINE Webhook Receiver"                   "$UVICORN LINE_API.webhook_app:app --host $WEBHOOK_BIND_HOST --port $WEBHOOK_PORT --no-server-header"
 
 
 # Systemd sends SIGTERM to this Redis instance without invoking another redis-cli.
@@ -204,7 +221,7 @@ fi
 
 echo "generated: $(ls "$DIR"/securelog-*.service | wc -l) securelog units + centralredis.service + redis-mtls.conf"
 echo "  APP_USER=$APP_USER  PROJECT_DIR=$PROJECT_DIR"
-echo "  dashboard :8000 -> $WEB_BIND_HOST   ·   LINE webhook :8080 -> $WEBHOOK_BIND_HOST"
+echo "  dashboard :$WEB_PORT -> $WEB_BIND_HOST   ·   LINE webhook :$WEBHOOK_PORT -> $WEBHOOK_BIND_HOST"
 echo "  redis mTLS tls-port $REDIS_PORT"
 if [ -n "$REDIS_CONF_BACKUP" ]; then
     echo "  previous redis-mtls.conf kept at $REDIS_CONF_BACKUP"

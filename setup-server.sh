@@ -163,6 +163,12 @@ OLD_REDIS_PORT="$(env_get REDIS_PORT "$ENV_FILE")"
 if [ -z "$OLD_REDIS_PORT" ] && [ "$ENV_EXISTED" = "1" ]; then
     OLD_REDIS_PORT=6380
 fi
+OLD_WEB_PORT="$(env_get WEB_PORT "$ENV_FILE")"
+OLD_WEBHOOK_PORT="$(env_get WEBHOOK_PORT "$ENV_FILE")"
+if [ "$ENV_EXISTED" = "1" ]; then
+    OLD_WEB_PORT="${OLD_WEB_PORT:-8000}"
+    OLD_WEBHOOK_PORT="${OLD_WEBHOOK_PORT:-8080}"
+fi
 
 
 OLD_DB_NAME="$(env_get DB_NAME "$ENV_FILE")"
@@ -426,23 +432,23 @@ ask_redis_secret() {  # ask_redis_secret VAR "คำอธิบายบัญ�
 
 
 port_reject() {
-    local p="$1"
+    local p="$1" var="$2"
     if ! valid_port "$p"; then
         printf '%s' "not a port number in 1024-65535 (centralredis runs as '$APP_USER', not root, so anything below 1024 cannot be bound)"
         return 0
     fi
-    case "$p" in
-        8000) printf '%s' "8000 is the dashboard on this machine" ;;
-        8080) printf '%s' "8080 is the LINE webhook on this machine" ;;
-    esac
+    [ "$var" != REDIS_PORT ] && [ "$p" = "${REDIS_PORT:-}" ] && { printf '%s' "already selected for Redis"; return; }
+    [ "$var" != WEB_PORT ] && [ "$p" = "${WEB_PORT:-}" ] && { printf '%s' "already selected for the dashboard"; return; }
+    [ "$var" != WEBHOOK_PORT ] && [ "$p" = "${WEBHOOK_PORT:-}" ] && { printf '%s' "already selected for the LINE webhook"; return; }
+    return 0
 }
 
 
 port_warn_in_use() {  # port_warn_in_use PORT
     local p="$1"
-    [ "$p" = "${OLD_REDIS_PORT:-}" ] && return 0
+    case "$p" in "${OLD_REDIS_PORT:-}"|"${OLD_WEB_PORT:-}"|"${OLD_WEBHOOK_PORT:-}") return 0 ;; esac
     if command -v ss >/dev/null 2>&1 && ss -ltnH "sport = :$p" 2>/dev/null | grep -q .; then
-        warn "Something is already listening on $p/tcp - centralredis cannot start until it stops"
+        warn "Something is already listening on $p/tcp - the selected service cannot start until it stops"
         warn "  See what it is:  sudo ss -ltnp \"sport = :$p\""
     fi
     if [ "$p" = "6379" ]; then
@@ -457,14 +463,14 @@ ask_port() {
 
     cur="$(eval "printf '%s' \"\${$var:-}\"")"
     if [ -n "$cur" ]; then
-        why="$(port_reject "$cur")"
+        why="$(port_reject "$cur" "$var")"
         [ -z "$why" ] && { ok "$var = $cur (from env)"; port_warn_in_use "$cur"; return 0; }
         err "$var=$cur: $why"; exit 1
     fi
 
     if [ ! -t 0 ]; then
         [ -n "$def" ] || { err "No tty and $var was not preset"; exit 1; }
-        why="$(port_reject "$def")"
+        why="$(port_reject "$def" "$var")"
         [ -n "$why" ] && { err "$var=$def: $why"; exit 1; }
         eval "$var=\$def"
         ok "$var = $def (default, no tty)"
@@ -474,7 +480,7 @@ ask_port() {
     while :; do
         read -rp "  $prompt${def:+ [$def]}: " ans
         ans="${ans:-$def}"
-        why="$(port_reject "$ans")"
+        why="$(port_reject "$ans" "$var")"
         [ -z "$why" ] && break
         echo "    !! '$ans' - $why"
     done
@@ -520,6 +526,8 @@ pick_bind_host BIND_HOST \
 ask_port REDIS_PORT \
     "Port the Redis of this central listens on (mTLS - agents connect to it)" \
     "${OLD_REDIS_PORT:-6380}"
+ask_port WEB_PORT "Port the dashboard listens on (HTTPS)" "${OLD_WEB_PORT:-8000}"
+ask_port WEBHOOK_PORT "Port the LINE webhook listens on (HTTP)" "${OLD_WEBHOOK_PORT:-8080}"
 
 
 norm_root_path() {  # "xxx" / "/xxx/" / "//a//b//" -> "/xxx", "/a/b" · "/" หรือว่าง = อยู่ที่ราก
@@ -576,7 +584,7 @@ fi
 
 _web_default="${WEB_DEFAULT:-$BIND_HOST}"
 pick_bind_host WEB_BIND_HOST \
-    "dashboard (HTTPS :8000) - which IP to listen on" "$_web_default" 1 \
+    "dashboard (HTTPS :$WEB_PORT) - which IP to listen on" "$_web_default" 1 \
     "127.0.0.1 = only a proxy running on this host can reach it; 0.0.0.0 = all interfaces"
 
 
@@ -587,7 +595,7 @@ if [ "$PROXY_IS_LOCAL" = "0" ] && [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
 fi
 
 pick_bind_host WEBHOOK_BIND_HOST \
-    "LINE webhook (HTTP :8080) - which IP to listen on" "${HOOK_DEFAULT:-0.0.0.0}" 1 \
+    "LINE webhook (HTTP :$WEBHOOK_PORT) - which IP to listen on" "${HOOK_DEFAULT:-0.0.0.0}" 1 \
     "LINE calls in through a tunnel; if the tunnel runs here, 127.0.0.1 is fine"
 
 
@@ -662,6 +670,8 @@ if [ "$ENV_EXISTED" = "1" ]; then
     if [ "$PORT_CHANGED" = "1" ]; then
         CHANGES+=("Redis port $OLD_REDIS_PORT -> $REDIS_PORT (redis-mtls.conf, .env, site.conf, firewall - EVERY agent already installed stops reporting)")
     fi
+    [ "$OLD_WEB_PORT" = "$WEB_PORT" ] || CHANGES+=("dashboard port $OLD_WEB_PORT -> $WEB_PORT (systemd, firewall, dashboard URL and proxy upstream)")
+    [ "$OLD_WEBHOOK_PORT" = "$WEBHOOK_PORT" ] || CHANGES+=("LINE webhook port $OLD_WEBHOOK_PORT -> $WEBHOOK_PORT (systemd, firewall and LINE/tunnel upstream)")
     if [ -n "$INSTALLED_APP_USER" ] && [ "$INSTALLED_APP_USER" != "$APP_USER" ]; then
         CHANGES+=("services run as '$APP_USER' instead of '$INSTALLED_APP_USER' (the whole project is chown'd)")
     fi
@@ -1261,6 +1271,8 @@ if [ "$ENV_EXISTED" = "1" ]; then
 
     env_sync WEB_BIND_HOST     "$WEB_BIND_HOST"
     env_sync WEBHOOK_BIND_HOST "$WEBHOOK_BIND_HOST"
+    env_sync WEB_PORT          "$WEB_PORT"
+    env_sync WEBHOOK_PORT      "$WEBHOOK_PORT"
 
 
     env_sync ROOT_PATH           "$ROOT_PATH"
@@ -1321,6 +1333,8 @@ ALGORITHM=HS256
 
 WEB_BIND_HOST=$WEB_BIND_HOST
 WEBHOOK_BIND_HOST=$WEBHOOK_BIND_HOST
+WEB_PORT=$WEB_PORT
+WEBHOOK_PORT=$WEBHOOK_PORT
 
 ROOT_PATH=$ROOT_PATH
 FORWARDED_ALLOW_IPS=$FORWARDED_ALLOW_IPS
@@ -1552,7 +1566,7 @@ ok "chown done"
 log "Generating systemd units + redis-mtls.conf, then installing them"
 APP_USER="$APP_USER" APP_GROUP="$APP_GROUP" PROJECT_DIR="$PROJECT_DIR" BIND_HOST="$BIND_HOST" \
     WEB_BIND_HOST="$WEB_BIND_HOST" WEBHOOK_BIND_HOST="$WEBHOOK_BIND_HOST" \
-    REDIS_PORT="$REDIS_PORT" \
+    REDIS_PORT="$REDIS_PORT" WEB_PORT="$WEB_PORT" WEBHOOK_PORT="$WEBHOOK_PORT" \
     bash "$PROJECT_DIR/systemd/_gen.sh"
 
 
@@ -1862,41 +1876,46 @@ fw_close_old_port() {  # fw_close_old_port PORT
 
 case "$FW_KIND" in
     skip)
-        warn "SKIP_FIREWALL=1 - firewall left alone (open tcp $REDIS_PORT/8000/8080 yourself if one sits in front)"
+        warn "SKIP_FIREWALL=1 - firewall left alone (open tcp $REDIS_PORT/$WEB_PORT/$WEBHOOK_PORT as needed)"
         FW_SUMMARY="skipped (SKIP_FIREWALL=1)"
         ;;
     none)
         warn "Neither ufw nor firewalld found on this machine - nothing to open"
-        warn "If something else filters traffic, open tcp $REDIS_PORT (agents), 8000 (dashboard), 8080 (LINE webhook)"
+        warn "If something else filters traffic, open tcp $REDIS_PORT (agents), $WEB_PORT (dashboard), $WEBHOOK_PORT (LINE webhook)"
         FW_SUMMARY="no ufw/firewalld - nothing opened"
         ;;
     *)
         fw_allow "$REDIS_PORT" "Redis mTLS (agents send logs in)"
 
 
-        if [ "$PORT_CHANGED" = "1" ]; then
-            fw_close_old_port "$OLD_REDIS_PORT"
-        fi
-
         if [ "$WEB_BIND_HOST" = "127.0.0.1" ]; then
-
-            fw_close_old_port 8000
             ok "dashboard binds 127.0.0.1 - reachable only from this host (a local proxy, for example)"
         else
-            fw_allow 8000 "dashboard HTTPS"
+            fw_allow "$WEB_PORT" "dashboard HTTPS"
             if [ "$PROXY_IS_LOCAL" = "0" ]; then
-                warn "The dashboard is open at :8000 to the whole network while it trusts X-Forwarded-For"
-                warn "  from $FORWARDED_ALLOW_IPS - anyone able to reach :8000 directly can fake a client IP. Lock it down:"
-                warn "    sudo ufw delete allow 8000/tcp"
-                warn "    sudo ufw allow from $FORWARDED_ALLOW_IPS to any port 8000 proto tcp"
+                warn "The dashboard is open at :$WEB_PORT to the whole network while it trusts X-Forwarded-For"
+                warn "  from $FORWARDED_ALLOW_IPS - anyone able to reach :$WEB_PORT directly can fake a client IP. Lock it down:"
+                warn "    sudo ufw delete allow $WEB_PORT/tcp"
+                warn "    sudo ufw allow from $FORWARDED_ALLOW_IPS to any port $WEB_PORT proto tcp"
             fi
         fi
 
         if [ "$WEBHOOK_BIND_HOST" = "127.0.0.1" ]; then
-            warn "LINE webhook binds 127.0.0.1 - 8080/tcp left closed (the tunnel runs on this host)"
+            warn "LINE webhook binds 127.0.0.1 - $WEBHOOK_PORT/tcp left closed (the tunnel runs on this host)"
         else
-            fw_allow 8080 "LINE webhook"
+            fw_allow "$WEBHOOK_PORT" "LINE webhook"
         fi
+
+        # Close only installer-owned rules for ports no longer used by a public service.
+        for old_port in "$OLD_REDIS_PORT" "$OLD_WEB_PORT" "$OLD_WEBHOOK_PORT"; do
+            [ -n "$old_port" ] || continue
+            case "$old_port" in
+                "$REDIS_PORT") continue ;;
+                "$WEB_PORT") [ "$WEB_BIND_HOST" != "127.0.0.1" ] && continue ;;
+                "$WEBHOOK_PORT") [ "$WEBHOOK_BIND_HOST" != "127.0.0.1" ] && continue ;;
+            esac
+            fw_close_old_port "$old_port"
+        done
 
         FW_SUMMARY="$FW_KIND: opened${FW_OPENED:- (nothing)}"
 
@@ -2065,11 +2084,13 @@ NOTES=()        # เรื่องที่ควรรู้ แต่ไม�
 ACTIONS=()      # เรื่องที่ต้องไปทำต่อ (พิมพ์ตัวแดงท้ายสุด)
 
 if [ "$WEB_BIND_HOST" = "0.0.0.0" ]; then WEB_URL_HOST="$BIND_HOST"; else WEB_URL_HOST="$WEB_BIND_HOST"; fi
-DASH_URL="https://$WEB_URL_HOST:8000$ROOT_PATH/"
+DASH_URL="https://$WEB_URL_HOST:$WEB_PORT$ROOT_PATH/"
 
 
 [ "$IP_CHANGED" = "1" ]   && DID+=("moved the central address $CURRENT_BIND_HOST -> $BIND_HOST")
 [ "$PORT_CHANGED" = "1" ] && DID+=("moved the Redis port $OLD_REDIS_PORT -> $REDIS_PORT")
+[ "$OLD_WEB_PORT" != "$WEB_PORT" ] && DID+=("moved the dashboard port $OLD_WEB_PORT -> $WEB_PORT")
+[ "$OLD_WEBHOOK_PORT" != "$WEBHOOK_PORT" ] && DID+=("moved the LINE webhook port $OLD_WEBHOOK_PORT -> $WEBHOOK_PORT")
 [ "$CA_CREATED" = "1" ]   && DID+=("created a new Root CA")
 [ "$CERT_ISSUED" = "1" ]  && DID+=("issued new certificates (SAN $SAN_LINE)")
 [ "$ACL_WRITTEN" = "1" ]  && DID+=("wrote redis/users.acl")
@@ -2082,6 +2103,8 @@ DASH_URL="https://$WEB_URL_HOST:8000$ROOT_PATH/"
 
 
 NOTES+=("proxy ready - trusts X-Forwarded-For from $FORWARDED_ALLOW_IPS · sample nginx: REVERSE_PROXY.md")
+[ -n "$OLD_WEB_PORT" ] && [ "$OLD_WEB_PORT" != "$WEB_PORT" ] && NOTES+=("update any dashboard reverse proxy upstream from :$OLD_WEB_PORT to :$WEB_PORT")
+[ -n "$OLD_WEBHOOK_PORT" ] && [ "$OLD_WEBHOOK_PORT" != "$WEBHOOK_PORT" ] && NOTES+=("update any LINE webhook tunnel/proxy upstream from :$OLD_WEBHOOK_PORT to :$WEBHOOK_PORT")
 [ "$PROXY_IS_LOCAL" = "1" ] && NOTES+=("proxy on another host? re-run with FORWARDED_ALLOW_IPS=<its ip>")
 [ "$STARTED" -eq 1 ] && [ "$ENV_WRITTEN" = "2" ] && NOTES+=("first login is admin/admin")
 
@@ -2234,10 +2257,10 @@ for _d in "${DID[@]}"; do echo "     - $_d"; done
 
 echo ""
 echo "  Where things are"
-printf '     %-13s %s\n' "dashboard" "$DASH_URL   (bind $WEB_BIND_HOST:8000)"
+printf '     %-13s %s\n' "dashboard" "$DASH_URL   (bind $WEB_BIND_HOST:$WEB_PORT)"
 printf '     %-13s %s\n' "Redis mTLS" "$BIND_HOST:$REDIS_PORT   ($([ "$REDIS_CHECK" = "ok" ] && echo "reachable and logged in" || echo "$REDIS_CHECK"))"
 printf '     %-13s %s\n' "database" "$DB_NAME (owner $DB_USER) at $DB_HOST:$DB_PORT${DB_STATE:+  [$DB_STATE]}"
-printf '     %-13s %s\n' "LINE webhook" "$WEBHOOK_BIND_HOST:8080"
+printf '     %-13s %s\n' "LINE webhook" "$WEBHOOK_BIND_HOST:$WEBHOOK_PORT"
 printf '     %-13s %s\n' "project" "$PROJECT_DIR   (runs as $APP_USER)"
 printf '     %-13s %s\n' "root path" "${ROOT_PATH:-/}"
 [ -n "$FW_SUMMARY" ] && printf '     %-13s %s\n' "firewall" "$FW_SUMMARY"
