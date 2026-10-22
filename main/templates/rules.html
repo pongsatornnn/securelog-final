@@ -46,7 +46,7 @@
             :aria-selected="tab === 'policy'" @click="selectTab('policy')">ความรุนแรง &amp; การตอบสนอง</button>
 
     <button class="tab" type="button" role="tab" :class="{ 'is-active': tab === 'agent-rules' }"
-            :aria-selected="tab === 'agent-rules'" @click="selectTab('agent-rules')">Setting Rule for Client</button>
+            :aria-selected="tab === 'agent-rules'" @click="selectTab('agent-rules')">Client Rule</button>
   </div>
 
   
@@ -131,8 +131,6 @@
   </div>
 
   <div role="tabpanel" x-show="tab === 'agent-rules'" x-cloak>
-    <div class="section-subtitle">เลือก Client แล้วติ๊ก Rule ที่ต้องการใช้</div>
-
     <div class="state-box" x-show="loadingAgentRules" style="border-radius: 14px;">
       <div class="state-spinner" aria-hidden="true"></div>
       <div class="state-title">กำลังโหลด Rule ราย Client...</div>
@@ -147,43 +145,52 @@
     </div>
 
     <div x-show="!loadingAgentRules && !agentRulesError && ruleAgents.length" x-cloak>
-      <div class="agent-rule-panel">
-        <label class="form-label" for="rule-agent">Client</label>
-        <select class="form-input agent-rule-select" id="rule-agent" x-model="selectedAgentId" @change="selectRuleAgent()"
-                :disabled="savingAgentRules || agentRulesChanged()">
-          <template x-for="agent in ruleAgents" :key="agent.agent_id">
-            <option :value="agent.agent_id" x-text="agent.agent_id + ' · ' + agent.hostname"></option>
-          </template>
-        </select>
+      <div class="client-rule-panel">
+        <div class="client-rule-top">
+          <h2>Client Rule</h2>
+          <p>เลือก Rule ที่ต้องการใช้กับ Client เครื่องนี้</p>
+          <label class="form-label" for="rule-agent">Client</label>
+          <select class="form-input" id="rule-agent" x-model="selectedAgentId" @change="selectRuleAgent()"
+                  :disabled="savingAgentRules || agentRulesChanged()">
+            <template x-for="agent in ruleAgents" :key="agent.agent_id">
+              <option :value="agent.agent_id" x-text="agent.agent_id + ' · ' + agent.hostname"></option>
+            </template>
+          </select>
+          <div class="client-rule-hint" x-show="agentRulesChanged()" x-cloak>บันทึกหรือยกเลิกก่อนเปลี่ยน Client</div>
+        </div>
 
-        <div class="agent-rule-list">
+        <div class="client-rule-groups">
           <template x-for="group in groupedAgentRules" :key="group.category">
-            <div class="agent-rule-section">
-              <div class="agent-rule-section-title" x-text="categoryLabel(group.category)"></div>
-              <template x-for="rule in group.items" :key="rule.rule_key">
-                <label class="agent-rule-option" :class="{ 'is-unavailable': !rule.is_active }">
-                  <input type="checkbox" :checked="rule.is_active && agentRuleEnabled(rule.rule_key)"
-                         :disabled="!rule.is_active || savingAgentRules"
-                         @change="toggleAgentRule(rule.rule_key, $event.target.checked)">
-                  <span x-text="ruleLabel(rule.rule_key)"></span>
-                  <small x-show="!rule.is_active">ปิดส่วนกลาง</small>
-                </label>
-              </template>
-            </div>
+            <section class="client-rule-group">
+              <h3 x-text="categoryLabel(group.category)"></h3>
+              <div class="client-rule-list">
+                <template x-for="rule in group.items" :key="rule.rule_key">
+                  <label class="client-rule-row" :class="{ 'is-unavailable': !rule.is_active }">
+                    <input type="checkbox" :checked="rule.is_active && agentRuleEnabled(rule.rule_key)"
+                           :disabled="!rule.is_active || savingAgentRules" {% if user.role != 'admin' %}disabled{% endif %}
+                           @change="toggleAgentRule(rule.rule_key, $event.target.checked)">
+                    <span x-text="ruleLabel(rule.rule_key)"></span>
+                    <small x-show="!rule.is_active">ปิดส่วนกลาง</small>
+                  </label>
+                </template>
+              </div>
+            </section>
           </template>
         </div>
 
-        <div class="agent-rule-footer">
-          <span x-show="agentRulesChanged()" x-cloak>ยังไม่บันทึก</span>
-          <button class="btn-secondary" type="button" @click="discardAgentRuleChanges()"
-                  x-show="agentRulesChanged()" x-cloak :disabled="savingAgentRules">ยกเลิก</button>
-          <button class="btn-primary" type="button" @click="saveAgentRules()"
-                  :disabled="savingAgentRules || !agentRulesChanged()">
-            <span x-show="!savingAgentRules">บันทึก</span>
-            <span x-show="savingAgentRules">กำลังบันทึก...</span>
-          </button>
-        </div>
       </div>
+      {% if user.role == 'admin' %}
+      <div class="client-rule-footer" x-show="agentRulesChanged()" x-cloak>
+        <div class="client-rule-unsaved">แก้ไข Rule แล้วยังไม่ได้บันทึก</div>
+        <button class="btn-secondary" type="button" @click="discardAgentRuleChanges()"
+                :disabled="savingAgentRules">ยกเลิกที่แก้</button>
+        <button class="btn-primary" type="button" @click="saveAgentRules()"
+                :disabled="savingAgentRules || !agentRulesChanged()">
+          <span x-show="!savingAgentRules">บันทึก</span>
+          <span x-show="savingAgentRules">กำลังบันทึก...</span>
+        </button>
+      </div>
+      {% endif %}
     </div>
   </div>
 
